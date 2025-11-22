@@ -17,6 +17,7 @@ interface CodeEditorProps {
     vimMode?: boolean;
   };
   onCodeAction?: (action: string, selectedCode: string) => void;
+  onSelectionChange?: (selectedText: string) => void;
 }
 
 const KEYWORDS = [
@@ -30,7 +31,7 @@ const KEYWORDS = [
   'className', 'style', 'onClick', 'onChange', 'value', 'key', 'children'
 ];
 
-export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code, onChange, fileName, config, onCodeAction }, ref) => {
+export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code, onChange, fileName, config, onCodeAction, onSelectionChange }, ref) => {
   const lines = code.split('\n');
   const [showMinimap, setShowMinimap] = useState(true);
   
@@ -50,6 +51,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
   const preRef = useRef<HTMLPreElement>(null);
   const lineNumsRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
+  const minimapRef = useRef<HTMLDivElement>(null);
 
   // Forward internal ref methods to parent
   useImperativeHandle(ref, () => ({
@@ -102,7 +104,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
 
   const handleScroll = () => {
     if (textareaRef.current) {
-      const { scrollTop, scrollLeft } = textareaRef.current;
+      const { scrollTop, scrollLeft, scrollHeight, clientHeight } = textareaRef.current;
       if (preRef.current) {
         preRef.current.scrollTop = scrollTop;
         preRef.current.scrollLeft = scrollLeft;
@@ -110,9 +112,25 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
       if (lineNumsRef.current) {
         lineNumsRef.current.scrollTop = scrollTop;
       }
+      // Sync Minimap Scroll
+      if (minimapRef.current) {
+          const percent = scrollTop / (scrollHeight - clientHeight);
+          const mapScrollHeight = minimapRef.current.scrollHeight - minimapRef.current.clientHeight;
+          minimapRef.current.scrollTop = percent * mapScrollHeight;
+      }
       // Hide actions on scroll
       setShowCodeActions(false);
     }
+  };
+
+  const handleMinimapClick = (e: React.MouseEvent) => {
+      if (!minimapRef.current || !textareaRef.current) return;
+      const rect = minimapRef.current.getBoundingClientRect();
+      const y = e.clientY - rect.top; // Click position in minimap
+      const percent = y / rect.height;
+      
+      const targetScroll = percent * textareaRef.current.scrollHeight;
+      textareaRef.current.scrollTop = targetScroll;
   };
 
   // Helper to update cursor position for autocomplete dropdown & code actions
@@ -173,10 +191,12 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
               setSelectedText(selected);
               updateCaretPosition(selectionEnd, true);
               setShowCodeActions(true);
+              if (onSelectionChange) onSelectionChange(selected);
               return;
           }
       }
       setShowCodeActions(false);
+      if (onSelectionChange) onSelectionChange('');
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -314,13 +334,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
           {isVim && <div className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[10px] uppercase font-bold border border-green-900 rounded">VIM NORMAL</div>}
           <button 
              onClick={() => setShowMinimap(!showMinimap)}
-             className={`text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded transition-colors ${showMinimap ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+             className={`text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded transition-colors hidden sm:block ${showMinimap ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
           >
              Minimap
           </button>
           <div className="w-2 h-2 rounded-full bg-green-500/50"></div>
-          <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider">UTF-8</div>
-          <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider ml-1">Tab: {tabSizeVal}</div>
+          <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider hidden sm:block">UTF-8</div>
+          <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider ml-1 hidden sm:block">Tab: {tabSizeVal}</div>
         </div>
       </div>
 
@@ -435,10 +455,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
         
         {/* Minimap Visualizer */}
         {showMinimap && (
-            <div className="w-24 border-l border-gray-800 bg-gray-900/80 overflow-hidden select-none pointer-events-none hidden sm:block">
-                <div className="w-full text-[2px] leading-[4px] text-gray-500 p-1 opacity-50 whitespace-pre break-all">
+            <div 
+              ref={minimapRef}
+              className="w-24 border-l border-gray-800 bg-gray-900/80 overflow-hidden select-none hidden sm:block cursor-pointer relative"
+              onClick={handleMinimapClick}
+            >
+                <div className="w-full text-[2px] leading-[4px] text-gray-500 p-1 opacity-50 whitespace-pre break-all pointer-events-none">
                     {code}
                 </div>
+                {/* Scroll Highlight Indicator (Simulated) */}
+                <div className="absolute inset-x-0 bg-white/5 pointer-events-none h-16 top-0"></div>
             </div>
         )}
       </div>

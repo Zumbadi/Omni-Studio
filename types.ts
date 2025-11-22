@@ -21,6 +21,15 @@ export interface Project {
   type: ProjectType;
   lastModified: string;
   fileCount: number;
+  roadmap?: ProjectPhase[];
+}
+
+export interface ProjectPhase {
+  id: string;
+  title: string;
+  status: 'pending' | 'active' | 'completed';
+  goals: string[];
+  tasks: { id: string; text: string; done: boolean }[];
 }
 
 export interface FileNode {
@@ -35,9 +44,25 @@ export interface FileNode {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'model' | 'system';
+  role: 'user' | 'model' | 'system' | 'critic';
   text: string;
   timestamp: number;
+  attachments?: any[];
+  critique?: {
+    score: number;
+    issues: string[];
+    suggestions: string[];
+  };
+}
+
+export interface Dataset {
+  id: string;
+  name: string;
+  description: string;
+  format: 'jsonl' | 'txt';
+  size: string;
+  content: string; // The actual training data
+  created: string;
 }
 
 export interface FineTuningJob {
@@ -58,6 +83,8 @@ export interface Voice {
   gender: 'male' | 'female' | 'robot';
   style: 'narrative' | 'casual' | 'news' | 'energetic';
   isCloned: boolean;
+  apiMapping?: string; // Maps to a valid Gemini Voice Name (e.g., 'Puck')
+  voiceId?: string;
 }
 
 export interface AudioTrack {
@@ -67,6 +94,18 @@ export interface AudioTrack {
   duration: number; // seconds
   startOffset: number; // seconds
   audioUrl?: string; // Blob URL or Data URI
+  // Pro Mixing Features
+  volume?: number; // 0.0 to 1.0
+  muted?: boolean;
+  solo?: boolean;
+}
+
+export interface TimelineClip {
+  id: string;
+  start: number;
+  duration: number;
+  assetId: string;
+  transition?: 'cut' | 'fade' | 'dissolve' | 'slide-left' | 'slide-right' | 'zoom' | 'blur' | 'wipe';
 }
 
 export interface Scene {
@@ -75,6 +114,33 @@ export interface Scene {
   imageUrl?: string;
   videoUrl?: string;
   status: 'pending' | 'generating' | 'done';
+  // Pro Timeline Features
+  duration?: number; // seconds
+  mediaStartTime?: number; // Offset in seconds from the start of the source video
+  transition?: 'cut' | 'fade' | 'dissolve' | 'slide-left' | 'slide-right' | 'zoom' | 'blur' | 'wipe';
+  bgRemoved?: boolean;
+}
+
+export interface Character {
+  id: string;
+  name: string;
+  imageUrl: string;
+  description?: string; // AI-generated visual description for consistency
+}
+
+export interface ReferenceAsset {
+  id: string;
+  type: 'image' | 'video' | 'audio';
+  url: string;
+  stylePrompt?: string; // Extracted style description
+}
+
+export interface ContentStrategy {
+  targetAudience: string;
+  primaryGoal: 'brand_awareness' | 'conversion' | 'engagement' | 'traffic';
+  contentPillars: string[];
+  toneVoice: string;
+  postingFrequency: string;
 }
 
 export interface SocialPost {
@@ -88,6 +154,10 @@ export interface SocialPost {
   hashtags?: string[];
   scenes?: Scene[];
   scheduledDate?: string;
+  // Pro Features
+  characters?: Character[];
+  styleReferences?: ReferenceAsset[];
+  audioTrackId?: string; // Linked audio track from Audio Studio
 }
 
 export interface Extension {
@@ -111,4 +181,53 @@ export interface GitCommit {
 export interface GitBranch {
   name: string;
   active: boolean;
+}
+
+export interface AgentTask {
+  id: string;
+  type: 'docs' | 'tests' | 'refactor' | 'custom';
+  name: string;
+  status: 'idle' | 'running' | 'completed';
+  totalFiles: number;
+  processedFiles: number;
+  currentFile?: string;
+  logs: string[];
+}
+
+export interface AuditIssue {
+  id: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  file?: string;
+  line?: number;
+}
+
+export interface PerformanceReport {
+  scores: {
+    performance: number;
+    accessibility: number;
+    bestPractices: number;
+    seo: number;
+  };
+  opportunities: {
+    title: string;
+    description: string;
+    savings?: string;
+  }[];
+}
+
+export interface ArchNode {
+  id: string;
+  type: 'frontend' | 'backend' | 'database' | 'auth' | 'storage' | 'function';
+  label: string;
+  x: number;
+  y: number;
+  details?: string;
+}
+
+export interface ArchLink {
+  id: string;
+  source: string;
+  target: string;
 }

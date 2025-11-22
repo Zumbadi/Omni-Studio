@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { MOCK_JOBS, DATASET_PREVIEW } from '../constants';
 import { Button } from './Button';
-import { Activity, Database, Server, Play, Clock, X, Upload, Brain, MessageSquare, Send, Rocket, Check, Eye } from 'lucide-react';
+import { Activity, Database, Server, Play, Clock, X, Upload, Brain, MessageSquare, Send, Rocket, Check, Eye, FlaskConical, Sparkles, FileJson, Download } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { testFineTunedModel } from '../services/geminiService';
-import { FineTuningJob } from '../types';
+import { testFineTunedModel, generateSyntheticData } from '../services/geminiService';
+import { FineTuningJob, Dataset } from '../types';
 
 const CHART_DATA = [
   { step: 0, loss: 2.5, accuracy: 0.2 },
@@ -17,6 +18,7 @@ const CHART_DATA = [
 ];
 
 export const FineTuningDashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'jobs' | 'data'>('jobs');
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState(1);
   
@@ -25,6 +27,20 @@ export const FineTuningDashboard: React.FC = () => {
     const saved = localStorage.getItem('omni_jobs');
     return saved ? JSON.parse(saved) : MOCK_JOBS;
   });
+
+  // Datasets State (Persistent)
+  const [datasets, setDatasets] = useState<Dataset[]>(() => {
+      const saved = localStorage.getItem('omni_datasets');
+      return saved ? JSON.parse(saved) : [
+          { id: 'ds1', name: 'customer_chats_v2.jsonl', format: 'jsonl', size: '124MB', content: DATASET_PREVIEW, created: '2 days ago', description: 'Customer support logs' }
+      ];
+  });
+
+  // Generator State
+  const [genTopic, setGenTopic] = useState('');
+  const [genCount, setGenCount] = useState(10);
+  const [isGeneratingData, setIsGeneratingData] = useState(false);
+  const [generatedContent, setGeneratedContent] = useState('');
 
   // Active Job for Chart visualization
   const activeJob = jobs.find(j => j.status === 'training') || jobs[0];
@@ -38,7 +54,11 @@ export const FineTuningDashboard: React.FC = () => {
 
   // Dataset Inspector State
   const [showDatasetModal, setShowDatasetModal] = useState(false);
-  const [selectedDataset, setSelectedDataset] = useState<string>('');
+  const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
+
+  useEffect(() => {
+      localStorage.setItem('omni_datasets', JSON.stringify(datasets));
+  }, [datasets]);
 
   // Simulation Loop
   useEffect(() => {
@@ -121,9 +141,38 @@ export const FineTuningDashboard: React.FC = () => {
     setShowPlayground(true);
   };
 
-  const handleViewDataset = (name: string) => {
-    setSelectedDataset(name);
+  const handleViewDataset = (ds: Dataset) => {
+    setSelectedDataset(ds);
     setShowDatasetModal(true);
+  };
+
+  const handleGenerateDataset = async () => {
+      if(!genTopic) return;
+      setIsGeneratingData(true);
+      setGeneratedContent('');
+      
+      await generateSyntheticData(genTopic, genCount, (chunk) => {
+          setGeneratedContent(prev => prev + chunk);
+      });
+      
+      setIsGeneratingData(false);
+  };
+
+  const handleSaveGeneratedDataset = () => {
+      if (!generatedContent) return;
+      const newDs: Dataset = {
+          id: `ds-${Date.now()}`,
+          name: `synth_${genTopic.replace(/\s+/g, '_')}.jsonl`,
+          description: `Synthetic data for: ${genTopic}`,
+          format: 'jsonl',
+          size: `${(generatedContent.length / 1024).toFixed(1)}KB`,
+          content: generatedContent,
+          created: 'Just now'
+      };
+      setDatasets(prev => [...prev, newDs]);
+      setGeneratedContent('');
+      setGenTopic('');
+      alert("Dataset saved to library!");
   };
 
   const handlePlaygroundSubmit = async (e: React.FormEvent) => {
@@ -160,7 +209,7 @@ export const FineTuningDashboard: React.FC = () => {
                 <Database className="text-yellow-400" size={20} />
                 Dataset Inspector
               </h2>
-              <p className="text-xs text-gray-400 font-mono mt-0.5">{selectedDataset}</p>
+              <p className="text-xs text-gray-400 font-mono mt-0.5">{selectedDataset?.name}</p>
            </div>
            <button onClick={() => setShowDatasetModal(false)} className="text-gray-500 hover:text-white">
              <X size={20} />
@@ -168,12 +217,12 @@ export const FineTuningDashboard: React.FC = () => {
          </div>
          <div className="flex-1 bg-black p-6 overflow-auto">
             <div className="font-mono text-xs text-gray-400 whitespace-pre leading-relaxed">
-               {DATASET_PREVIEW}
+               {selectedDataset?.content}
             </div>
          </div>
          <div className="px-6 py-3 bg-gray-850 border-t border-gray-800 text-xs text-gray-500 flex justify-between">
-            <span>Format: JSONL</span>
-            <span>Size: 124MB</span>
+            <span>Format: {selectedDataset?.format.toUpperCase()}</span>
+            <span>Size: {selectedDataset?.size}</span>
          </div>
       </div>
     </div>
@@ -261,10 +310,14 @@ export const FineTuningDashboard: React.FC = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Upload Dataset (JSONL)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Select Dataset</label>
+                <select className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white focus:border-primary-500 focus:outline-none mb-2">
+                    {datasets.map(ds => <option key={ds.id} value={ds.id}>{ds.name}</option>)}
+                </select>
+                
                 <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 flex flex-col items-center justify-center hover:border-gray-500 hover:bg-gray-800/50 transition-colors cursor-pointer">
                   <Upload className="text-gray-500 mb-3" size={24} />
-                  <p className="text-sm text-gray-300">Drag & drop your dataset here</p>
+                  <p className="text-sm text-gray-300">Or drag & drop new dataset</p>
                   <p className="text-xs text-gray-600 mt-1">Supports .jsonl, .txt (Max 1GB)</p>
                 </div>
               </div>
@@ -320,17 +373,19 @@ export const FineTuningDashboard: React.FC = () => {
       {showPlayground && <PlaygroundModal />}
       {showDatasetModal && <DatasetModal />}
       
-      <header className="mb-8 flex justify-between items-center">
+      <header className="mb-8 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-bold text-white">Fine-Tuning Workbench</h1>
           <p className="text-gray-400 mt-1">Train custom models on your data using Unsloth optimized pipelines.</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>
-          <Play size={16} className="mr-2" />
-          New Training Job
-        </Button>
+        <div className="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
+            <button onClick={() => setActiveTab('jobs')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'jobs' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Training Jobs</button>
+            <button onClick={() => setActiveTab('data')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'data' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Data Lab</button>
+        </div>
       </header>
 
+      {activeTab === 'jobs' ? (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
           <div className="flex items-center gap-3 mb-4 text-blue-400">
@@ -386,15 +441,15 @@ export const FineTuningDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
+        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg flex flex-col">
            <div className="flex items-center gap-3 mb-4 text-yellow-400">
             <Database size={20} />
             <h3 className="font-semibold text-white">Datasets</h3>
           </div>
-          <ul className="space-y-3">
-             {['customer_chats_v2.jsonl', 'legal_precedents.jsonl', 'react_code_pairs.jsonl'].map((ds) => (
-               <li key={ds} className="flex items-center justify-between text-sm p-2 hover:bg-gray-700 rounded cursor-pointer transition group">
-                  <span className="text-gray-300">{ds}</span>
+          <ul className="space-y-3 flex-1 overflow-y-auto max-h-[160px]">
+             {datasets.map((ds) => (
+               <li key={ds.id} className="flex items-center justify-between text-sm p-2 hover:bg-gray-700 rounded cursor-pointer transition group">
+                  <span className="text-gray-300 truncate max-w-[150px]" title={ds.name}>{ds.name}</span>
                   <button 
                     onClick={() => handleViewDataset(ds)}
                     className="text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
@@ -405,15 +460,18 @@ export const FineTuningDashboard: React.FC = () => {
                </li>
              ))}
           </ul>
-          <Button variant="ghost" size="sm" className="w-full mt-4 border border-dashed border-gray-600">
-            Upload New Dataset
+          <Button variant="ghost" size="sm" onClick={() => setActiveTab('data')} className="w-full mt-4 border border-dashed border-gray-600">
+            <FlaskConical size={14} className="mr-2"/> Generate Synthetic Data
           </Button>
         </div>
       </div>
 
       <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-lg">
-        <div className="px-6 py-4 border-b border-gray-700 bg-gray-850">
+        <div className="px-6 py-4 border-b border-gray-700 bg-gray-850 flex justify-between items-center">
           <h3 className="font-semibold text-white">Recent Jobs</h3>
+          <Button size="sm" onClick={() => setShowModal(true)}>
+            <Play size={14} className="mr-2" /> New Job
+          </Button>
         </div>
         <table className="w-full text-left text-sm text-gray-400">
           <thead className="bg-gray-900 text-xs uppercase font-medium text-gray-500">
@@ -471,6 +529,77 @@ export const FineTuningDashboard: React.FC = () => {
           </tbody>
         </table>
       </div>
+      </>
+      ) : (
+      <div className="flex gap-6 h-[calc(100vh-200px)]">
+          {/* Generator Panel */}
+          <div className="w-1/3 bg-gray-800 rounded-xl border border-gray-700 p-6 flex flex-col">
+              <div className="mb-6">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2"><FlaskConical className="text-primary-500"/> Synthetic Data Generator</h2>
+                  <p className="text-sm text-gray-400 mt-1">Generate high-quality Q&A pairs for training using Gemini.</p>
+              </div>
+              
+              <div className="space-y-4 flex-1">
+                  <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Topic / Domain</label>
+                      <input 
+                        type="text" 
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-primary-500 focus:outline-none" 
+                        placeholder="e.g. Python Error Handling, Legal Contract Review, Medical Triage..."
+                        value={genTopic}
+                        onChange={(e) => setGenTopic(e.target.value)}
+                      />
+                  </div>
+                  
+                  <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Example Count: {genCount}</label>
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="50" 
+                        value={genCount} 
+                        onChange={(e) => setGenCount(parseInt(e.target.value))}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                      />
+                  </div>
+
+                  <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-4 text-xs text-blue-200">
+                      <p className="flex items-start gap-2"><Sparkles size={14} className="mt-0.5 shrink-0"/> The generated data will be formatted as JSONL, ready for Unsloth/Llama-3 fine-tuning.</p>
+                  </div>
+              </div>
+
+              <Button size="lg" className="w-full mt-6" onClick={handleGenerateDataset} disabled={!genTopic || isGeneratingData}>
+                  {isGeneratingData ? 'Synthesizing...' : 'Generate Data'}
+                  {isGeneratingData ? <Sparkles size={16} className="ml-2 animate-spin" /> : <ArrowRightIcon size={16} className="ml-2" />}
+              </Button>
+          </div>
+
+          {/* Output Panel */}
+          <div className="flex-1 bg-gray-950 rounded-xl border border-gray-700 flex flex-col overflow-hidden relative">
+              <div className="px-4 py-3 bg-gray-900 border-b border-gray-800 flex justify-between items-center">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2"><FileJson size={14}/> Output Preview</span>
+                  <div className="flex gap-2">
+                      <button className="text-gray-500 hover:text-white" onClick={() => navigator.clipboard.writeText(generatedContent)} title="Copy"><Check size={14}/></button>
+                      <Button size="sm" variant="secondary" onClick={handleSaveGeneratedDataset} disabled={!generatedContent}>Save to Library</Button>
+                  </div>
+              </div>
+              <div className="flex-1 p-4 overflow-auto">
+                  {generatedContent ? (
+                      <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">{generatedContent}</pre>
+                  ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-gray-600">
+                          <Database size={48} className="mb-4 opacity-20" />
+                          <p className="text-sm">Generated data will appear here.</p>
+                      </div>
+                  )}
+              </div>
+          </div>
+      </div>
+      )}
     </div>
   );
 };
+
+const ArrowRightIcon = ({size, className}: any) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+);

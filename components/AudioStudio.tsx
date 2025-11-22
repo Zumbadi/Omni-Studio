@@ -1,13 +1,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Play, Pause, Music, Settings, Plus, Volume2, Download, Wand2, Radio, Disc, User, MoreVertical, Trash2, Loader2, Check, FileText, X, MoveHorizontal } from 'lucide-react';
+import { Mic, Play, Pause, Music, Settings, Plus, Volume2, Download, Wand2, Radio, Disc, User, MoreVertical, Trash2, Loader2, Check, FileText, X, MoveHorizontal, Volume1, VolumeX, MicOff, Sliders, Upload, Zap, Activity, LayoutTemplate } from 'lucide-react';
 import { Button } from './Button';
 import { MOCK_VOICES } from '../constants';
 import { Voice, AudioTrack } from '../types';
-import { generateSpeech, transcribeAudio } from '../services/geminiService';
+import { generateSpeech, transcribeAudio, analyzeMediaStyle } from '../services/geminiService';
 
 export const AudioStudio: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'cloning' | 'mixer'>('mixer');
+  const [activeTab, setActiveTab] = useState<'cloning' | 'mixer' | 'pro'>('mixer');
+  const [showAssets, setShowAssets] = useState(true);
   
   // Persistent Voices State
   const [voices, setVoices] = useState<Voice[]>(() => {
@@ -18,7 +19,7 @@ export const AudioStudio: React.FC = () => {
   const [tracks, setTracks] = useState<AudioTrack[]>(() => {
     const saved = localStorage.getItem('omni_audio_tracks');
     return saved ? JSON.parse(saved) : [
-      { id: 't1', name: 'Intro Music - Lofi Chill', type: 'music', duration: 30, startOffset: 0 },
+      { id: 't1', name: 'Intro Music - Lofi Chill', type: 'music', duration: 30, startOffset: 0, volume: 0.8, muted: false, solo: false },
     ];
   });
   
@@ -30,6 +31,7 @@ export const AudioStudio: React.FC = () => {
   const [ttsInput, setTtsInput] = useState('');
   const [selectedVoice, setSelectedVoice] = useState(voices[0].id);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [styleReference, setStyleReference] = useState<string | undefined>(undefined);
   
   // Transcription State
   const [transcription, setTranscription] = useState<string | null>(null);
@@ -54,11 +56,18 @@ export const AudioStudio: React.FC = () => {
   }>({ isDragging: false, trackId: null, startX: 0, originalOffset: 0 });
 
   const timelineRef = useRef<HTMLDivElement>(null);
+  const styleInputRef = useRef<HTMLInputElement>(null);
+
+  // Pro Tools / Mastering State
+  const [mastering, setMastering] = useState({
+      enabled: false,
+      warmth: 50,
+      clarity: 50,
+      punch: 50
+  });
 
   // Persistence Effects
   useEffect(() => {
-    // Save tracks that have a data: URL (TTS/Gen) but strip blob: URLs (Recordings)
-    // This ensures TTS tracks persist across reloads
     const tracksToSave = tracks.map(t => ({
         ...t, 
         audioUrl: t.audioUrl?.startsWith('data:') ? t.audioUrl : undefined 
@@ -71,6 +80,7 @@ export const AudioStudio: React.FC = () => {
     localStorage.setItem('omni_voices', JSON.stringify(voices));
   }, [voices]);
 
+  // Recording Timer
   useEffect(() => {
      if (isRecording) {
        timerRef.current = window.setInterval(() => setRecordingTime(t => t + 1), 1000);
@@ -81,16 +91,29 @@ export const AudioStudio: React.FC = () => {
      return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isRecording]);
 
-  // Dragging Listeners (Global for smoothness)
+  // Sync Audio Elements with React State (Volume/Mute/Solo)
+  useEffect(() => {
+      const anySolo = tracks.some(t => t.solo);
+
+      tracks.forEach(track => {
+          const audioEl = audioRefs.current[track.id];
+          if (audioEl) {
+              // Volume Logic
+              audioEl.volume = track.volume ?? 1.0;
+              
+              // Mute Logic: Muted if track is Muted OR (Solo exists AND this track is NOT Solo)
+              const shouldMute = track.muted || (anySolo && !track.solo);
+              audioEl.muted = shouldMute;
+          }
+      });
+  }, [tracks]);
+
+  // Dragging Listeners
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragState.isDragging || !dragState.trackId || !timelineRef.current) return;
 
       const timelineWidth = timelineRef.current.clientWidth;
-      // Total timeline represents roughly 300 seconds (5 minutes) in this visualization (width: 100% = 300s approx logic via startOffset*2%)
-      // Actually, logic below: left = startOffset * 2%. So 100% = 50 seconds.
-      // Let's stick to the visual scaling: 1% width = 0.5 seconds.
-      
       const deltaPixels = e.clientX - dragState.startX;
       const deltaPercent = (deltaPixels / timelineWidth) * 100;
       const deltaSeconds = deltaPercent * 0.5; // 1% = 0.5s
@@ -135,7 +158,7 @@ export const AudioStudio: React.FC = () => {
     Object.values(audioRefs.current).forEach(audio => {
       const audioEl = audio as HTMLAudioElement;
       if (newIsPlaying) {
-        audioEl.play();
+        audioEl.play().catch(e => console.log("Play error (likely empty source):", e));
       } else {
         audioEl.pause();
       }
@@ -147,21 +170,38 @@ export const AudioStudio: React.FC = () => {
     setIsGenerating(true);
     
     const voice = voices.find(v => v.id === selectedVoice);
-    const audioDataUri = await generateSpeech(ttsInput, voice?.name || 'Kore');
+    // Pass the full voice object, not just the name
+    const audioDataUri = await generateSpeech(ttsInput, voice || voices[0], styleReference);
     
     if (audioDataUri) {
       const newTrack: AudioTrack = {
         id: `t${Date.now()}`,
         name: `TTS: ${ttsInput.substring(0, 15)}...`,
         type: 'voiceover',
-        duration: 10, // Simplified duration calculation (would need metadata in real app)
+        duration: 10, 
         startOffset: 0,
-        audioUrl: audioDataUri
+        audioUrl: audioDataUri,
+        volume: 1.0,
+        muted: false,
+        solo: false
       };
       setTracks(prev => [...prev, newTrack]);
       setTtsInput('');
     }
     setIsGenerating(false);
+  };
+  
+  const handleUploadStyleRef = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          const base64 = ev.target?.result as string;
+          const styleDesc = await analyzeMediaStyle(base64, 'audio');
+          setStyleReference(styleDesc);
+          alert(`Style Analyzed: "${styleDesc}"\nThis will be applied to your next TTS generation.`);
+      };
+      reader.readAsDataURL(file);
   };
 
   const startRecording = async () => {
@@ -192,7 +232,10 @@ export const AudioStudio: React.FC = () => {
               type: 'voiceover',
               duration: recordingTime || 5,
               startOffset: 0,
-              audioUrl: url
+              audioUrl: url,
+              volume: 1.0,
+              muted: false,
+              solo: false
             };
             setTracks(prev => [...prev, newTrack]);
         }
@@ -219,12 +262,11 @@ export const AudioStudio: React.FC = () => {
           const newVoice: Voice = {
               id: `v-clone-${Date.now()}`,
               name: `${name} (Cloned)`,
-              gender: 'robot', // Fallback for UI
+              gender: 'robot',
               style: 'narrative',
               isCloned: true
           };
           setVoices(prev => [...prev, newVoice]);
-          // In a real app, you would upload the audio blob to the voice cloning provider here
           alert(`Voice "${name}" cloned successfully! It is now available in the Voice Lab.`);
       }
   };
@@ -237,11 +279,9 @@ export const AudioStudio: React.FC = () => {
   const handleTranscribe = async (track: AudioTrack) => {
       if (!track.audioUrl) return;
       setIsTranscribing(true);
-      
       try {
           const response = await fetch(track.audioUrl);
           const blob = await response.blob();
-          
           const reader = new FileReader();
           reader.onloadend = async () => {
               const base64 = reader.result as string;
@@ -250,11 +290,32 @@ export const AudioStudio: React.FC = () => {
               setIsTranscribing(false);
           };
           reader.readAsDataURL(blob);
-          
       } catch (error) {
           console.error(error);
           setTranscription("Error fetching or processing audio for transcription.");
           setIsTranscribing(false);
+      }
+  };
+
+  // --- Mixer Controls ---
+  const handleVolumeChange = (id: string, val: number) => {
+      setTracks(prev => prev.map(t => t.id === id ? { ...t, volume: val } : t));
+  };
+
+  const toggleMute = (id: string) => {
+      setTracks(prev => prev.map(t => t.id === id ? { ...t, muted: !t.muted } : t));
+  };
+
+  const toggleSolo = (id: string) => {
+      setTracks(prev => prev.map(t => t.id === id ? { ...t, solo: !t.solo } : t));
+  };
+
+  const handleSmartMix = () => {
+      const hasVoice = tracks.some(t => t.type === 'voiceover');
+      if (hasVoice) {
+          setTracks(prev => prev.map(t => 
+              t.type === 'music' ? { ...t, volume: 0.3 } : t.type === 'voiceover' ? { ...t, volume: 1.0 } : t
+          ));
       }
   };
 
@@ -267,41 +328,27 @@ export const AudioStudio: React.FC = () => {
       const channels = [];
       let i;
       let sample;
-      let offset = 0;
       let pos = 0;
 
-      function setUint16(data: any) {
-          view.setUint16(pos, data, true);
-          pos += 2;
-      }
+      function setUint16(data: any) { view.setUint16(pos, data, true); pos += 2; }
+      function setUint32(data: any) { view.setUint32(pos, data, true); pos += 4; }
 
-      function setUint32(data: any) {
-          view.setUint32(pos, data, true);
-          pos += 4;
-      }
-
-      // write WAVE header
       setUint32(0x46464952); // "RIFF"
       setUint32(length - 8); // file length - 8
       setUint32(0x45564157); // "WAVE"
-
       setUint32(0x20746d66); // "fmt " chunk
-      setUint32(16); // length = 16
-      setUint16(1); // PCM (uncompressed)
+      setUint32(16); 
+      setUint16(1); 
       setUint16(numOfChan);
       setUint32(buffer.sampleRate);
-      setUint32(buffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
-      setUint16(numOfChan * 2); // block-align
-      setUint16(16); // 16-bit
+      setUint32(buffer.sampleRate * 2 * numOfChan);
+      setUint16(numOfChan * 2);
+      setUint16(16);
+      setUint32(0x61746164); // "data"
+      setUint32(length - pos - 4);
 
-      setUint32(0x61746164); // "data" - chunk
-      setUint32(length - pos - 4); // chunk length
+      for(i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
 
-      // write interleaved data
-      for(i = 0; i < buffer.numberOfChannels; i++)
-          channels.push(buffer.getChannelData(i));
-
-      // Write data
       let sampleIdx = 0;
       while(sampleIdx < buffer.length) {
           for(i = 0; i < numOfChan; i++) {
@@ -325,8 +372,18 @@ export const AudioStudio: React.FC = () => {
           const totalDuration = Math.max(...tracks.map(t => t.startOffset + t.duration)) || 10;
           const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 44100), 44100);
 
+          // Mastering Nodes (Simulated)
+          let outputNode: AudioNode = offlineCtx.destination;
+          if (mastering.enabled) {
+             const compressor = offlineCtx.createDynamicsCompressor();
+             compressor.threshold.value = -20 - (mastering.punch / 10);
+             compressor.ratio.value = 4 + (mastering.clarity / 20);
+             compressor.connect(offlineCtx.destination);
+             outputNode = compressor;
+          }
+
           for (const track of tracks) {
-              if (track.audioUrl) {
+              if (track.audioUrl && !track.muted) { 
                   try {
                       const response = await fetch(track.audioUrl);
                       const arrayBuffer = await response.arrayBuffer();
@@ -334,7 +391,12 @@ export const AudioStudio: React.FC = () => {
                       
                       const source = offlineCtx.createBufferSource();
                       source.buffer = audioBuffer;
-                      source.connect(offlineCtx.destination);
+                      
+                      const gain = offlineCtx.createGain();
+                      gain.gain.value = track.volume ?? 1.0;
+                      
+                      source.connect(gain);
+                      gain.connect(outputNode);
                       source.start(track.startOffset);
                   } catch (e) {
                       console.warn(`Failed to mix track ${track.name}:`, e);
@@ -364,6 +426,20 @@ export const AudioStudio: React.FC = () => {
       const mins = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60);
       return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Add track logic from Assets Panel
+  const handleAddTrack = (asset: any) => {
+      const newTrack: AudioTrack = {
+          id: `asset-${Date.now()}`,
+          name: asset.name,
+          type: 'sfx',
+          duration: 5, // Simplified
+          startOffset: 0,
+          audioUrl: asset.url,
+          volume: 1.0
+      };
+      setTracks(prev => [...prev, newTrack]);
   };
 
   return (
@@ -407,6 +483,12 @@ export const AudioStudio: React.FC = () => {
            >
              Voice Lab
            </button>
+            <button 
+             onClick={() => setActiveTab('pro')}
+             className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === 'pro' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}
+           >
+             Pro Tools
+           </button>
         </div>
 
         {activeTab === 'mixer' && (
@@ -419,6 +501,15 @@ export const AudioStudio: React.FC = () => {
                    value={ttsInput}
                    onChange={(e) => setTtsInput(e.target.value)}
                  />
+                 
+                 <div className="mb-2">
+                    {styleReference && (
+                         <div className="text-xs text-green-400 flex items-center gap-1 mb-2 bg-green-900/20 px-2 py-1 rounded">
+                             <Check size={10} /> Style Active
+                         </div>
+                    )}
+                 </div>
+
                  <select 
                     value={selectedVoice}
                     onChange={(e) => setSelectedVoice(e.target.value)}
@@ -433,19 +524,55 @@ export const AudioStudio: React.FC = () => {
               </div>
 
               <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
-                 <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Disc size={14} className="text-pink-400"/> Music Gen</h3>
-                 <input 
-                   type="text"
-                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 mb-2"
-                   placeholder="e.g., Cyberpunk synthwave"
-                 />
-                 <Button size="sm" variant="secondary" className="w-full">Generate Track</Button>
+                 <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Sliders size={14} className="text-blue-400"/> Quick Actions</h3>
+                 <Button size="sm" variant="secondary" className="w-full mb-2" onClick={handleSmartMix}>
+                    Auto-Mix (Ducking)
+                 </Button>
               </div>
            </div>
         )}
 
+        {activeTab === 'pro' && (
+            <div className="space-y-6">
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Activity size={14} className="text-green-400"/> Style Transfer</h3>
+                    <p className="text-xs text-gray-500 mb-3">Upload a reference audio file to clone its tone, pace, and emotion for the TTS engine.</p>
+                    <input type="file" ref={styleInputRef} className="hidden" onChange={handleUploadStyleRef} accept="audio/*" />
+                    <button 
+                        onClick={() => styleInputRef.current?.click()}
+                        className="w-full py-2 border border-dashed border-gray-600 rounded text-xs text-gray-400 hover:text-white hover:border-gray-400 flex items-center justify-center gap-2"
+                    >
+                         <Upload size={12} /> {styleReference ? "Update Reference" : "Upload Reference"}
+                    </button>
+                </div>
+
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                     <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2"><Zap size={14} className="text-yellow-400"/> Mastering</h3>
+                        <input type="checkbox" checked={mastering.enabled} onChange={(e) => setMastering(m => ({...m, enabled: e.target.checked}))} className="toggle" />
+                     </div>
+                     
+                     <div className={`space-y-3 ${!mastering.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                         <div>
+                             <label className="text-xs text-gray-400 flex justify-between mb-1"><span>Warmth</span> <span>{mastering.warmth}%</span></label>
+                             <input type="range" className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500" value={mastering.warmth} onChange={(e) => setMastering(m => ({...m, warmth: parseInt(e.target.value)}))} />
+                         </div>
+                         <div>
+                             <label className="text-xs text-gray-400 flex justify-between mb-1"><span>Clarity</span> <span>{mastering.clarity}%</span></label>
+                             <input type="range" className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500" value={mastering.clarity} onChange={(e) => setMastering(m => ({...m, clarity: parseInt(e.target.value)}))} />
+                         </div>
+                         <div>
+                             <label className="text-xs text-gray-400 flex justify-between mb-1"><span>Punch</span> <span>{mastering.punch}%</span></label>
+                             <input type="range" className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-500" value={mastering.punch} onChange={(e) => setMastering(m => ({...m, punch: parseInt(e.target.value)}))} />
+                         </div>
+                     </div>
+                </div>
+            </div>
+        )}
+
         {activeTab === 'cloning' && (
           <div className="space-y-6">
+             {/* ... Voice Cloning UI ... */}
              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 flex flex-col items-center text-center shadow-sm">
                 <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mb-4 border-4 border-gray-700 relative overflow-hidden">
                     <Mic size={32} className={isRecording ? "text-red-500 relative z-10" : "text-gray-500 relative z-10"} />
@@ -485,13 +612,12 @@ export const AudioStudio: React.FC = () => {
                         </div>
                     ))}
                 </div>
-                {voices.filter(v => v.isCloned).length === 0 && <p className="text-xs text-gray-600 italic text-center py-4">No clones created yet.</p>}
              </div>
           </div>
         )}
       </div>
 
-      {/* Main Timeline Area */}
+      {/* Main Timeline Area (Keep existing) */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
          {/* Top Control Bar */}
          <div className="h-14 border-b border-gray-800 bg-gray-900 flex items-center justify-between px-6 shadow-md z-10">
@@ -507,7 +633,7 @@ export const AudioStudio: React.FC = () => {
                </div>
             </div>
             <div className="flex gap-2">
-               <Button variant="secondary" size="sm"><Settings size={14} className="mr-2"/> Settings</Button>
+               <Button variant="ghost" size="sm" onClick={() => setShowAssets(!showAssets)}><LayoutTemplate size={14} className="mr-2"/> Assets</Button>
                <Button 
                   size="sm" 
                   onClick={handleExportMix}
@@ -520,9 +646,8 @@ export const AudioStudio: React.FC = () => {
          </div>
 
          {/* Visualizer */}
-         <div className="h-48 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-center relative overflow-hidden">
-            {/* Simulated Frequency Bars */}
-            <div className="flex gap-1 h-24 items-end">
+         <div className="h-32 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-center relative overflow-hidden">
+            <div className="flex gap-1 h-16 items-end">
                {[...Array(50)].map((_, i) => (
                   <div 
                     key={i} 
@@ -539,27 +664,45 @@ export const AudioStudio: React.FC = () => {
             {tracks.map((track, idx) => (
               <div key={track.id} className="flex items-center gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-300">
                  {/* Track Control Header */}
-                 <div className="w-56 bg-gray-900 border border-gray-800 rounded-lg p-3 flex items-center justify-between flex-shrink-0 shadow-md relative">
-                    <div>
-                       <div className="text-sm font-medium text-gray-200 truncate w-36">{track.name}</div>
-                       <div className="text-[10px] text-gray-500 flex items-center gap-1 uppercase tracking-wider mt-1">
-                          {track.type === 'music' ? <Music size={10}/> : <Volume2 size={10}/>}
-                          {track.type}
-                       </div>
+                 <div className="w-72 bg-gray-900 border border-gray-800 rounded-lg p-3 flex flex-col gap-2 flex-shrink-0 shadow-md relative">
+                    <div className="flex items-center justify-between">
+                        <div className="truncate w-32 text-sm font-medium text-gray-200">{track.name}</div>
+                        <div className="flex gap-1">
+                            {track.audioUrl && (
+                                <button onClick={() => handleTranscribe(track)} className="text-gray-600 hover:text-primary-400 p-1" title="Transcribe Audio" disabled={isTranscribing}>
+                                    {isTranscribing ? <Loader2 size={14} className="animate-spin"/> : <FileText size={14}/>}
+                                </button>
+                            )}
+                            <button onClick={() => handleDeleteTrack(track.id)} className="text-gray-600 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                        </div>
                     </div>
-                    <div className="flex gap-1">
-                        {track.audioUrl && (
-                            <button 
-                                onClick={() => handleTranscribe(track)}
-                                className="text-gray-600 hover:text-primary-400 p-1"
-                                title="Transcribe Audio"
-                                disabled={isTranscribing}
-                            >
-                                {isTranscribing ? <Loader2 size={14} className="animate-spin"/> : <FileText size={14}/>}
-                            </button>
-                        )}
-                       <button onClick={() => handleDeleteTrack(track.id)} className="text-gray-600 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                    
+                    {/* Mixer Controls */}
+                    <div className="flex items-center gap-2">
+                        <button 
+                           onClick={() => toggleMute(track.id)}
+                           className={`w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center transition-colors border ${track.muted ? 'bg-red-900/50 text-red-400 border-red-800' : 'bg-gray-800 text-gray-500 border-gray-700 hover:text-white'}`}
+                           title="Mute"
+                        >M</button>
+                        <button 
+                           onClick={() => toggleSolo(track.id)}
+                           className={`w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center transition-colors border ${track.solo ? 'bg-yellow-900/50 text-yellow-400 border-yellow-800' : 'bg-gray-800 text-gray-500 border-gray-700 hover:text-white'}`}
+                           title="Solo"
+                        >S</button>
+                        <div className="flex-1 flex items-center gap-2">
+                            <Volume2 size={12} className="text-gray-600" />
+                            <input 
+                              type="range" 
+                              min="0" 
+                              max="1" 
+                              step="0.1" 
+                              value={track.volume ?? 1.0}
+                              onChange={(e) => handleVolumeChange(track.id, parseFloat(e.target.value))}
+                              className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                            />
+                        </div>
                     </div>
+
                     {track.audioUrl && (
                       <audio 
                         ref={el => { if(el) audioRefs.current[track.id] = el; }} 
@@ -571,10 +714,11 @@ export const AudioStudio: React.FC = () => {
 
                  {/* Timeline Lane */}
                  <div 
-                   className="flex-1 h-14 bg-gray-900 rounded-lg relative overflow-hidden border border-gray-800 shadow-inner cursor-crosshair"
+                   className={`flex-1 h-20 rounded-lg relative overflow-hidden border shadow-inner cursor-crosshair transition-colors
+                     ${track.muted ? 'bg-gray-900 border-gray-800 opacity-50' : 'bg-gray-900 border-gray-800'}
+                   `}
                    ref={timelineRef}
                  >
-                    {/* Track Block (Draggable) */}
                     <div 
                       onMouseDown={(e) => handleTrackMouseDown(e, track)}
                       className={`absolute top-1 bottom-1 rounded-md border flex items-center px-3 transition-colors shadow-sm z-10
@@ -589,7 +733,7 @@ export const AudioStudio: React.FC = () => {
                     >
                        <div className="absolute left-0 w-2 h-full bg-black/20 cursor-ew-resize hover:bg-white/20"></div>
                        
-                       {/* Waveform graphic inside track */}
+                       {/* Waveform graphic */}
                        <div className="w-full h-full flex items-center gap-0.5 opacity-50 pointer-events-none">
                           {[...Array(20)].map((_, i) => (
                              <div key={i} className="w-1 rounded-full bg-white/50" style={{ height: `${20 + Math.random() * 60}%` }}></div>
@@ -625,6 +769,30 @@ export const AudioStudio: React.FC = () => {
             </div>
          </div>
       </div>
+
+      {/* Right Asset Sidebar */}
+      {showAssets && (
+          <div className="w-64 bg-gray-900 border-l border-gray-800 p-4 hidden md:flex flex-col transition-all">
+              <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Assets</h3>
+                  <button onClick={() => setShowAssets(false)} className="text-gray-500 hover:text-white"><X size={14}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-2">
+                  <div className="text-xs text-gray-600 mb-2">Drag to Timeline</div>
+                  {tracks.filter(t => t.audioUrl).map((t, i) => (
+                      <div 
+                        key={i} 
+                        className="bg-gray-800 p-2 rounded border border-gray-700 cursor-grab active:cursor-grabbing hover:border-primary-500"
+                        onClick={() => handleAddTrack(t)}
+                      >
+                          <div className="text-xs font-medium text-gray-300 truncate">{t.name}</div>
+                          <div className="text-[10px] text-gray-500">{formatTime(t.duration)}</div>
+                      </div>
+                  ))}
+                  {tracks.length === 0 && <div className="text-xs text-gray-600 italic">No assets available. Generate speech or record audio.</div>}
+              </div>
+          </div>
+      )}
     </div>
   );
 };

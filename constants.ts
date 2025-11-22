@@ -28,6 +28,49 @@ export const MOCK_PROJECTS: Project[] = [
   }
 ];
 
+export const PROJECT_TEMPLATES = [
+  { 
+    id: 't1', 
+    name: 'SaaS Starter Kit', 
+    type: ProjectType.REACT_WEB, 
+    description: 'Landing page, Auth, and Dashboard layout using Tailwind.', 
+    icon: 'Globe',
+    prompt: 'Create a SaaS starter kit with a landing page (Hero, Features, Pricing), authentication forms (Login/Signup), and a protected dashboard layout with a sidebar.' 
+  },
+  { 
+    id: 't2', 
+    name: 'E-commerce Store', 
+    type: ProjectType.REACT_WEB, 
+    description: 'Product grid, cart logic, and checkout flow.', 
+    icon: 'ShoppingBag',
+    prompt: 'Create an e-commerce store with a responsive product grid, a shopping cart state manager, and a checkout form with validation.' 
+  },
+  { 
+    id: 't3', 
+    name: 'Social Feed App', 
+    type: ProjectType.REACT_NATIVE, 
+    description: 'Scrollable feed with images, likes, and comments.', 
+    icon: 'Smartphone',
+    prompt: 'Create a mobile social media feed app using React Native. Include a scrollable FlatList of posts with images, a like button component, and a tab bar navigation.' 
+  },
+  { 
+    id: 't4', 
+    name: 'Fitness Tracker', 
+    type: ProjectType.REACT_NATIVE, 
+    description: 'Workout logger with progress charts.', 
+    icon: 'Activity',
+    prompt: 'Create a fitness tracking mobile app. Include a screen to log workouts (sets/reps), a timer component, and a summary screen showing weekly progress.' 
+  },
+  { 
+    id: 't5', 
+    name: 'REST API Boilerplate', 
+    type: ProjectType.NODE_API, 
+    description: 'Express server with Auth middleware and User CRUD.', 
+    icon: 'Server',
+    prompt: 'Create a production-ready REST API boilerplate using Express. Include authentication middleware (JWT), a User model, and CRUD routes for managing resources.' 
+  },
+];
+
 // Simplified template for Web Preview Compatibility
 export const WEB_FILE_TREE: FileNode[] = [
   {

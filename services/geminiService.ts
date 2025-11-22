@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { ProjectType } from "../types";
+import { ProjectType, Voice, ChatMessage, AuditIssue, PerformanceReport, ArchNode, ArchLink } from "../types";
 
 const getAiClient = () => {
   const apiKey = process.env.API_KEY || '';
@@ -14,7 +14,8 @@ export const generateCodeResponse = async (
   fileStructure: string,
   modelName: string,
   onStream: (chunk: string) => void,
-  imageData?: string // Base64 Data URI
+  imageData?: string, // Base64 Data URI
+  chatHistory: ChatMessage[] = []
 ) => {
   if (!process.env.API_KEY) {
     onStream("Error: No API Key found in environment variables.");
@@ -28,9 +29,11 @@ export const generateCodeResponse = async (
   // Determine actual model to use vs persona to simulate
   let targetModel = 'gemini-2.5-flash';
   let customPersona = '';
+  let thinkingBudget = 0;
 
-  if (modelName.startsWith('Gemini 2.5 Pro')) {
-    targetModel = 'gemini-2.0-pro-exp-02-05'; // Use experimental pro if available or fallback
+  if (modelName.startsWith('Gemini 2.5 Pro') || modelName.startsWith('gemini-3-pro')) {
+    targetModel = 'gemini-3-pro-preview';
+    thinkingBudget = 1024; // Enable thinking for complex tasks
   } else if (modelName.startsWith('Gemini 2.5 Flash')) {
     targetModel = 'gemini-2.5-flash';
   } else if (modelName) {
@@ -71,7 +74,24 @@ export const generateCodeResponse = async (
       \`\`\`
     `;
 
-    // Construct content parts
+    // Construct history for the chat session
+    const history = chatHistory
+        .filter(msg => msg.role === 'user' || msg.role === 'model')
+        .map(msg => ({
+            role: msg.role === 'model' ? 'model' : 'user',
+            parts: [{ text: msg.text }]
+        }));
+
+    const chat = ai.chats.create({
+      model: targetModel,
+      config: {
+        systemInstruction,
+        thinkingConfig: { thinkingBudget }
+      },
+      history: history as any
+    });
+
+    // Construct content parts for current message
     const parts: any[] = [{ text: prompt }];
     
     if (imageData) {
@@ -86,17 +106,7 @@ export const generateCodeResponse = async (
        });
     }
 
-    const chat = ai.chats.create({
-      model: targetModel,
-      config: {
-        systemInstruction,
-        thinkingConfig: { thinkingBudget: 0 }
-      }
-    });
-
     // Send message with content parts
-    // Note: chat.sendMessageStream accepts string | Part[] | Content[]
-    // We wrap parts in the correct structure expected by the SDK
     const result = await chat.sendMessageStream({ 
         message: { 
             role: 'user', 
@@ -157,6 +167,136 @@ export const generateProjectScaffold = async (prompt: string, type: ProjectType)
   }
 };
 
+export const generateProjectPlan = async (description: string, type: ProjectType): Promise<any[]> => {
+  if (!process.env.API_KEY) return [];
+  const ai = getAiClient();
+  
+  const systemInstruction = `You are a Technical Project Manager.
+  Create a phased development roadmap for a ${type} project described as: "${description}".
+  
+  Return raw JSON strictly matching this schema:
+  [
+    {
+      "id": "p1",
+      "title": "Phase 1: MVP Core",
+      "status": "pending",
+      "goals": ["Goal 1", "Goal 2"],
+      "tasks": [{"id": "t1", "text": "Setup Repo", "done": false}, ...]
+    }
+  ]
+  Create 3 distinct phases.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: "Generate roadmap.",
+        config: { systemInstruction, responseMimeType: 'application/json' }
+    });
+    return JSON.parse(response.text || '[]');
+  } catch(e) {
+    console.error("Plan Gen Error", e);
+    return [];
+  }
+};
+
+export const generateProjectDocs = async (fileStructure: string, type: ProjectType, onStream: (chunk: string) => void): Promise<void> => {
+    if (!process.env.API_KEY) {
+        onStream("# Error\nAPI Key missing.");
+        return;
+    }
+    const ai = getAiClient();
+    
+    const systemInstruction = `You are a Technical Writer.
+    Generate a professional README.md for a ${type} project with the following structure:
+    ${fileStructure}
+    
+    Include:
+    - Project Title & Description
+    - Features
+    - Tech Stack
+    - Installation & Setup
+    - Folder Structure Explanation
+    
+    Format using clean Markdown.
+    `;
+
+    try {
+        const result = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: "Generate documentation now.",
+            config: { systemInstruction }
+        });
+
+        for await (const chunk of result) {
+            if (chunk.text) onStream(chunk.text);
+        }
+    } catch (e: any) {
+        onStream(`Error generating docs: ${e.message}`);
+    }
+};
+
+export const runAgentFileTask = async (taskType: 'tests' | 'refactor' | 'docs', fileName: string, fileContent: string): Promise<string | null> => {
+    if (!process.env.API_KEY) return null;
+    const ai = getAiClient();
+
+    let systemInstruction = "";
+    let prompt = "";
+
+    if (taskType === 'tests') {
+        systemInstruction = "You are a QA Automation Engineer. Write a comprehensive unit test file for the provided component/code.";
+        prompt = `Generate a .test.tsx file for the following code. \nFilename: ${fileName}\nCode:\n${fileContent}\n\nReturn ONLY the code for the test file. Start with // filename: ...test.tsx`;
+    } else if (taskType === 'refactor') {
+        systemInstruction = "You are a Senior Refactoring Specialist. Improve the code quality, remove code smells, and ensure modern best practices.";
+        prompt = `Refactor the following file: ${fileName}.\nCode:\n${fileContent}\n\nReturn the full refactored code. Start with // filename: ${fileName}`;
+    } else if (taskType === 'docs') {
+        systemInstruction = "You are a Documentation Bot. Add JSDoc comments to all functions and classes.";
+        prompt = `Add detailed comments to this file: ${fileName}.\nCode:\n${fileContent}\n\nReturn the commented code. Start with // filename: ${fileName}`;
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { systemInstruction }
+        });
+        return response.text || null;
+    } catch (e) {
+        console.error("Agent Error:", e);
+        return null;
+    }
+};
+
+export const critiqueCode = async (code: string, task: string): Promise<any> => {
+  if (!process.env.API_KEY) return null;
+  const ai = getAiClient();
+  
+  const systemInstruction = `You are "Omni-Critic", a senior code reviewer and QA engineer.
+  Analyze the provided code against the requested task.
+  
+  Return raw JSON:
+  {
+    "score": number (0-100),
+    "issues": ["Critical security flaw...", "Performance bottleneck..."],
+    "suggestions": ["Use useMemo here...", "Add aria-label..."],
+    "nextPrompt": "A suggested prompt for the user to fix or improve the code."
+  }
+  
+  Be strict but constructive. Focus on best practices, accessibility, and clean code.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Task: ${task}\n\nCode:\n${code}`,
+        config: { systemInstruction, responseMimeType: 'application/json' }
+    });
+    return JSON.parse(response.text || '{}');
+  } catch(e) {
+    return null;
+  }
+};
+
 export const analyzeDataset = async (datasetSummary: string): Promise<string> => {
    if (!process.env.API_KEY) return "API Key missing.";
 
@@ -171,6 +311,47 @@ export const analyzeDataset = async (datasetSummary: string): Promise<string> =>
      return "Could not analyze dataset.";
    }
 }
+
+export const generateSyntheticData = async (topic: string, count: number, onStream: (chunk: string) => void): Promise<void> => {
+    if (!process.env.API_KEY) {
+        onStream("Error: API Key missing.");
+        return;
+    }
+    
+    const ai = getAiClient();
+    const systemInstruction = `You are an Expert Data Scientist.
+    Generate a high-quality synthetic dataset for Fine-Tuning a Large Language Model (LLM) on the topic: "${topic}".
+    
+    Format: JSONL (JSON Lines).
+    Each line must be a valid JSON object with this structure:
+    {"messages": [{"role": "user", "content": "..."}, {"role": "model", "content": "..."}]}
+    
+    Rules:
+    1. Generate exactly ${count} examples.
+    2. Ensure diversity in the user prompts.
+    3. Ensure high accuracy and helpfulness in the model responses.
+    4. Output ONLY the JSONL data. No markdown, no intros.
+    `;
+
+    try {
+        const result = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: `Generate the ${count} examples now.`,
+            config: {
+                systemInstruction,
+                temperature: 0.8
+            }
+        });
+
+        for await (const chunk of result) {
+            if (chunk.text) {
+                onStream(chunk.text);
+            }
+        }
+    } catch (error: any) {
+        onStream(`Error generating data: ${error.message}`);
+    }
+};
 
 export const generateSocialContent = async (
   topic: string,
@@ -213,7 +394,7 @@ export const generateSocialContent = async (
   }
 };
 
-export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<string | null> => {
+export const generateSpeech = async (text: string, voice: Voice, styleReference?: string): Promise<string | null> => {
   if (!process.env.API_KEY) {
     console.warn("No API Key for Speech Generation");
     return null;
@@ -221,14 +402,35 @@ export const generateSpeech = async (text: string, voiceName: string = 'Kore'): 
 
   const ai = getAiClient();
   try {
+    // Smart Voice Selection
+    let apiVoiceName = voice.apiMapping || 'Kore'; // Default fallback
+    
+    if (!voice.apiMapping) {
+       // Heuristic mapping if not set
+       if (voice.gender === 'male') apiVoiceName = 'Orion'; // or Fenrir
+       else if (voice.gender === 'female') apiVoiceName = 'Nova'; // or Aoede
+       else apiVoiceName = 'Puck';
+    }
+    
+    // Enhance text with directions for cloned or styled voices
+    let directionPrefix = "";
+    if (voice.isCloned) {
+       directionPrefix += `(In the style of ${voice.name}, mirroring user recording tone) `;
+    }
+    if (styleReference) {
+       directionPrefix += `(${styleReference}) `;
+    }
+    
+    const finalText = directionPrefix ? `${directionPrefix} ${text}` : text;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: finalText }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceName as any },
+              prebuiltVoiceConfig: { voiceName: apiVoiceName as any },
             },
         },
       },
@@ -242,7 +444,7 @@ export const generateSpeech = async (text: string, voiceName: string = 'Kore'): 
   }
 };
 
-export const generateImage = async (prompt: string): Promise<string | null> => {
+export const generateImage = async (prompt: string, stylePrompt?: string): Promise<string | null> => {
   if (!process.env.API_KEY) {
     console.warn("No API Key for Image Generation");
     return null;
@@ -250,10 +452,13 @@ export const generateImage = async (prompt: string): Promise<string | null> => {
 
   const ai = getAiClient();
   try {
+    // Enhance prompt with style reference if available
+    const finalPrompt = stylePrompt ? `${prompt}. Style and aesthetic matching: ${stylePrompt}` : prompt;
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [{ text: prompt }],
+        parts: [{ text: finalPrompt }],
       },
     });
     
@@ -266,6 +471,32 @@ export const generateImage = async (prompt: string): Promise<string | null> => {
     return null;
   } catch (error) {
     console.error("Image Generation Error:", error);
+    return null;
+  }
+}
+
+export const editImage = async (base64Image: string, editPrompt: string): Promise<string | null> => {
+  if (!process.env.API_KEY) return null;
+  const ai = getAiClient();
+  try {
+    const cleanData = base64Image.split(',').pop() || base64Image;
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+            parts: [
+                { inlineData: { mimeType: 'image/png', data: cleanData } },
+                { text: `Redraw this image exactly but make the following change: ${editPrompt}` }
+            ]
+        }
+    });
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+             return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        }
+    }
+    return null;
+  } catch (e) {
+    console.error("Edit Image Error:", e);
     return null;
   }
 }
@@ -289,8 +520,6 @@ export const generateVideo = async (prompt: string, inputImage?: string): Promis
     };
 
     if (inputImage) {
-      // inputImage is expected to be a data URI: data:image/png;base64,...
-      // We need to split it to get the mimeType and the data
       const [meta, data] = inputImage.split(',');
       const mimeType = meta.match(/:(.*?);/)?.[1] || 'image/png';
       request.image = {
@@ -313,7 +542,6 @@ export const generateVideo = async (prompt: string, inputImage?: string): Promis
       throw new Error("No video URI found in response");
     }
 
-    // The response.body contains the MP4 bytes. You must append an API key when fetching from the download link.
     const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
     if (!response.ok) {
        throw new Error("Failed to download video bytes");
@@ -332,7 +560,6 @@ export const transcribeAudio = async (audioBase64: string): Promise<string> => {
   
   const ai = getAiClient();
   try {
-    // Strip data URI prefix if present
     const base64Data = audioBase64.split(',').pop() || audioBase64;
 
     const response = await ai.models.generateContent({
@@ -350,6 +577,166 @@ export const transcribeAudio = async (audioBase64: string): Promise<string> => {
     return "Error transcribing audio.";
   }
 }
+
+export const analyzeMediaStyle = async (base64Data: string, type: 'image' | 'audio'): Promise<string> => {
+    if (!process.env.API_KEY) return "";
+    const ai = getAiClient();
+    
+    const mimeType = type === 'image' ? 'image/png' : 'audio/webm'; // Simplified assumption
+    const cleanData = base64Data.split(',').pop() || base64Data;
+
+    const prompt = type === 'image' 
+        ? "Analyze the artistic style, lighting, color palette, and mood of this image. Provide a concise style description I can use to generate similar images."
+        : "Analyze the tone, emotion, pace, and background ambience of this audio. Provide a concise style description I can use for TTS generation.";
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType, data: cleanData } },
+                    { text: prompt }
+                ]
+            }
+        });
+        return response.text || "Analysis failed.";
+    } catch (e) {
+        console.error("Style Analysis Error:", e);
+        return "";
+    }
+};
+
+export const analyzeCharacterFeatures = async (base64Image: string): Promise<string> => {
+    if (!process.env.API_KEY) return "";
+    const ai = getAiClient();
+    const cleanData = base64Image.split(',').pop() || base64Image;
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/png', data: cleanData } },
+                    { text: "Describe the physical features of the character in this image in detail (hair style/color, eye color, clothing, age, accessories, facial structure) so I can recreate them in other scenes." }
+                ]
+            }
+        });
+        return response.text || "A generic character.";
+    } catch (e) {
+        console.error("Character Analysis Error:", e);
+        return "A generic character.";
+    }
+};
+
+export const removeBackground = async (imageBase64: string): Promise<string | null> => {
+    // Mock implementation
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return imageBase64; 
+};
+
+export const generateSQL = async (description: string, schemaContext: string): Promise<string> => {
+  if (!process.env.API_KEY) return "-- API Key missing";
+  const ai = getAiClient();
+  try {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Generate a SQL query for PostgreSQL based on this request: "${description}".\n\nSchema Context:\n${schemaContext}\n\nReturn ONLY the raw SQL code, no markdown.`,
+    });
+    return response.text || "";
+  } catch (e) {
+    return "-- Error generating SQL";
+  }
+};
+
+export const generateTerminalCommand = async (userInput: string, projectType: string): Promise<string> => {
+    if (!process.env.API_KEY) return "echo 'API Key Missing'";
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Translate this user request into a single valid shell command (npm, git, ls, cd, etc) for a ${projectType} project: "${userInput}".\n\nReturn ONLY the command, no explanation.`,
+        });
+        return (response.text || "").trim().replace(/```/g, '').trim();
+    } catch (e) {
+        return "echo 'Error generating command'";
+    }
+};
+
+export const runSecurityAudit = async (fileStructure: string, packageJson: string): Promise<AuditIssue[]> => {
+    if (!process.env.API_KEY) return [];
+    const ai = getAiClient();
+    const systemInstruction = `You are a Senior Security Engineer. Audit the provided project context.
+    Return a JSON array of issues: { id: string, severity: 'critical'|'high'|'medium'|'low', title: string, description: string, file?: string, line?: number }.
+    Check for:
+    1. Vulnerable dependencies in package.json
+    2. Exposed secrets (API keys, tokens)
+    3. Insecure coding practices
+    4. Misconfigurations
+    `;
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Audit this project.\n\nFile Structure:\n${fileStructure}\n\npackage.json:\n${packageJson}`,
+            config: { systemInstruction, responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || '[]');
+    } catch (e) {
+        return [];
+    }
+};
+
+export const generatePerformanceReport = async (fileStructure: string): Promise<PerformanceReport> => {
+    if (!process.env.API_KEY) return { scores: { performance: 0, accessibility: 0, bestPractices: 0, seo: 0 }, opportunities: [] };
+    const ai = getAiClient();
+    
+    const systemInstruction = `You are a Google Lighthouse Audit expert. Analyze the project structure and suggest optimizations.
+    Return a JSON object matching the PerformanceReport interface:
+    {
+      "scores": { "performance": number(0-100), "accessibility": number, "bestPractices": number, "seo": number },
+      "opportunities": [{ "title": string, "description": string, "savings": string }]
+    }
+    Simulate realistic scores based on a typical React app structure.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Analyze this project structure for performance issues:\n${fileStructure}`,
+            config: { systemInstruction, responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || '{}');
+    } catch (e) {
+        return { scores: { performance: 0, accessibility: 0, bestPractices: 0, seo: 0 }, opportunities: [] };
+    }
+};
+
+export const generateArchitecture = async (description: string): Promise<{nodes: ArchNode[], links: ArchLink[]}> => {
+    if (!process.env.API_KEY) return { nodes: [], links: [] };
+    const ai = getAiClient();
+    const systemInstruction = `You are a System Architect.
+    Generate a JSON object representing a system architecture diagram for the following description: "${description}".
+    
+    Output format:
+    {
+      "nodes": [{ "id": "n1", "type": "frontend"|"backend"|"database"|"auth"|"storage"|"function", "label": "React App", "x": 100, "y": 100, "details": "Host on Vercel" }],
+      "links": [{ "id": "l1", "source": "n1", "target": "n2" }]
+    }
+    
+    Include at least 3-5 nodes spread out (x between 0-600, y between 0-400).
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: "Generate architecture.",
+            config: { systemInstruction, responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || '{"nodes":[], "links":[]}');
+    } catch (e) {
+        return { nodes: [], links: [] };
+    }
+};
 
 export const testFineTunedModel = async (
   modelName: string,

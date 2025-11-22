@@ -6,9 +6,10 @@ import { Settings } from './components/Settings';
 import { AudioStudio } from './components/AudioStudio';
 import { MediaStudio } from './components/MediaStudio';
 import { Login } from './components/Login';
-import { AppView, Project, ProjectType, SocialPost, AudioTrack, FileNode } from './types';
-import { MOCK_PROJECTS, MOCK_SOCIAL_POSTS, WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE } from './constants';
-import { LayoutGrid, Code, Settings as SettingsIcon, Zap, Plus, Search, X, Smartphone, Globe, Server, Trash2, LogOut, Music, Clapperboard, Youtube, Twitter, Instagram, Film, Volume2, Wand2, Loader2, Rocket } from 'lucide-react';
+import { Dashboard } from './components/Dashboard';
+import { AppView, Project, ProjectType, FileNode } from './types';
+import { MOCK_PROJECTS, WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, PROJECT_TEMPLATES } from './constants';
+import { LayoutGrid, Code, Settings as SettingsIcon, Zap, X, Globe, Smartphone, Server, LogOut, Music, Clapperboard, Wand2, Loader2, Rocket, Menu, ShoppingBag, Activity } from 'lucide-react';
 import { Button } from './components/Button';
 import { generateProjectScaffold } from './services/geminiService';
 
@@ -17,6 +18,7 @@ const App: React.FC = () => {
     return localStorage.getItem('omni_auth') === 'true';
   });
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Initialize projects from localStorage or fallback to mock
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -109,75 +111,99 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNavClick = (view: AppView) => {
+      if (view === AppView.WORKSPACE && !selectedProject) {
+          alert("Please select a project from the dashboard first.");
+          return;
+      }
+      setCurrentView(view);
+      setIsMobileMenuOpen(false);
+  };
+
   // Sidebar Navigation
   const Sidebar = () => (
-    <div className="w-16 bg-gray-950 border-r border-gray-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0">
-      <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg mb-4">
-        <Zap className="text-white" size={24} fill="currentColor" />
-      </div>
+    <>
+        {/* Mobile Overlay */}
+        {isMobileMenuOpen && (
+            <div 
+                className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
+                onClick={() => setIsMobileMenuOpen(false)}
+            />
+        )}
 
-      <NavIcon 
-        icon={<LayoutGrid size={20} />} 
-        active={currentView === AppView.DASHBOARD} 
-        onClick={() => setCurrentView(AppView.DASHBOARD)} 
-        label="Dashboard"
-      />
-      <NavIcon 
-        icon={<Code size={20} />} 
-        active={currentView === AppView.WORKSPACE} 
-        onClick={() => {
-             if (selectedProject) setCurrentView(AppView.WORKSPACE);
-             else alert("Please select a project from the dashboard first.");
-        }} 
-        label="Workspace"
-      />
-      <div className="w-8 border-t border-gray-800 my-1"></div>
-      <NavIcon 
-        icon={<Zap size={20} />} 
-        active={currentView === AppView.FINETUNE} 
-        onClick={() => setCurrentView(AppView.FINETUNE)} 
-        label="Fine-Tune"
-      />
-      <NavIcon 
-        icon={<Music size={20} />} 
-        active={currentView === AppView.AUDIO} 
-        onClick={() => setCurrentView(AppView.AUDIO)} 
-        label="Audio Studio"
-      />
-      <NavIcon 
-        icon={<Clapperboard size={20} />} 
-        active={currentView === AppView.MEDIA} 
-        onClick={() => setCurrentView(AppView.MEDIA)} 
-        label="Media Studio"
-      />
-      
-      <div className="mt-auto flex flex-col gap-4">
-        <NavIcon 
-          icon={<SettingsIcon size={20} />} 
-          active={currentView === AppView.SETTINGS} 
-          onClick={() => setCurrentView(AppView.SETTINGS)} 
-          label="Settings"
-        />
-        <button 
-          onClick={handleLogout}
-          className="p-3 rounded-xl text-gray-500 hover:bg-red-900/20 hover:text-red-400 transition-all"
-          title="Sign Out"
-        >
-          <LogOut size={20} />
-        </button>
-      </div>
-    </div>
+        <div className={`
+            fixed md:relative top-0 left-0 h-full w-64 md:w-16 bg-gray-950 border-r border-gray-800 
+            flex flex-col items-center py-4 gap-4 z-50 transition-transform duration-300 flex-shrink-0
+            ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}>
+            <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg mb-4 flex-shrink-0">
+                <Zap className="text-white" size={24} fill="currentColor" />
+            </div>
+
+            <div className="flex flex-col gap-4 w-full px-2 md:px-0 items-center">
+                <NavIcon 
+                    icon={<LayoutGrid size={20} />} 
+                    active={currentView === AppView.DASHBOARD} 
+                    onClick={() => handleNavClick(AppView.DASHBOARD)} 
+                    label="Dashboard"
+                />
+                <NavIcon 
+                    icon={<Code size={20} />} 
+                    active={currentView === AppView.WORKSPACE} 
+                    onClick={() => handleNavClick(AppView.WORKSPACE)} 
+                    label="Workspace"
+                />
+                <div className="w-8 border-t border-gray-800 my-1"></div>
+                <NavIcon 
+                    icon={<Zap size={20} />} 
+                    active={currentView === AppView.FINETUNE} 
+                    onClick={() => handleNavClick(AppView.FINETUNE)} 
+                    label="Fine-Tune"
+                />
+                <NavIcon 
+                    icon={<Music size={20} />} 
+                    active={currentView === AppView.AUDIO} 
+                    onClick={() => handleNavClick(AppView.AUDIO)} 
+                    label="Audio Studio"
+                />
+                <NavIcon 
+                    icon={<Clapperboard size={20} />} 
+                    active={currentView === AppView.MEDIA} 
+                    onClick={() => handleNavClick(AppView.MEDIA)} 
+                    label="Media Studio"
+                />
+            </div>
+            
+            <div className="mt-auto flex flex-col gap-4 w-full px-2 md:px-0 items-center">
+                <NavIcon 
+                    icon={<SettingsIcon size={20} />} 
+                    active={currentView === AppView.SETTINGS} 
+                    onClick={() => handleNavClick(AppView.SETTINGS)} 
+                    label="Settings"
+                />
+                <button 
+                    onClick={handleLogout}
+                    className="p-3 rounded-xl text-gray-500 hover:bg-red-900/20 hover:text-red-400 transition-all md:w-auto w-full flex items-center justify-center md:block"
+                    title="Sign Out"
+                >
+                    <LogOut size={20} />
+                    <span className="md:hidden ml-3 text-sm font-medium">Sign Out</span>
+                </button>
+            </div>
+        </div>
+    </>
   );
 
   const NavIcon = ({ icon, active, onClick, label }: any) => (
     <button 
       onClick={onClick}
-      className={`p-3 rounded-xl transition-all duration-200 group relative ${
+      className={`p-3 rounded-xl transition-all duration-200 group relative flex items-center w-full md:w-auto justify-start md:justify-center ${
         active ? 'bg-gray-800 text-primary-500' : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'
       }`}
     >
       {icon}
-      <span className="absolute left-14 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none border border-gray-700 shadow-xl">
+      <span className="md:hidden ml-3 text-sm font-medium">{label}</span>
+      <span className="hidden md:block absolute left-14 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none border border-gray-700 shadow-xl">
         {label}
       </span>
     </button>
@@ -188,6 +214,7 @@ const App: React.FC = () => {
     const [type, setType] = useState<ProjectType>(ProjectType.REACT_WEB);
     const [description, setDescription] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [mode, setMode] = useState<'blank' | 'templates'>('blank');
 
     const handleCreate = async () => {
         if (description) setIsGenerating(true);
@@ -195,98 +222,127 @@ const App: React.FC = () => {
         setIsGenerating(false);
     };
 
+    const handleTemplateSelect = (t: any) => {
+        setName(t.name);
+        setType(t.type);
+        setDescription(t.prompt);
+        setMode('blank'); // Switch to review
+    };
+
+    const getTemplateIcon = (icon: string) => {
+        if (icon === 'Globe') return <Globe size={18} />;
+        if (icon === 'Smartphone') return <Smartphone size={18} />;
+        if (icon === 'Server') return <Server size={18} />;
+        if (icon === 'ShoppingBag') return <ShoppingBag size={18} />;
+        if (icon === 'Activity') return <Activity size={18} />;
+        return <Code size={18} />;
+    };
+
     return (
-      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold text-white">Create New Project</h2>
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="flex justify-between items-center p-6 border-b border-gray-800 shrink-0">
+            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <Rocket className="text-primary-500" size={24}/> Create New Project
+            </h2>
             <button onClick={() => setShowNewProjectModal(false)} className="text-gray-500 hover:text-white">
               <X size={20} />
             </button>
           </div>
           
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">Project Name</label>
-              <input 
-                type="text" 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Super App" 
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary-500 focus:outline-none" 
-                autoFocus
-              />
+          <div className="p-6 overflow-y-auto">
+            <div className="flex gap-4 mb-6">
+                <button onClick={() => setMode('blank')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'blank' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>Start from Scratch</button>
+                <button onClick={() => setMode('templates')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'templates' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>Browse Templates</button>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Project Type</label>
-              <div className="grid grid-cols-1 gap-3">
-                <button 
-                  onClick={() => setType(ProjectType.REACT_WEB)}
-                  className={`flex items-center p-3 rounded-lg border transition-all ${
-                    type === ProjectType.REACT_WEB ? 'bg-primary-900/20 border-primary-500 ring-1 ring-primary-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                  }`}
-                >
-                  <div className={`p-2 rounded-md mr-3 ${type === ProjectType.REACT_WEB ? 'bg-primary-500 text-white' : 'bg-gray-700 text-gray-400'}`}>
-                    <Globe size={18} />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-white">React Web</div>
-                    <div className="text-xs text-gray-500">Next.js, Tailwind, WebContainers</div>
-                  </div>
-                </button>
+            {mode === 'templates' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {PROJECT_TEMPLATES.map(t => (
+                        <div key={t.id} onClick={() => handleTemplateSelect(t)} className="bg-gray-800 border border-gray-700 rounded-xl p-4 cursor-pointer hover:border-primary-500 hover:shadow-lg hover:shadow-primary-900/20 transition-all group">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="p-2 bg-gray-700 rounded-lg text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-colors">
+                                    {getTemplateIcon(t.icon)}
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-white">{t.name}</h3>
+                                    <span className="text-[10px] text-gray-500 bg-gray-900 px-2 py-0.5 rounded border border-gray-700">{t.type}</span>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400">{t.description}</p>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="space-y-6">
+                    <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Project Name</label>
+                    <input 
+                        type="text" 
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g., Super App" 
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary-500 focus:outline-none" 
+                        autoFocus
+                    />
+                    </div>
 
-                <button 
-                  onClick={() => setType(ProjectType.REACT_NATIVE)}
-                  className={`flex items-center p-3 rounded-lg border transition-all ${
-                    type === ProjectType.REACT_NATIVE ? 'bg-primary-900/20 border-primary-500 ring-1 ring-primary-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                  }`}
-                >
-                  <div className={`p-2 rounded-md mr-3 ${type === ProjectType.REACT_NATIVE ? 'bg-purple-500 text-white' : 'bg-gray-700 text-gray-400'}`}>
-                    <Smartphone size={18} />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-white">React Native</div>
-                    <div className="text-xs text-gray-500">Expo, Mobile Simulator, iOS/Android</div>
-                  </div>
-                </button>
-                
-                <button 
-                  onClick={() => setType(ProjectType.NODE_API)}
-                  className={`flex items-center p-3 rounded-lg border transition-all ${
-                    type === ProjectType.NODE_API ? 'bg-primary-900/20 border-primary-500 ring-1 ring-primary-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                  }`}
-                >
-                   <div className={`p-2 rounded-md mr-3 ${type === ProjectType.NODE_API ? 'bg-green-500 text-white' : 'bg-gray-700 text-gray-400'}`}>
-                    <Server size={18} />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-white">Node.js API</div>
-                    <div className="text-xs text-gray-500">Express, REST APIs, Microservices</div>
-                  </div>
-                </button>
-              </div>
-            </div>
+                    <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Framework</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button 
+                        onClick={() => setType(ProjectType.REACT_WEB)}
+                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
+                            type === ProjectType.REACT_WEB ? 'bg-primary-900/20 border-primary-500 ring-1 ring-primary-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                        }`}
+                        >
+                        <Globe size={24} className={type === ProjectType.REACT_WEB ? 'text-primary-500 mb-2' : 'text-gray-500 mb-2'} />
+                        <div className="text-sm font-medium text-white">React Web</div>
+                        </button>
 
-            <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1 flex items-center gap-2">
-                    <Wand2 size={14} className="text-primary-400" /> 
-                    AI Description (Optional)
-                </label>
-                <textarea 
-                   value={description}
-                   onChange={(e) => setDescription(e.target.value)}
-                   placeholder="Describe your app (e.g., 'A minimalist Todo app with dark mode and local storage'). Leave empty for default template."
-                   className="w-full h-20 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:border-primary-500 focus:outline-none resize-none"
-                />
-            </div>
+                        <button 
+                        onClick={() => setType(ProjectType.REACT_NATIVE)}
+                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
+                            type === ProjectType.REACT_NATIVE ? 'bg-purple-900/20 border-purple-500 ring-1 ring-purple-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                        }`}
+                        >
+                        <Smartphone size={24} className={type === ProjectType.REACT_NATIVE ? 'text-purple-500 mb-2' : 'text-gray-500 mb-2'} />
+                        <div className="text-sm font-medium text-white">React Native</div>
+                        </button>
+                        
+                        <button 
+                        onClick={() => setType(ProjectType.NODE_API)}
+                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
+                            type === ProjectType.NODE_API ? 'bg-green-900/20 border-green-500 ring-1 ring-green-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                        }`}
+                        >
+                        <Server size={24} className={type === ProjectType.NODE_API ? 'text-green-500 mb-2' : 'text-gray-500 mb-2'} />
+                        <div className="text-sm font-medium text-white">Node.js API</div>
+                        </button>
+                    </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-400 mb-1 flex items-center gap-2">
+                            <Wand2 size={14} className="text-primary-400" /> 
+                            AI Blueprint (Optional)
+                        </label>
+                        <textarea 
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Describe your app (e.g., 'A minimalist Todo app with dark mode and local storage'). We will generate the initial file structure."
+                        className="w-full h-32 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:border-primary-500 focus:outline-none resize-none"
+                        />
+                    </div>
+                </div>
+            )}
           </div>
 
-          <div className="mt-8 flex gap-3">
-             <Button variant="secondary" className="flex-1" onClick={() => setShowNewProjectModal(false)}>Cancel</Button>
-             <Button className="flex-1" onClick={handleCreate} disabled={isGenerating}>
+          <div className="p-6 border-t border-gray-800 bg-gray-850 flex gap-3 justify-end shrink-0">
+             <Button variant="secondary" onClick={() => setShowNewProjectModal(false)}>Cancel</Button>
+             <Button onClick={handleCreate} disabled={isGenerating || !name}>
                 {isGenerating ? <Loader2 size={16} className="animate-spin mr-2" /> : <Rocket size={16} className="mr-2" />}
-                {isGenerating ? 'Designing...' : 'Create & Open'}
+                {isGenerating ? 'Architecting...' : 'Initialize Project'}
              </Button>
           </div>
         </div>
@@ -294,193 +350,45 @@ const App: React.FC = () => {
     );
   }
 
-  const Dashboard = () => {
-    const [activeTab, setActiveTab] = useState<'all' | 'code' | 'media' | 'audio'>('all');
-    const [recentMedia, setRecentMedia] = useState<SocialPost[]>([]);
-    const [recentAudio, setRecentAudio] = useState<AudioTrack[]>([]);
-
-    useEffect(() => {
-       const savedMedia = localStorage.getItem('omni_social_posts');
-       if (savedMedia) setRecentMedia(JSON.parse(savedMedia));
-       else setRecentMedia(MOCK_SOCIAL_POSTS); // Fallback to mock for demo
-       
-       const savedAudio = localStorage.getItem('omni_audio_tracks');
-       if (savedAudio) setRecentAudio(JSON.parse(savedAudio));
-    }, []);
-
-    return (
-      <div className="flex-1 bg-gray-950 overflow-y-auto p-8 w-full">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-between items-end mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-white mb-2">Welcome back, Creator</h1>
-              <p className="text-gray-400">Unified control center for your Code, Media, and Audio projects.</p>
-            </div>
-            <div className="flex gap-2">
-               <Button onClick={() => { setCurrentView(AppView.MEDIA) }} variant="secondary">
-                 <Clapperboard size={16} className="mr-2" /> New Content
-               </Button>
-               <Button onClick={() => setShowNewProjectModal(true)}>
-                 <Plus size={16} className="mr-2" /> New Code Project
-               </Button>
-            </div>
-          </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-             <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                <div className="text-gray-500 text-sm font-medium mb-1">Active Projects</div>
-                <div className="text-2xl font-bold text-white">{projects.length} <span className="text-sm text-gray-500 font-normal">Code</span></div>
-             </div>
-             <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                <div className="text-gray-500 text-sm font-medium mb-1">Social Reach</div>
-                <div className="text-2xl font-bold text-white">{recentMedia.length} <span className="text-sm text-gray-500 font-normal">Posts</span></div>
-             </div>
-             <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                <div className="text-gray-500 text-sm font-medium mb-1">Audio Assets</div>
-                <div className="text-2xl font-bold text-white">{recentAudio.length} <span className="text-sm text-gray-500 font-normal">Tracks</span></div>
-             </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex gap-6 mb-6 border-b border-gray-800">
-             {['all', 'code', 'media', 'audio'].map(tab => (
-                <button 
-                  key={tab}
-                  onClick={() => setActiveTab(tab as any)}
-                  className={`pb-3 text-sm font-medium capitalize transition-colors relative ${activeTab === tab ? 'text-primary-500' : 'text-gray-500 hover:text-white'}`}
-                >
-                   {tab === 'all' ? 'All Projects' : tab}
-                   {activeTab === tab && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary-500 rounded-t-full"></div>}
-                </button>
-             ))}
-          </div>
-
-          {/* Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {(activeTab === 'all' || activeTab === 'code') && projects.map(project => (
-              <div 
-                key={project.id} 
-                onClick={() => handleProjectSelect(project)}
-                className="group bg-gray-900 border border-gray-800 rounded-xl p-6 cursor-pointer hover:border-primary-600/50 hover:shadow-2xl hover:shadow-primary-900/20 transition-all duration-300 relative overflow-hidden"
-              >
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <div className="flex justify-between items-start mb-4">
-                   <div className={`p-2 rounded-lg ${
-                      project.type === ProjectType.REACT_NATIVE ? 'bg-purple-900/30 text-purple-400' : 
-                      project.type === ProjectType.NODE_API ? 'bg-green-900/30 text-green-400' :
-                      'bg-blue-900/30 text-blue-400'
-                   }`}>
-                       {project.type === ProjectType.REACT_NATIVE ? <Smartphone size={20} /> : 
-                        project.type === ProjectType.NODE_API ? <Server size={20} /> : 
-                        <Globe size={20} />}
-                   </div>
-                   <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">{project.lastModified}</span>
-                      <button 
-                        onClick={(e) => handleDeleteProject(e, project.id)}
-                        className="text-gray-600 hover:text-red-400 transition-colors p-1"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                   </div>
-                </div>
-                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-primary-400 transition-colors">{project.name}</h3>
-                <p className="text-sm text-gray-400 mb-4 line-clamp-2">{project.description}</p>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                   <span className="px-2 py-1 bg-gray-800 rounded border border-gray-700">{project.type}</span>
-                   <span>•</span>
-                   <span>{project.fileCount} files</span>
-                </div>
-              </div>
-            ))}
-
-            {(activeTab === 'all' || activeTab === 'media') && recentMedia.map(post => (
-              <div 
-                key={post.id} 
-                onClick={() => setCurrentView(AppView.MEDIA)}
-                className="group bg-gray-900 border border-gray-800 rounded-xl p-0 cursor-pointer hover:border-pink-600/50 hover:shadow-2xl hover:shadow-pink-900/20 transition-all duration-300 relative overflow-hidden flex flex-col"
-              >
-                <div className="h-32 w-full bg-gray-800 relative overflow-hidden">
-                    {post.thumbnail ? (
-                        <img src={post.thumbnail} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="thumb" />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
-                           <Clapperboard className="text-gray-600" size={32} />
-                        </div>
-                    )}
-                    <div className={`absolute top-3 right-3 p-1.5 rounded-lg bg-black/50 backdrop-blur ${
-                        post.platform === 'youtube' ? 'text-red-400' : 
-                        post.platform === 'twitter' ? 'text-blue-400' : 
-                        'text-pink-400'
-                    }`}>
-                        {post.platform === 'youtube' && <Youtube size={16} />}
-                        {post.platform === 'twitter' && <Twitter size={16} />}
-                        {post.platform === 'tiktok' && <Film size={16} />}
-                        {post.platform === 'instagram' && <Instagram size={16} />}
-                    </div>
-                </div>
-                <div className="p-5 flex-1 flex flex-col">
-                   <h3 className="text-md font-semibold text-white mb-2 group-hover:text-pink-400 transition-colors line-clamp-1">{post.title}</h3>
-                   <div className="mt-auto flex justify-between items-center">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold ${
-                          post.status === 'uploaded' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'
-                      }`}>
-                         {post.status}
-                      </span>
-                      {post.views && <span className="text-xs text-gray-500">{post.views} views</span>}
-                   </div>
-                </div>
-              </div>
-            ))}
-
-            {(activeTab === 'all' || activeTab === 'audio') && recentAudio.map(track => (
-               <div 
-                 key={track.id}
-                 onClick={() => setCurrentView(AppView.AUDIO)}
-                 className="group bg-gray-900 border border-gray-800 rounded-xl p-6 cursor-pointer hover:border-purple-600/50 hover:shadow-2xl hover:shadow-purple-900/20 transition-all duration-300 relative overflow-hidden"
-               >
-                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-600 to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                 <div className="flex justify-between items-start mb-4">
-                    <div className="p-2 rounded-lg bg-purple-900/30 text-purple-400">
-                        {track.type === 'music' ? <Music size={20} /> : <Volume2 size={20} />}
-                    </div>
-                    <div className="flex items-center gap-1 text-gray-500">
-                       <div className="flex gap-0.5 h-4 items-end">
-                          {[1,2,3,4,5].map(i => <div key={i} className="w-0.5 bg-gray-600" style={{height: `${Math.random() * 100}%`}}></div>)}
-                       </div>
-                    </div>
-                 </div>
-                 <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-purple-400 transition-colors truncate">{track.name}</h3>
-                 <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <span className="capitalize">{track.type}</span>
-                    <span>•</span>
-                    <span>{Math.floor(track.duration)}s</span>
-                 </div>
-               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
   }
 
   return (
-    <div className="flex h-screen w-screen bg-gray-950 text-gray-100 font-sans selection:bg-primary-500/30 overflow-hidden">
+    <div className="flex h-screen w-screen bg-gray-950 text-gray-100 font-sans selection:bg-primary-500/30 overflow-hidden flex-col md:flex-row">
+      {/* Mobile Top Bar */}
+      <div className="md:hidden h-14 border-b border-gray-800 flex items-center px-4 bg-gray-950 sticky top-0 z-40 justify-between shrink-0">
+         <div className="flex items-center">
+             <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-400 -ml-2">
+               <Menu size={24} />
+             </button>
+             <span className="ml-2 font-bold text-white">Omni-Studio</span>
+         </div>
+         {currentView !== AppView.DASHBOARD && (
+             <span className="text-xs font-mono text-primary-400 bg-primary-900/20 px-2 py-1 rounded">{currentView}</span>
+         )}
+      </div>
+
       <Sidebar />
       
       {showNewProjectModal && <NewProjectModal />}
       
-      {currentView === AppView.DASHBOARD && <Dashboard />}
-      {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} />}
-      {currentView === AppView.FINETUNE && <FineTuningDashboard />}
-      {currentView === AppView.AUDIO && <AudioStudio />}
-      {currentView === AppView.MEDIA && <MediaStudio />}
-      {currentView === AppView.SETTINGS && <Settings />}
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          {currentView === AppView.DASHBOARD && (
+              <Dashboard 
+                  projects={projects} 
+                  onProjectSelect={handleProjectSelect} 
+                  onDeleteProject={handleDeleteProject} 
+                  onNewProject={() => setShowNewProjectModal(true)}
+                  onNavigate={handleNavClick}
+              />
+          )}
+          {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} />}
+          {currentView === AppView.FINETUNE && <FineTuningDashboard />}
+          {currentView === AppView.AUDIO && <AudioStudio />}
+          {currentView === AppView.MEDIA && <MediaStudio />}
+          {currentView === AppView.SETTINGS && <Settings />}
+      </div>
     </div>
   );
 };
