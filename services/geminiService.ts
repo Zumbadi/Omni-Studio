@@ -213,25 +213,17 @@ export const generateSocialContent = async (
   }
 };
 
-export const generateSpeech = async (text: string, voiceName: string = 'Kore', styleReference?: string): Promise<string | null> => {
+export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<string | null> => {
   if (!process.env.API_KEY) {
     console.warn("No API Key for Speech Generation");
     return null;
   }
 
   const ai = getAiClient();
-  
-  // Pro Feature: Style Transfer
-  // We simulate style transfer by prompting the model with a directional cue derived from the reference audio.
-  let processedText = text;
-  if (styleReference) {
-      processedText = `(Style: ${styleReference}) ${text}`;
-  }
-
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: processedText }] }],
+      contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -250,31 +242,18 @@ export const generateSpeech = async (text: string, voiceName: string = 'Kore', s
   }
 };
 
-export const generateImage = async (prompt: string, characterDescription?: string, referenceStyle?: string): Promise<string | null> => {
+export const generateImage = async (prompt: string): Promise<string | null> => {
   if (!process.env.API_KEY) {
     console.warn("No API Key for Image Generation");
     return null;
   }
 
   const ai = getAiClient();
-  
-  let fullPrompt = prompt;
-  
-  // Pro Feature: Character Consistency
-  if (characterDescription) {
-      fullPrompt += `\n\nCharacter Requirements: Ensure the character matches this description exactly: ${characterDescription}. Maintain consistent facial features, hair, and build.`;
-  }
-  
-  // Pro Feature: Style Transfer
-  if (referenceStyle) {
-      fullPrompt += `\n\nArtistic Style: ${referenceStyle}`;
-  }
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [{ text: fullPrompt }],
+        parts: [{ text: prompt }],
       },
     });
     
@@ -370,47 +349,6 @@ export const transcribeAudio = async (audioBase64: string): Promise<string> => {
     console.error("Transcription Error:", e);
     return "Error transcribing audio.";
   }
-}
-
-// Pro Feature: Analyze Reference Media (Image/Video/Audio)
-export const analyzeMediaStyle = async (mediaBase64: string, type: 'image' | 'audio'): Promise<string> => {
-  if (!process.env.API_KEY) return "API Key missing.";
-
-  const ai = getAiClient();
-  const prompt = type === 'image' 
-      ? "Analyze this image. Describe the character (if any) in extreme detail (hair, eyes, facial structure, clothes) and the artistic style. Output a description that can be used to generate consistent variations."
-      : "Analyze this audio clip. Describe the mood, tone, emotion, background noise, and speaker style. Output a brief style description.";
-
-  try {
-    const base64Data = mediaBase64.split(',').pop() || mediaBase64;
-    const mimeType = type === 'image' ? 'image/png' : 'audio/webm';
-
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-            parts: [
-                { inlineData: { mimeType, data: base64Data } },
-                { text: prompt }
-            ]
-        }
-    });
-    return response.text || "Analysis failed.";
-  } catch (e) {
-    console.error("Analysis Error:", e);
-    return "Could not analyze media.";
-  }
-}
-
-// Pro Feature: Simulated Background Removal
-export const removeBackground = async (imageBase64: string): Promise<string> => {
-    // Since we cannot perform actual segmentation client-side without heavy models,
-    // and Gemini doesn't have a dedicated "remove background" endpoint that returns an image,
-    // We will simulate this by returning the image as is but assuming the UI handles it,
-    // OR in a real scenario, we'd call a specialized API.
-    // For this demo, we'll mock a delay and return the image.
-    
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    return imageBase64; 
 }
 
 export const testFineTunedModel = async (

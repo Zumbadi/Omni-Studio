@@ -38,11 +38,6 @@ export interface ChatMessage {
   role: 'user' | 'model' | 'system';
   text: string;
   timestamp: number;
-  attachments?: {
-    type: 'image' | 'audio' | 'video';
-    url: string;
-    name?: string;
-  }[];
 }
 
 export interface FineTuningJob {
@@ -72,23 +67,6 @@ export interface AudioTrack {
   duration: number; // seconds
   startOffset: number; // seconds
   audioUrl?: string; // Blob URL or Data URI
-  styleReference?: string; // Description of style derived from reference
-}
-
-export interface Character {
-  id: string;
-  name: string;
-  imageUrl: string; // Reference face
-  description?: string; // AI analyzed description
-}
-
-export interface TimelineClip {
-  id: string;
-  sceneId: string;
-  startTime: number;
-  duration: number;
-  type: 'video' | 'image';
-  url: string;
 }
 
 export interface Scene {
@@ -97,8 +75,6 @@ export interface Scene {
   imageUrl?: string;
   videoUrl?: string;
   status: 'pending' | 'generating' | 'done';
-  characterId?: string; // Link to character for consistency
-  removeBackground?: boolean;
 }
 
 export interface SocialPost {
@@ -111,7 +87,6 @@ export interface SocialPost {
   script?: string;
   hashtags?: string[];
   scenes?: Scene[];
-  timeline?: TimelineClip[]; // For Director's Cut
   scheduledDate?: string;
 }
 
