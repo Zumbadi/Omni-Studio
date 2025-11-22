@@ -390,6 +390,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       setTerminalLogs(prev => [...prev, `> Bulk Apply: Processed ${codes.length} file updates.`]);
   };
 
+  // Roadmap Handlers
+  const handleExecutePhase = (phase: ProjectPhase) => {
+      const prompt = `I want to start working on "${phase.title}".\n\nGoals:\n${phase.goals.map(g => `- ${g}`).join('\n')}\n\nPlease analyze the current project state and provide code or instructions to achieve the first goal.`;
+      setChatInput(prompt);
+      setIsChatOpen(true);
+      triggerGeneration(prompt);
+  };
+
+  const handleToggleRoadmapTask = (phaseId: string, taskId: string) => {
+      setRoadmap(prev => prev.map(p => {
+          if (p.id === phaseId) {
+              return {
+                  ...p,
+                  tasks: p.tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t)
+              };
+          }
+          return p;
+      }));
+  };
+
   // Handlers for Search
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -616,10 +636,11 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                     roadmap={roadmap}
                     isGeneratingPlan={isGeneratingPlan}
                     onGeneratePlan={() => {}}
-                    onExecutePhase={() => {}}
-                    onToggleTask={() => {}}
+                    onExecutePhase={handleExecutePhase}
+                    onToggleTask={handleToggleRoadmapTask}
                     onLog={(l) => setTerminalLogs(p => [...p, l])}
                     files={files}
+                    onSaveFile={addFile}
                 />
             </div>
         )}

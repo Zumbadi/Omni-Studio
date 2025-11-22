@@ -1,14 +1,16 @@
+
 import React, { useState } from 'react';
-import { Book, Loader2, FileText } from 'lucide-react';
+import { Book, Loader2, FileText, Save } from 'lucide-react';
 import { Button } from './Button';
 import { generateProjectDocs } from '../services/geminiService';
 import { Project } from '../types';
 
 interface DocsViewerProps {
   project: Project;
+  onSaveFile?: (path: string, content: string) => void;
 }
 
-export const DocsViewer: React.FC<DocsViewerProps> = ({ project }) => {
+export const DocsViewer: React.FC<DocsViewerProps> = ({ project, onSaveFile }) => {
   const [docContent, setDocContent] = useState<string>('');
   const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
 
@@ -23,13 +25,27 @@ export const DocsViewer: React.FC<DocsViewerProps> = ({ project }) => {
       setIsGeneratingDocs(false);
   };
 
+  const handleSave = () => {
+      if (onSaveFile && docContent) {
+          onSaveFile('README.md', docContent);
+          alert('Saved as README.md');
+      }
+  };
+
   return (
       <div className="flex-1 bg-gray-900 flex flex-col overflow-hidden">
           <div className="p-4 border-b border-gray-800 bg-gray-850 flex justify-between items-center shrink-0">
               <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2"><Book size={16} className="text-blue-400"/> Documentation</h2>
-              <Button size="sm" onClick={handleGenerateDocs} disabled={isGeneratingDocs}>
-                  {isGeneratingDocs ? <Loader2 size={14} className="animate-spin mr-2"/> : <FileText size={14} className="mr-2"/>} Generate
-              </Button>
+              <div className="flex gap-2">
+                  {docContent && onSaveFile && (
+                      <Button size="sm" variant="secondary" onClick={handleSave}>
+                          <Save size={14} className="mr-2"/> Save to README
+                      </Button>
+                  )}
+                  <Button size="sm" onClick={handleGenerateDocs} disabled={isGeneratingDocs}>
+                      {isGeneratingDocs ? <Loader2 size={14} className="animate-spin mr-2"/> : <FileText size={14} className="mr-2"/>} Generate
+                  </Button>
+              </div>
           </div>
           <div className="flex-1 p-6 overflow-y-auto">
               {docContent ? (

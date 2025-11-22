@@ -28,6 +28,7 @@ interface PreviewPanelProps {
   onToggleTask: (phaseId: string, taskId: string) => void;
   onLog: (msg: string) => void;
   files: FileNode[];
+  onSaveFile?: (path: string, content: string) => void;
 }
 
 const LoadingFallback = () => (
@@ -38,7 +39,7 @@ const LoadingFallback = () => (
 
 export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
-  roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files
+  roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
 
@@ -71,7 +72,7 @@ export const PreviewPanel = memo(({
             {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} />}
             {activeTab === 'deploy' && <DeploymentConsole project={project} onLog={onLog} />}
             {activeTab === 'audit' && <AuditView files={files} />}
-            {activeTab === 'docs' && <DocsViewer project={project} />}
+            {activeTab === 'docs' && <DocsViewer project={project} onSaveFile={onSaveFile} />}
             {activeTab === 'roadmap' && <RoadmapView roadmap={roadmap} isGenerating={isGeneratingPlan} onGenerate={onGeneratePlan} onExecutePhase={onExecutePhase} onToggleTask={onToggleTask} />}
           </Suspense>
       </div>
