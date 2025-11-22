@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Sparkles, MessageSquare, Zap, Hammer } from 'lucide-react';
+import { Sparkles, MessageSquare, Zap, Hammer, Loader2 } from 'lucide-react';
 
 export interface CodeEditorHandle {
   scrollToLine: (line: number) => void;
@@ -18,6 +18,11 @@ interface CodeEditorProps {
   };
   onCodeAction?: (action: string, selectedCode: string) => void;
   onSelectionChange?: (selectedText: string) => void;
+  // Debugging
+  breakpoints?: number[];
+  onToggleBreakpoint?: (line: number) => void;
+  // Ghost Text
+  onGhostTextRequest?: (prefix: string, suffix: string) => Promise<string>;
 }
 
 const KEYWORDS = [
@@ -31,7 +36,10 @@ const KEYWORDS = [
   'className', 'style', 'onClick', 'onChange', 'value', 'key', 'children'
 ];
 
-export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code, onChange, fileName, config, onCodeAction, onSelectionChange }, ref) => {
+export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
+  code, onChange, fileName, config, onCodeAction, onSelectionChange, 
+  breakpoints = [], onToggleBreakpoint, onGhostTextRequest 
+}, ref) => {
   const lines = code.split('\n');
   const [showMinimap, setShowMinimap] = useState(true);
   
@@ -41,6 +49,12 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [cursorPos, setCursorPos] = useState({ top: 0, left: 0 });
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
+
+  // Ghost Text State
+  const [ghostText, setGhostText] = useState('');
+  const [ghostPos, setGhostPos] = useState({ top: 0, left: 0 });
+  const [isLoadingGhost, setIsLoadingGhost] = useState(false);
+  const typingTimeoutRef = useRef<any>(null);
 
   // Code Action State
   const [showCodeActions, setShowCodeActions] = useState(false);
@@ -120,6 +134,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
       }
       // Hide actions on scroll
       setShowCodeActions(false);
+      setGhostText('');
     }
   };
 
@@ -151,11 +166,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
      const left = rect.left - editorRect.left;
 
      if (forSelection) {
-         // Position near the end of selection
          setSelectionCoords({ top: top + 20, left: left + 10 });
      } else {
-         // Position for autocomplete
          setCursorPos({ top: top + 20, left });
+         setGhostPos({ top: top + 16, left }); // Adjust for padding
      }
   };
 
@@ -203,6 +217,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
       const val = e.target.value;
       onChange(val);
       setShowCodeActions(false);
+      setGhostText('');
       
       const { selectionStart } = e.target;
       
@@ -225,6 +240,25 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
           }
       } else {
           setShowSuggestions(false);
+      }
+
+      // Ghost Text Logic
+      if (onGhostTextRequest && !showSuggestions) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(async () => {
+              const prefix = val.substring(0, selectionStart);
+              const suffix = val.substring(selectionStart);
+              const lastLine = prefix.split('\n').pop() || '';
+              if (lastLine.trim().length > 3) {
+                  setIsLoadingGhost(true);
+                  updateCaretPosition(selectionStart); // ensure pos is current
+                  const completion = await onGhostTextRequest(prefix, suffix);
+                  if (completion) {
+                      setGhostText(completion);
+                  }
+                  setIsLoadingGhost(false);
+              }
+          }, 600); // 600ms pause to trigger
       }
   };
 
@@ -254,6 +288,20 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
             setShowSuggestions(false);
             return;
         }
+    }
+
+    // Ghost Text Acceptance
+    if (ghostText && e.key === 'Tab') {
+        e.preventDefault();
+        const newValue = value.substring(0, selectionStart) + ghostText + value.substring(selectionEnd);
+        onChange(newValue);
+        setGhostText('');
+        setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = selectionStart + ghostText.length;
+        }, 0);
+        return;
+    } else if (ghostText) {
+        setGhostText(''); // Clear if any other key pressed
     }
 
     // 1. Handle Tab (Insert spaces instead of focus change)
@@ -290,7 +338,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
         
         setTimeout(() => {
             textarea.selectionStart = textarea.selectionEnd = selectionStart + insertion.length;
-            // Refresh caret pos/suggestions on Enter usually clears them, so explicit hide
             setShowSuggestions(false); 
         }, 0);
     }
@@ -331,6 +378,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
            <span className="text-sm font-medium text-gray-200 tracking-tight">{fileName}</span>
         </div>
         <div className="flex items-center gap-2">
+          {isLoadingGhost && <div className="flex items-center gap-1 text-[10px] text-primary-400 animate-pulse"><Sparkles size={10}/> AI Completing...</div>}
           {isVim && <div className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[10px] uppercase font-bold border border-green-900 rounded">VIM NORMAL</div>}
           <button 
              onClick={() => setShowMinimap(!showMinimap)}
@@ -346,19 +394,30 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
 
       {/* Editor Body */}
       <div className="flex flex-1 overflow-hidden relative group">
-        {/* Line Numbers with Git Gutter */}
+        {/* Line Numbers with Git Gutter & Breakpoints */}
         <div 
           ref={lineNumsRef}
-          className="w-12 flex-shrink-0 bg-gray-900 border-r border-gray-800 text-right pr-3 pt-4 text-gray-600 select-none overflow-hidden font-mono text-xs opacity-60 relative"
+          className="w-12 flex-shrink-0 bg-gray-900 border-r border-gray-800 text-right pr-3 pt-4 text-gray-600 select-none overflow-hidden font-mono text-xs opacity-60 relative cursor-default"
         >
-          {lines.map((_, i) => (
-            <div key={i} className={`leading-6 relative ${highlightedLine === i + 1 ? 'text-yellow-400 font-bold bg-yellow-900/20' : ''}`}>
-               {/* Simulated Git Diff Indicator */}
-               {i % 12 === 0 && i > 0 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div> : null}
-               {i === 3 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div> : null}
-               {i + 1}
-            </div>
-          ))}
+          {lines.map((_, i) => {
+            const lineNum = i + 1;
+            const hasBreakpoint = breakpoints.includes(lineNum);
+            return (
+              <div 
+                key={i} 
+                className={`leading-6 relative hover:text-white cursor-pointer ${highlightedLine === lineNum ? 'text-yellow-400 font-bold bg-yellow-900/20' : ''}`}
+                onClick={() => onToggleBreakpoint?.(lineNum)}
+              >
+                 {/* Breakpoint Indicator */}
+                 {hasBreakpoint && <div className="absolute left-2 top-1.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-red-500/50 shadow-lg z-20"></div>}
+                 <span className={hasBreakpoint ? 'invisible' : ''}>{lineNum}</span>
+                 
+                 {/* Simulated Git Diff Indicator */}
+                 {i % 12 === 0 && i > 0 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div> : null}
+                 {i === 3 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div> : null}
+              </div>
+            );
+          })}
         </div>
 
         {/* Editor Container */}
@@ -381,6 +440,21 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ code,
                 {highlightCode(code)}
                 <br /> {/* Ensure last line visible */}
              </pre>
+
+            {/* Ghost Text Overlay */}
+            {ghostText && (
+                <div 
+                    className="absolute z-20 pointer-events-none text-gray-500 font-mono leading-6 italic whitespace-pre"
+                    style={{ 
+                        top: ghostPos.top, 
+                        left: ghostPos.left,
+                        fontSize,
+                        opacity: 0.6 
+                    }}
+                >
+                    {ghostText} <span className="text-[10px] not-italic bg-gray-800 px-1 rounded ml-2 border border-gray-700 text-gray-400">Tab</span>
+                </div>
+            )}
 
             {/* Input Area */}
             <textarea

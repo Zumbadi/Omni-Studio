@@ -11,6 +11,8 @@ export enum AppView {
 export enum ProjectType {
   REACT_WEB = 'React Web',
   REACT_NATIVE = 'React Native (Expo)',
+  IOS_APP = 'iOS App (Swift)',
+  ANDROID_APP = 'Android App (Kotlin)',
   NODE_API = 'Node.js API'
 }
 
@@ -230,4 +232,15 @@ export interface ArchLink {
   id: string;
   source: string;
   target: string;
+}
+
+export interface AIAgent {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  model: 'gemini-3-pro-preview' | 'gemini-2.5-flash';
+  systemPrompt: string;
+  avatar?: string;
+  isManager?: boolean;
 }

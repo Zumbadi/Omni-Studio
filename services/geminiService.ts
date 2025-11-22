@@ -25,6 +25,8 @@ export const generateCodeResponse = async (
   const ai = getAiClient();
   
   const isNative = projectType === ProjectType.REACT_NATIVE;
+  const isIOS = projectType === ProjectType.IOS_APP;
+  const isAndroid = projectType === ProjectType.ANDROID_APP;
 
   // Determine actual model to use vs persona to simulate
   let targetModel = 'gemini-2.5-flash';
@@ -41,15 +43,28 @@ export const generateCodeResponse = async (
     customPersona = `You are behaving as the custom fine-tuned model "${modelName}". Adopt the specific style, strictness, or domain knowledge associated with this model name.`;
   }
 
-  const frameworkInstruction = isNative 
-    ? `You are an expert in React Native (Expo). 
+  let frameworkInstruction = '';
+  if (isNative) {
+      frameworkInstruction = `You are an expert in React Native (Expo). 
        - Use <View>, <Text>, <TouchableOpacity>, <Image>, <ScrollView> components from 'react-native'.
        - Use StyleSheet.create for styling.
        - DO NOT use HTML tags like <div>, <span>, <button>.
-       - DO NOT use Tailwind CSS classes.`
-    : `You are an expert in React Web and Tailwind CSS.
+       - DO NOT use Tailwind CSS classes.`;
+  } else if (isIOS) {
+      frameworkInstruction = `You are an expert iOS Developer using Swift and SwiftUI.
+       - Write Swift code.
+       - Use SwiftUI Views (VStack, HStack, Text, Button, Image).
+       - Adhere to MVVM architecture.`;
+  } else if (isAndroid) {
+      frameworkInstruction = `You are an expert Android Developer using Kotlin and Jetpack Compose.
+       - Write Kotlin code.
+       - Use Composables (Column, Row, Text, Button, Image).
+       - Adhere to modern Android best practices.`;
+  } else {
+      frameworkInstruction = `You are an expert in React Web and Tailwind CSS.
        - Use standard HTML tags like <div>, <span>, <button>.
        - Use Tailwind CSS classes for styling.`;
+  }
 
   try {
     const systemInstruction = `
@@ -64,7 +79,7 @@ export const generateCodeResponse = async (
 
       INSTRUCTIONS:
       - CRITICAL: If you are creating a new file or updating a specific existing file, YOU MUST start the code block with a comment specifying the relative path.
-      - Format: "// filename: src/components/MyComponent.tsx"
+      - Format: "// filename: src/components/MyComponent.tsx" (Adjust extension for Swift/Kotlin if needed)
       - If no filename is specified, the user will assume it applies to the currently open file.
       - Do not provide markdown fences around the code if possible, or strictly just the code content inside the fences.
       
@@ -126,12 +141,34 @@ export const generateCodeResponse = async (
   }
 };
 
+export const generateGhostText = async (prefix: string, suffix: string): Promise<string> => {
+  if (!process.env.API_KEY) return "";
+  const ai = getAiClient();
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Complete the following code. Return ONLY the completion text, no markdown, no explanations.\n\nCode Context:\n${prefix}[CURSOR]${suffix}`,
+      config: {
+        maxOutputTokens: 64, // Short completion
+        temperature: 0.2, // High precision
+        stopSequences: ["\n\n"]
+      }
+    });
+    return response.text?.trimEnd() || "";
+  } catch (e) {
+    return "";
+  }
+};
+
 export const generateProjectScaffold = async (prompt: string, type: ProjectType): Promise<any[]> => {
   if (!process.env.API_KEY) return [];
 
   const ai = getAiClient();
   const isNative = type === ProjectType.REACT_NATIVE;
   const isBackend = type === ProjectType.NODE_API;
+  const isIOS = type === ProjectType.IOS_APP;
+  const isAndroid = type === ProjectType.ANDROID_APP;
 
   const systemInstruction = `You are a Senior Software Architect.
   Generate a JSON structure representing the file tree for a new ${type} project based on the user's description.
@@ -140,9 +177,9 @@ export const generateProjectScaffold = async (prompt: string, type: ProjectType)
   1. Return ONLY raw JSON. No markdown, no explanations.
   2. The JSON should be an array of file nodes.
   3. Schema: { "name": string, "type": "file" | "directory", "content"?: string, "children"?: Node[] }
-  4. Include at least 4-5 essential files (e.g., App.tsx, package.json, a component, styling).
-  5. ${isNative ? 'Use React Native components (View, Text).' : isBackend ? 'Use Express/Node.js.' : 'Use React and Tailwind CSS.'}
-  6. Ensure package.json has valid dependencies.
+  4. Include at least 4-5 essential files (e.g., App.tsx/ContentView.swift/MainActivity.kt, package.json/Info.plist/build.gradle, a component, styling).
+  5. ${isNative ? 'Use React Native components (View, Text).' : isIOS ? 'Use Swift and SwiftUI structs.' : isAndroid ? 'Use Kotlin and Jetpack Compose.' : isBackend ? 'Use Express/Node.js.' : 'Use React and Tailwind CSS.'}
+  6. Ensure package.json has valid dependencies if applicable.
   
   User Description: "${prompt}"
   `;

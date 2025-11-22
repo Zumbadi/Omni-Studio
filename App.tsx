@@ -9,9 +9,10 @@ import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { AppView, Project, ProjectType, FileNode } from './types';
 import { MOCK_PROJECTS, WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, PROJECT_TEMPLATES } from './constants';
-import { LayoutGrid, Code, Settings as SettingsIcon, Zap, X, Globe, Smartphone, Server, LogOut, Music, Clapperboard, Wand2, Loader2, Rocket, Menu, ShoppingBag, Activity } from 'lucide-react';
+import { LayoutGrid, Code, Settings as SettingsIcon, Zap, X, Globe, Smartphone, Server, LogOut, Music, Clapperboard, Wand2, Loader2, Rocket, Menu, ShoppingBag, Activity, Tablet, Users } from 'lucide-react';
 import { Button } from './components/Button';
 import { generateProjectScaffold } from './services/geminiService';
+import { TeamManager } from './components/TeamManager';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [showTeamManager, setShowTeamManager] = useState(false);
 
   // Persist projects whenever they change
   useEffect(() => {
@@ -55,6 +57,8 @@ const App: React.FC = () => {
     const projectId = Date.now().toString();
     let initialFiles: FileNode[] = [];
 
+    const isNative = type === ProjectType.REACT_NATIVE || type === ProjectType.IOS_APP || type === ProjectType.ANDROID_APP;
+
     if (description.trim()) {
       // AI Generation
       const generatedNodes = await generateProjectScaffold(description, type);
@@ -74,11 +78,11 @@ const App: React.FC = () => {
         initialFiles = addIds(generatedNodes);
       } else {
          // If API failed, fallback to templates
-         initialFiles = type === ProjectType.REACT_NATIVE ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
+         initialFiles = isNative ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
       }
     } else {
       // Standard Template
-      initialFiles = type === ProjectType.REACT_NATIVE ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
+      initialFiles = isNative ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
     }
 
     // Save initial files to storage
@@ -266,10 +270,10 @@ const App: React.FC = () => {
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-white">{t.name}</h3>
-                                    <span className="text-[10px] text-gray-500 bg-gray-900 px-2 py-0.5 rounded border border-gray-700">{t.type}</span>
+                                    <span className="text-[10px] text-gray-500 bg-gray-900 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[120px] block">{t.type}</span>
                                 </div>
                             </div>
-                            <p className="text-xs text-gray-400">{t.description}</p>
+                            <p className="text-xs text-gray-400 line-clamp-2">{t.description}</p>
                         </div>
                     ))}
                 </div>
@@ -289,7 +293,7 @@ const App: React.FC = () => {
 
                     <div>
                     <label className="block text-sm font-medium text-gray-400 mb-2">Framework</label>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                         <button 
                         onClick={() => setType(ProjectType.REACT_WEB)}
                         className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
@@ -297,7 +301,7 @@ const App: React.FC = () => {
                         }`}
                         >
                         <Globe size={24} className={type === ProjectType.REACT_WEB ? 'text-primary-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-sm font-medium text-white">React Web</div>
+                        <div className="text-xs font-medium text-white text-center">React Web</div>
                         </button>
 
                         <button 
@@ -306,8 +310,30 @@ const App: React.FC = () => {
                             type === ProjectType.REACT_NATIVE ? 'bg-purple-900/20 border-purple-500 ring-1 ring-purple-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
                         }`}
                         >
-                        <Smartphone size={24} className={type === ProjectType.REACT_NATIVE ? 'text-purple-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-sm font-medium text-white">React Native</div>
+                        <Tablet size={24} className={type === ProjectType.REACT_NATIVE ? 'text-purple-500 mb-2' : 'text-gray-500 mb-2'} />
+                        <div className="text-xs font-medium text-white text-center">React Native</div>
+                        </button>
+
+                        <button 
+                        onClick={() => setType(ProjectType.IOS_APP)}
+                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
+                            type === ProjectType.IOS_APP ? 'bg-blue-900/20 border-blue-500 ring-1 ring-blue-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                        }`}
+                        >
+                        <div className="w-6 h-6 mb-2 flex items-center justify-center">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg" className="w-5 h-5 invert opacity-70" alt="iOS" />
+                        </div>
+                        <div className="text-xs font-medium text-white text-center">iOS (Swift)</div>
+                        </button>
+
+                        <button 
+                        onClick={() => setType(ProjectType.ANDROID_APP)}
+                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
+                            type === ProjectType.ANDROID_APP ? 'bg-green-900/20 border-green-500 ring-1 ring-green-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                        }`}
+                        >
+                        <Smartphone size={24} className={type === ProjectType.ANDROID_APP ? 'text-green-500 mb-2' : 'text-gray-500 mb-2'} />
+                        <div className="text-xs font-medium text-white text-center">Android (APK)</div>
                         </button>
                         
                         <button 
@@ -317,7 +343,7 @@ const App: React.FC = () => {
                         }`}
                         >
                         <Server size={24} className={type === ProjectType.NODE_API ? 'text-green-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-sm font-medium text-white">Node.js API</div>
+                        <div className="text-xs font-medium text-white text-center">Node.js API</div>
                         </button>
                     </div>
                     </div>
@@ -372,16 +398,24 @@ const App: React.FC = () => {
       <Sidebar />
       
       {showNewProjectModal && <NewProjectModal />}
+      {showTeamManager && <TeamManager onClose={() => setShowTeamManager(false)} />}
       
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
           {currentView === AppView.DASHBOARD && (
-              <Dashboard 
-                  projects={projects} 
-                  onProjectSelect={handleProjectSelect} 
-                  onDeleteProject={handleDeleteProject} 
-                  onNewProject={() => setShowNewProjectModal(true)}
-                  onNavigate={handleNavClick}
-              />
+              <div className="relative flex-1 flex flex-col">
+                  <div className="absolute top-4 right-4 md:top-8 md:right-8 z-10 flex gap-2">
+                      <Button onClick={() => setShowTeamManager(true)} variant="secondary" className="shadow-lg">
+                          <Users size={16} className="mr-2"/> Manage Team
+                      </Button>
+                  </div>
+                  <Dashboard 
+                      projects={projects} 
+                      onProjectSelect={handleProjectSelect} 
+                      onDeleteProject={handleDeleteProject} 
+                      onNewProject={() => setShowNewProjectModal(true)}
+                      onNavigate={handleNavClick}
+                  />
+              </div>
           )}
           {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} />}
           {currentView === AppView.FINETUNE && <FineTuningDashboard />}

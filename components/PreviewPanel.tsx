@@ -276,7 +276,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               />
               <Button size="sm" variant="secondary">Search</Button>
           </div>
-          <div className="flex-1 p-4 relative">
+          <div className="flex-1 p-4 relative min-h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                       <XAxis type="number" dataKey="x" name="dim1" hide />
@@ -492,7 +492,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   );
 
   return (
-    <div className={`border-l border-gray-800 bg-gray-900 flex flex-col transition-all duration-300 absolute md:static inset-0 md:inset-auto z-40 md:z-auto ${activeTab === 'deploy' ? 'md:w-[500px]' : 'md:w-[45%]'} w-full`}>
+    <div className="w-full h-full flex flex-col bg-gray-900 border-l border-gray-800">
       <div className="h-10 bg-gray-900 border-b border-gray-800 flex items-center px-2 justify-between shrink-0">
          <div className="flex gap-1 bg-gray-800 p-0.5 rounded-lg overflow-x-auto scrollbar-none">
            <button onClick={() => setActiveTab('preview')} className={`px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'preview' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>Preview</button>
@@ -513,7 +513,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
       {activeTab === 'preview' && (
         <div className="flex-1 bg-gray-950 flex flex-col relative overflow-hidden">
            {!isBackend && (<div className="h-8 bg-gray-800 flex items-center px-2 gap-2 border-b border-gray-700 shrink-0"><div className="flex gap-1"><div className="w-2.5 h-2.5 rounded-full bg-red-500/20"></div><div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20"></div><div className="w-2.5 h-2.5 rounded-full bg-green-500/20"></div></div><div className="flex-1 bg-gray-900 rounded text-[10px] text-gray-500 px-2 py-0.5 text-center font-mono truncate">localhost:3000</div>{isNative && (<div className="flex gap-1"><button onClick={() => setPreviewMode('mobile')} className={`p-1 rounded ${previewMode === 'mobile' ? 'text-white bg-gray-700' : 'text-gray-500'}`}><Smartphone size={12}/></button><button onClick={() => setPreviewMode('web')} className={`p-1 rounded ${previewMode === 'web' ? 'text-white bg-gray-700' : 'text-gray-500'}`}><Globe size={12}/></button><button onClick={() => setShowQrCode(!showQrCode)} className={`p-1 rounded ${showQrCode ? 'text-green-400 bg-gray-700' : 'text-gray-500'}`} title="Scan Expo QR"><QrCode size={12}/></button></div>)}</div>)}
-           <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50 overflow-hidden relative">
+           <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50 overflow-auto relative">
               {isBackend ? (
                   <div className="w-full max-w-md bg-gray-800 rounded-xl border border-gray-700 flex flex-col shadow-xl overflow-hidden max-h-full">
                       <div className="p-3 border-b border-gray-700 bg-gray-900 text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><Network size={14} className="text-green-500"/> API Console (Postman)</div>
@@ -523,7 +523,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                       </div>
                   </div>
               ) : (isNative && previewMode === 'mobile' ? (
-                  <div className="relative transition-all duration-500">
+                  <div className="relative transition-all duration-500 scale-90 md:scale-100">
                       <div className={`border-8 border-gray-800 rounded-[3rem] overflow-hidden bg-white relative shadow-2xl ${deviceFrame === 'ipad' ? 'w-[500px] h-[700px]' : 'w-[320px] h-[650px]'}`}>
                           <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-6 bg-gray-800 rounded-b-xl z-20"></div>
                           <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
@@ -557,8 +557,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
               
               {dbView === 'schema' ? <SchemaView /> : dbView === 'vectors' ? <VectorView /> : (
                   <div className="flex-1 p-4 flex flex-col overflow-hidden">
-                      <div className="flex gap-2 mb-4 h-full">
-                          <div className="w-48 bg-gray-800 border border-gray-700 rounded-lg p-2 flex flex-col"><div className="text-xs font-bold text-gray-500 uppercase mb-2 px-2">Tables</div><div className="space-y-1 overflow-y-auto"><div className="px-2 py-1 bg-primary-900/30 text-primary-300 rounded text-sm cursor-pointer">public.users</div><div className="px-2 py-1 hover:bg-gray-700 text-gray-400 rounded text-sm cursor-pointer">public.posts</div><div className="px-2 py-1 hover:bg-gray-700 text-gray-400 rounded text-sm cursor-pointer">auth.sessions</div></div></div>
+                      <div className="flex flex-col md:flex-row gap-2 mb-4 h-full">
+                          <div className="w-full md:w-48 bg-gray-800 border border-gray-700 rounded-lg p-2 flex flex-col shrink-0 max-h-48 md:max-h-full"><div className="text-xs font-bold text-gray-500 uppercase mb-2 px-2">Tables</div><div className="space-y-1 overflow-y-auto"><div className="px-2 py-1 bg-primary-900/30 text-primary-300 rounded text-sm cursor-pointer">public.users</div><div className="px-2 py-1 hover:bg-gray-700 text-gray-400 rounded text-sm cursor-pointer">public.posts</div><div className="px-2 py-1 hover:bg-gray-700 text-gray-400 rounded text-sm cursor-pointer">auth.sessions</div></div></div>
                           <div className="flex-1 flex flex-col min-w-0">
                               {dbView === 'query' && (
                                   <div className="mb-2 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg p-1">
@@ -579,7 +579,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                                   </div>
                               )}
                               <div className="bg-black border border-gray-700 rounded-t-lg p-2 flex gap-2 shrink-0"><textarea className="w-full bg-transparent text-green-400 font-mono text-sm focus:outline-none resize-none h-20" value={sqlQuery} onChange={e => setSqlQuery(e.target.value)} /><button onClick={handleRunQuery} className="self-start bg-primary-600 hover:bg-primary-500 text-white p-2 rounded"><Play size={14}/></button></div>
-                              <div className="flex-1 bg-gray-800 border-x border-b border-gray-700 rounded-b-lg overflow-auto"><table className="w-full text-left text-xs text-gray-300"><thead className="bg-gray-900 font-bold text-gray-500 sticky top-0"><tr>{Object.keys(dbResults[0] || {}).map(k => <th key={k} className="px-4 py-2 border-b border-gray-700">{k}</th>)}</tr></thead><tbody className="divide-y divide-gray-700 font-mono">{dbResults.map((row, i) => (<tr key={i} className="hover:bg-gray-750">{Object.values(row).map((val: any, j) => <td key={j} className="px-4 py-2">{val}</td>)}</tr>))}</tbody></table></div>
+                              <div className="flex-1 bg-gray-800 border-x border-b border-gray-700 rounded-b-lg overflow-auto"><table className="w-full text-left text-xs text-gray-300 whitespace-nowrap"><thead className="bg-gray-900 font-bold text-gray-500 sticky top-0"><tr>{Object.keys(dbResults[0] || {}).map(k => <th key={k} className="px-4 py-2 border-b border-gray-700">{k}</th>)}</tr></thead><tbody className="divide-y divide-gray-700 font-mono">{dbResults.map((row, i) => (<tr key={i} className="hover:bg-gray-750">{Object.values(row).map((val: any, j) => <td key={j} className="px-4 py-2">{val}</td>)}</tr>))}</tbody></table></div>
                           </div>
                       </div>
                   </div>
@@ -671,18 +671,18 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                           <Button size="sm" className="bg-green-600 hover:bg-green-500 text-white border-none">Visit</Button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-gray-800 border border-gray-700 p-4 rounded-xl">
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                          <div className="bg-gray-800 border border-gray-700 p-4 rounded-xl min-w-0">
                               <div className="text-gray-500 text-xs font-bold uppercase mb-2 flex items-center gap-2"><Activity size={12}/> Latency</div>
                               <div className="text-2xl text-white font-mono">45ms <span className="text-xs text-green-500">-12%</span></div>
                           </div>
-                          <div className="bg-gray-800 border border-gray-700 p-4 rounded-xl">
+                          <div className="bg-gray-800 border border-gray-700 p-4 rounded-xl min-w-0">
                               <div className="text-gray-500 text-xs font-bold uppercase mb-2 flex items-center gap-2"><Globe size={12}/> Requests/m</div>
                               <div className="text-2xl text-white font-mono">1.2k <span className="text-xs text-blue-500">+5%</span></div>
                           </div>
                       </div>
 
-                      <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 h-48 flex flex-col">
+                      <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 h-48 flex flex-col min-h-[200px]">
                           <div className="text-gray-500 text-xs font-bold uppercase mb-4">Traffic Overview</div>
                           <div className="flex-1 min-w-0">
                               <ResponsiveContainer width="100%" height="100%">

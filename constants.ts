@@ -1,5 +1,5 @@
 
-import { Project, ProjectType, FileNode, FineTuningJob, Voice, SocialPost, Extension, GitCommit } from './types';
+import { Project, ProjectType, FileNode, FineTuningJob, Voice, SocialPost, Extension, GitCommit, AIAgent } from './types';
 
 export const MOCK_PROJECTS: Project[] = [
   {
@@ -68,6 +68,22 @@ export const PROJECT_TEMPLATES = [
     description: 'Express server with Auth middleware and User CRUD.', 
     icon: 'Server',
     prompt: 'Create a production-ready REST API boilerplate using Express. Include authentication middleware (JWT), a User model, and CRUD routes for managing resources.' 
+  },
+  { 
+    id: 't6', 
+    name: 'iOS Crypto Wallet', 
+    type: ProjectType.IOS_APP, 
+    description: 'SwiftUI wallet interface with charts.', 
+    icon: 'Smartphone',
+    prompt: 'Create an iOS Crypto Wallet app using Swift and SwiftUI. Include a dashboard view with a line chart for portfolio value, a list of assets, and a send/receive modal.' 
+  },
+  { 
+    id: 't7', 
+    name: 'Android News Reader', 
+    type: ProjectType.ANDROID_APP, 
+    description: 'Kotlin/Jetpack Compose news feed.', 
+    icon: 'Smartphone',
+    prompt: 'Create an Android News Reader app using Kotlin and Jetpack Compose. Include a lazy column for news articles, an app bar with search, and a detail view for reading stories.' 
   },
 ];
 
@@ -361,4 +377,11 @@ export const MOCK_EXTENSIONS: Extension[] = [
   { id: 'ext3', name: 'Tailwind CSS IntelliSense', description: 'Intelligent Tailwind CSS tooling', publisher: 'Brad Cornes', downloads: '8M', installed: false, icon: 'T' },
   { id: 'ext4', name: 'Vim', description: 'Vim emulation for Visual Studio Code', publisher: 'vscodevim', downloads: '5M', installed: false, icon: 'V' },
   { id: 'ext5', name: 'GitLens', description: 'Supercharge Git within VS Code', publisher: 'GitKraken', downloads: '28M', installed: true, icon: 'G' },
+];
+
+export const DEFAULT_AGENTS: AIAgent[] = [
+  { id: 'a1', name: 'Omni Manager', role: 'Project Manager', description: 'Orchestrates other agents and breaks down tasks.', model: 'gemini-3-pro-preview', systemPrompt: 'You are the project manager. Delegate tasks to other agents.', isManager: true, avatar: 'M' },
+  { id: 'a2', name: 'Frontend Architect', role: 'Frontend Dev', description: 'Specializes in React, Tailwind, and CSS animations.', model: 'gemini-2.5-flash', systemPrompt: 'You are an expert React developer.', avatar: 'F' },
+  { id: 'a3', name: 'Backend Lead', role: 'Backend Dev', description: 'Expert in Node.js, Databases, and API design.', model: 'gemini-3-pro-preview', systemPrompt: 'You are a backend specialist.', avatar: 'B' },
+  { id: 'a4', name: 'Omni Critic', role: 'QA & Security', description: 'Reviews code for bugs, security flaws, and performance issues.', model: 'gemini-3-pro-preview', systemPrompt: 'You are a strict code reviewer.', avatar: 'Q' },
 ];

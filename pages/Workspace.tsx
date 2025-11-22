@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { File as FileIcon, Play, ChevronRight, ChevronDown, MoreVertical, Box, Smartphone, Paperclip, Video, Mic, ArrowRight, Check, RefreshCw, Rocket, Loader2, Globe, ExternalLink, Zap, Server, Plus, Trash2, MicOff, Download, Network, GitBranch, Search, Files, Settings, GitCommit, Tablet, Database, QrCode, History, Image, Music, LayoutTemplate, X, Command, Package, AlertTriangle, AlertCircle, Info, Sidebar as SidebarIcon, PanelBottom, Columns, Edit2, Copy, MessageSquare, FileText, Puzzle, UploadCloud, AlignLeft, Link, User, Bug, Replace, Clock, GitPullRequest, RotateCcw, Menu, Map, Flag, ListChecks, BrainCircuit, ShieldCheck, Bot, Code2, ShieldAlert, Shield, FileSearch, SplitSquareHorizontal } from 'lucide-react';
+import { File as FileIcon, Play, ChevronRight, ChevronDown, MoreVertical, Box, Smartphone, Paperclip, Video, Mic, ArrowRight, Check, RefreshCw, Rocket, Loader2, Globe, ExternalLink, Zap, Server, Plus, Trash2, MicOff, Download, Network, GitBranch, Search, Files, Settings, GitCommit, Tablet, Database, QrCode, History, Image, Music, LayoutTemplate, X, Command, Package, AlertTriangle, AlertCircle, Info, Sidebar as SidebarIcon, PanelBottom, Columns, Edit2, Copy, MessageSquare, FileText, Puzzle, UploadCloud, AlignLeft, Link, User, Bug, Replace, Clock, GitPullRequest, RotateCcw, Menu, Map, Flag, ListChecks, BrainCircuit, ShieldCheck, Bot, Code2, ShieldAlert, Shield, FileSearch, SplitSquareHorizontal, Minimize2, Maximize2 } from 'lucide-react';
 import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, MOCK_DEPLOYMENTS, SYSTEM_COMMANDS, MOCK_EXTENSIONS, MOCK_COMMITS } from '../constants';
 import { FileNode, ChatMessage, Project, ProjectType, SocialPost, AudioTrack, Extension, GitCommit as GitCommitType, ProjectPhase, AgentTask, AuditIssue } from '../types';
 import { CodeEditor, CodeEditorHandle } from '../components/CodeEditor';
 import { Terminal } from '../components/Terminal';
-import { generateCodeResponse, generateProjectPlan, critiqueCode, runAgentFileTask, generateTerminalCommand, runSecurityAudit } from '../services/geminiService';
+import { generateCodeResponse, generateProjectPlan, critiqueCode, runAgentFileTask, generateTerminalCommand, runSecurityAudit, generateGhostText } from '../services/geminiService';
 import { Button } from '../components/Button';
 import JSZip from 'jszip';
 import { generatePreviewHtml } from '../utils/runtime';
@@ -41,13 +41,19 @@ interface ContextMenuState {
 }
 
 export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
-  const isNative = project?.type === ProjectType.REACT_NATIVE;
+  const isNative = project?.type === ProjectType.REACT_NATIVE || project?.type === ProjectType.IOS_APP || project?.type === ProjectType.ANDROID_APP;
   const isBackend = project?.type === ProjectType.NODE_API;
   
   const [files, setFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string>('1');
   const [openFiles, setOpenFiles] = useState<string[]>(['1']); 
   
+  // Layout & Resizing State
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [rightPanelWidth, setRightPanelWidth] = useState(500);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(200);
+  const [splitRatio, setSplitRatio] = useState(50); // Percentage for split editor
+
   // Split View State
   const [isSplitView, setIsSplitView] = useState(false);
   const [secondaryFileId, setSecondaryFileId] = useState<string | null>(null);
@@ -59,6 +65,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(true);
   
   const [activeTab, setActiveTab] = useState<'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture'>('preview');
   const [bottomPanelTab, setBottomPanelTab] = useState<'terminal' | 'problems'>('terminal');
@@ -95,6 +102,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
 
   // Debug State
   const [debugVariables, setDebugVariables] = useState<{name: string, value: string}[]>([]);
+  const [breakpoints, setBreakpoints] = useState<number[]>([]);
 
   // Agents State
   const [activeAgentTask, setActiveAgentTask] = useState<AgentTask | null>(null);
@@ -137,12 +145,53 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   // Vision State
   const [attachedImage, setAttachedImage] = useState<string | undefined>(undefined);
 
+  // Resizing Logic
+  const startResizing = useCallback((direction: 'sidebar' | 'rightPanel' | 'bottomPanel' | 'split', e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startSidebarWidth = sidebarWidth;
+      const startRightWidth = rightPanelWidth;
+      const startBottomHeight = bottomPanelHeight;
+      const startSplitRatio = splitRatio;
+      const editorContainerWidth = document.getElementById('editor-container')?.clientWidth || 800;
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+          if (direction === 'sidebar') {
+              const newWidth = Math.max(180, Math.min(500, startSidebarWidth + (moveEvent.clientX - startX)));
+              setSidebarWidth(newWidth);
+          } else if (direction === 'rightPanel') {
+              const newWidth = Math.max(300, Math.min(1000, startRightWidth - (moveEvent.clientX - startX)));
+              setRightPanelWidth(newWidth);
+          } else if (direction === 'bottomPanel') {
+              const newHeight = Math.max(100, Math.min(600, startBottomHeight - (moveEvent.clientY - startY)));
+              setBottomPanelHeight(newHeight);
+          } else if (direction === 'split') {
+              const deltaPixels = moveEvent.clientX - startX;
+              const deltaPercent = (deltaPixels / editorContainerWidth) * 100;
+              const newRatio = Math.max(20, Math.min(80, startSplitRatio + deltaPercent));
+              setSplitRatio(newRatio);
+          }
+      };
+
+      const onMouseUp = () => {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          document.body.style.cursor = 'default';
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = direction === 'bottomPanel' ? 'ns-resize' : 'col-resize';
+  }, [sidebarWidth, rightPanelWidth, bottomPanelHeight, splitRatio]);
+
   // Responsive listener
   useEffect(() => {
       const handleResize = () => {
+          const isMobile = window.innerWidth < 768;
           setLayout(prev => ({
               ...prev,
-              showSidebar: window.innerWidth >= 768 && prev.showSidebar,
+              showSidebar: !isMobile && prev.showSidebar,
               showRight: window.innerWidth >= 1024 && prev.showRight
           }));
       };
@@ -506,9 +555,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       if (action === 'Refactor') prompt = `Refactor this code${fileContext} to be cleaner and more efficient:\n\n${selectedCode}`;
       if (action === 'Fix') prompt = `Find and fix any potential bugs in this code${fileContext}:\n\n${selectedCode}`;
       setChatInput(prompt);
+      setIsChatOpen(true);
       const userMsg = { id: Date.now().toString(), role: 'user' as const, text: prompt, timestamp: Date.now() };
       setChatHistory(prev => [...prev, userMsg]);
       triggerGeneration(prompt);
+  };
+
+  const handleGhostTextRequest = async (prefix: string, suffix: string): Promise<string> => {
+      return await generateGhostText(prefix, suffix);
+  };
+
+  const handleToggleBreakpoint = (line: number) => {
+      setBreakpoints(prev => {
+          if (prev.includes(line)) {
+              setTerminalLogs(logs => [...logs, `> Removed breakpoint at line ${line}`]);
+              return prev.filter(l => l !== line);
+          } else {
+              setTerminalLogs(logs => [...logs, `> Added breakpoint at line ${line}`]);
+              return [...prev, line];
+          }
+      });
   };
 
   const handleQuickFix = (problem: Problem) => {
@@ -516,6 +582,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       if (!file) return;
       const prompt = `Fix the following issue in ${problem.file} at line ${problem.line}: "${problem.message}". Return the corrected code block.`;
       setChatInput(prompt);
+      setIsChatOpen(true);
       const userMsg = { id: Date.now().toString(), role: 'user' as const, text: prompt, timestamp: Date.now() };
       setChatHistory(prev => [...prev, userMsg]);
       triggerGeneration(prompt);
@@ -917,6 +984,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
           const newMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: `[Attached: demo_video.mp4]\nOmni Vision Analysis: "${transcript}"`, timestamp: Date.now() };
           setChatHistory(prev => [...prev, newMsg]);
           setIsUploading(false);
+          setIsChatOpen(true);
           triggerGeneration(newMsg.text);
        }, 1500);
        return;
@@ -929,6 +997,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
        const newMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: `[Attached: ${file.name}]\n`, timestamp: Date.now() };
        setChatHistory(prev => [...prev, newMsg]);
        setIsUploading(false);
+       setIsChatOpen(true);
        setChatInput(`Analyze this ${file.type.startsWith('video') ? 'video' : 'image'} and update the code to match the design.`);
     };
     reader.readAsDataURL(file);
@@ -989,6 +1058,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const handleManualReview = () => {
       if (activeFile?.content) {
           setChatHistory(prev => [...prev, { id: Date.now().toString(), role: 'user', text: "/review", timestamp: Date.now() }]);
+          setIsChatOpen(true);
           runCritique(activeFile.content, "Review this file for errors and best practices.");
       }
   };
@@ -1025,6 +1095,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       const prompt = `Implement the goals for ${phase.title}:\n${phase.goals.join('\n')}\n\nFocus on the following tasks:\n${phase.tasks.filter(t => !t.done).map(t => `- ${t.text}`).join('\n')}`;
       setChatInput(prompt);
       setActiveTab('preview'); // Switch away from roadmap to see chat
+      setIsChatOpen(true);
   };
 
   const handleToggleTask = (phaseId: string, taskId: string) => {
@@ -1068,7 +1139,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       if (file.type.startsWith('image/') || file.type.startsWith('video/')) handleMultimediaUpload(file);
       else if (file.type === 'text/plain' || file.name.endsWith('.js') || file.name.endsWith('.tsx') || file.name.endsWith('.json')) {
         const reader = new FileReader();
-        reader.onload = (ev) => { const text = ev.target?.result as string; setChatInput(prev => prev + `\n\n[Context from ${file.name}]:\n${text}`); };
+        reader.onload = (ev) => { const text = ev.target?.result as string; setChatInput(prev => prev + `\n\n[Context from ${file.name}]:\n${text}`); setIsChatOpen(true); };
         reader.readAsText(file);
       }
     }
@@ -1111,7 +1182,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
              <button onClick={() => { handleDuplicateNode(contextMenu.fileId!); setContextMenu(prev => ({...prev, visible: false})); }} className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-primary-600 hover:text-white flex items-center gap-2"><Copy size={14}/> Duplicate</button>
              <button onClick={() => { handleDeleteNode(null, contextMenu.fileId!); setContextMenu(prev => ({...prev, visible: false})); }} className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-900/50 flex items-center gap-2"><Trash2 size={14}/> Delete</button>
              <div className="h-px bg-gray-700 my-1"></div>
-             <button onClick={() => { const file = findFileById(files, contextMenu.fileId!); if (file) { setChatInput(''); triggerGeneration(`Explain the code in ${file.name} and how it works.`); } setContextMenu(prev => ({...prev, visible: false})); }} className="w-full text-left px-4 py-2 text-sm text-purple-300 hover:bg-purple-900/50 flex items-center gap-2"><MessageSquare size={14}/> Ask AI to Explain</button>
+             <button onClick={() => { const file = findFileById(files, contextMenu.fileId!); if (file) { setChatInput(''); triggerGeneration(`Explain the code in ${file.name} and how it works.`); setIsChatOpen(true); } setContextMenu(prev => ({...prev, visible: false})); }} className="w-full text-left px-4 py-2 text-sm text-purple-300 hover:bg-purple-900/50 flex items-center gap-2"><MessageSquare size={14}/> Ask AI to Explain</button>
              <button onClick={() => { setIsSplitView(true); setSecondaryFileId(contextMenu.fileId); setContextMenu(prev => ({...prev, visible: false})); }} className="w-full text-left px-4 py-2 text-sm text-blue-300 hover:bg-blue-900/50 flex items-center gap-2"><SplitSquareHorizontal size={14}/> Open to Side</button>
           </div>
       )}
@@ -1129,7 +1200,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       {showCommandPalette && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center pt-[10vh]" onClick={() => setShowCommandPalette(false)}>
               <div className="w-[90%] md:w-[500px] bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[60vh]" onClick={e => e.stopPropagation()}>
-                  <div className="p-3 border-b border-gray-700 flex items-center gap-3"><Command size={18} className="text-gray-500"/><input ref={commandInputRef} type="text" className="flex-1 bg-transparent outline-none text-white placeholder-gray-500" placeholder="Type a command or filename..." value={commandQuery} onChange={e => setCommandQuery(e.target.value)} autoFocus /><div className="flex gap-1"><span className="text-[10px] bg-gray-700 px-1.5 rounded text-gray-400">↑↓</span><span className="text-[10px] bg-gray-700 px-1.5 rounded text-gray-400">↵</span></div></div>
+                  <div className="p-3 border-b border-gray-700 flex items-center gap-3"><Command size={18} className="text-gray-500"/><input ref={commandInputRef} type="text" className="flex-1 bg-transparent outline-none text-white placeholder-gray-500" placeholder="Type a command or filename..." value={commandQuery} onChange={e => setCommandQuery(e.target.value)} autoFocus /><div className="flex gap-1"><span className="text-[10px] bg-gray-700 px-1.5 py-0.5 rounded text-gray-400">↑↓</span><span className="text-[10px] bg-gray-700 px-1.5 rounded text-gray-400">↵</span></div></div>
                   <div className="flex-1 overflow-y-auto py-2">{filteredCommands.length === 0 && <div className="p-4 text-center text-gray-500 text-sm">No results found</div>}{filteredCommands.map((item, i) => (<div key={item.id} className="px-4 py-2 hover:bg-primary-600/20 hover:text-white cursor-pointer flex items-center gap-3 text-sm text-gray-300 group" onClick={() => { item.action(); setShowCommandPalette(false); }}><span className="text-gray-500 group-hover:text-white">{item.icon}</span><span className="flex-1">{item.label}</span>{item.type === 'file' && <span className="text-[10px] bg-gray-700 px-1.5 py-0.5 rounded text-gray-400 group-hover:text-white">File</span>}{item.type === 'command' && <span className="text-[10px] bg-gray-700 px-1.5 py-0.5 rounded text-gray-400 group-hover:text-white">Cmd</span>}</div>))}</div>
               </div>
           </div>
@@ -1139,7 +1210,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
 
       <div className="flex-1 flex overflow-hidden relative">
         {/* Activity Bar */}
-        <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0 hidden md:flex">
+        <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0">
             {['EXPLORER', 'SEARCH', 'GIT', 'DEBUG', 'AGENTS', 'EXTENSIONS', 'ASSETS', 'AUDIT'].map(activity => (
                 <button key={activity} onClick={() => { if (!layout.showSidebar) setLayout(l => ({ ...l, showSidebar: true })); setActiveActivity(activity as any); }} className={`p-2 rounded-lg transition-colors relative ${activeActivity === activity && layout.showSidebar ? 'text-white border-l-2 border-primary-500' : 'text-gray-500 hover:text-gray-300'}`} title={activity.charAt(0) + activity.slice(1).toLowerCase()}>
                     {activity === 'EXPLORER' && <Files size={24} strokeWidth={1.5} />}
@@ -1155,9 +1226,17 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
             <div className="mt-auto flex flex-col gap-4"><button className="p-2 text-gray-500 hover:text-gray-300"><Settings size={24} strokeWidth={1.5} /></button></div>
         </div>
 
+        {/* Mobile Backdrop for Sidebar */}
+        {layout.showSidebar && (
+            <div 
+                className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm"
+                onClick={() => setLayout(l => ({ ...l, showSidebar: false }))}
+            />
+        )}
+
         {/* Side Panel (Collapsible on Mobile) */}
         {layout.showSidebar && (
-        <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 absolute md:static h-full z-30 shadow-2xl md:shadow-none">
+        <div className="bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 absolute md:static h-full z-30 shadow-2xl md:shadow-none" style={{ width: sidebarWidth }}>
           {activeActivity === 'EXPLORER' && (
             <FileExplorer 
                 files={files} 
@@ -1185,6 +1264,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                   </div>
               </div>
           )}
+          {/* ... (Other activities) ... */}
           {activeActivity === 'AGENTS' && (
               <div className="flex flex-col h-full">
                   <div className="p-4 border-b border-gray-800">
@@ -1252,12 +1332,34 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
           )}
           {activeActivity === 'SEARCH' && (<div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><span className="uppercase tracking-wider text-xs text-gray-500 font-semibold">Search</span><div className="mt-2 space-y-2"><div className="bg-gray-800 rounded flex items-center px-2 border border-gray-700 focus-within:border-primary-500"><button className="text-gray-500 mr-1" onClick={() => setShowReplace(!showReplace)}>{showReplace ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}</button><input type="text" className="bg-transparent border-none text-sm text-white p-1.5 w-full focus:outline-none placeholder-gray-500" placeholder="Search" value={searchQuery} onChange={e => handleSearch(e.target.value)} /></div>{showReplace && (<div className="bg-gray-800 rounded flex items-center px-2 border border-gray-700 focus-within:border-primary-500 animate-in slide-in-from-top-2"><div className="w-5"></div> <input type="text" className="bg-transparent border-none text-sm text-white p-1.5 w-full focus:outline-none placeholder-gray-500" placeholder="Replace" value={replaceQuery} onChange={e => setReplaceQuery(e.target.value)} /><button onClick={handleReplace} className="text-gray-400 hover:text-white ml-1" title="Replace All"><Replace size={14}/></button></div>)}</div></div><div className="flex-1 overflow-y-auto">{searchResults.map(res => (<div key={`${res.fileId}-${res.line}`} className="flex flex-col border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer group" onClick={() => handleJumpToLine(res.fileId, res.line)}><div className="px-3 py-1 bg-gray-800/30 text-xs text-gray-400 font-medium flex items-center gap-2"><FileIcon size={12} /> {res.fileName}</div><div className="px-3 py-2 text-xs font-mono text-gray-500 pl-8 truncate group-hover:text-gray-300"><span className="text-gray-600 mr-2">{res.line}:</span>{res.preview}</div></div>))}</div></div>)}
           {activeActivity === 'ASSETS' && (<div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><span className="uppercase tracking-wider text-xs text-gray-500 font-semibold">Asset Library</span></div><div className="flex-1 overflow-y-auto p-2 grid grid-cols-2 gap-2">{assets.length === 0 && <div className="col-span-2 text-center text-gray-500 text-xs p-4">No assets generated.</div>}{assets.map((asset, idx) => (<div key={idx} draggable onDragStart={(e) => e.dataTransfer.setData('application/omni-asset', JSON.stringify(asset))} className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-primary-500 cursor-grab active:cursor-grabbing relative group aspect-square">{asset.type === 'image' && <img src={asset.url} className="w-full h-full object-cover" />}{asset.type === 'video' && <div className="w-full h-full bg-black flex items-center justify-center text-gray-500"><Video size={24}/></div>}{asset.type === 'audio' && <div className="w-full h-full bg-gray-900 flex items-center justify-center text-purple-400"><Music size={24}/></div>}<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2"><div className="text-[10px] text-center text-white break-all">{asset.name}</div></div></div>))}</div></div>)}
-          {activeActivity === 'DEBUG' && (<div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800 flex justify-between"><span className="uppercase tracking-wider text-xs text-gray-500 font-semibold">Run & Debug</span><div className="flex gap-1"><button className="text-green-500 hover:text-green-400"><Play size={14}/></button><button className="text-gray-500 hover:text-white"><Settings size={14}/></button></div></div><div className="flex-1 overflow-y-auto"><div className="px-4 py-2 bg-gray-800/30 text-xs font-bold text-gray-400 flex justify-between cursor-pointer hover:text-white"><span>VARIABLES</span></div>{debugVariables.map((v, i) => (<div key={i} className="px-4 py-1 flex justify-between text-xs font-mono border-b border-gray-800/50 hover:bg-gray-800"><span className="text-blue-400">{v.name}:</span><span className="text-red-300 truncate max-w-[120px]">{v.value}</span></div>))}{debugVariables.length === 0 && <div className="p-4 text-gray-600 text-xs italic">No active variables.</div>}<div className="px-4 py-2 bg-gray-800/30 text-xs font-bold text-gray-400 mt-4"><span>CALL STACK</span></div><div className="px-4 py-1 text-xs font-mono text-gray-400 hover:bg-gray-800 cursor-pointer">App (App.tsx:12)</div></div></div>)}
+          {activeActivity === 'DEBUG' && (<div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800 flex justify-between"><span className="uppercase tracking-wider text-xs text-gray-500 font-semibold">Run & Debug</span><div className="flex gap-1"><button className="text-green-500 hover:text-green-400"><Play size={14}/></button><button className="text-gray-500 hover:text-white"><Settings size={14}/></button></div></div><div className="flex-1 overflow-y-auto">
+              {/* Breakpoints Section */}
+              <div className="px-4 py-2 bg-gray-800/30 text-xs font-bold text-gray-400 flex justify-between cursor-pointer hover:text-white"><span>BREAKPOINTS</span></div>
+              {breakpoints.length === 0 && <div className="p-4 text-gray-600 text-xs italic">No active breakpoints.</div>}
+              {breakpoints.map(bp => (
+                  <div key={bp} className="px-4 py-1 flex items-center gap-2 text-xs font-mono border-b border-gray-800/50 hover:bg-gray-800 cursor-pointer" onClick={() => handleJumpToLine(activeFileId, bp)}>
+                      <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                      <span className="text-gray-300">{activeFile?.name}:{bp}</span>
+                  </div>
+              ))}
+              <div className="px-4 py-2 bg-gray-800/30 text-xs font-bold text-gray-400 mt-4 flex justify-between cursor-pointer hover:text-white"><span>VARIABLES</span></div>
+              {debugVariables.map((v, i) => (<div key={i} className="px-4 py-1 flex justify-between text-xs font-mono border-b border-gray-800/50 hover:bg-gray-800"><span className="text-blue-400">{v.name}:</span><span className="text-red-300 truncate max-w-[120px]">{v.value}</span></div>))}
+              {debugVariables.length === 0 && <div className="p-4 text-gray-600 text-xs italic">No active variables.</div>}
+              <div className="px-4 py-2 bg-gray-800/30 text-xs font-bold text-gray-400 mt-4"><span>CALL STACK</span></div><div className="px-4 py-1 text-xs font-mono text-gray-400 hover:bg-gray-800 cursor-pointer">App (App.tsx:12)</div>
+          </div></div>)}
         </div>
         )}
 
+        {/* Sidebar Resize Handle */}
+        {layout.showSidebar && (
+            <div
+                className="w-1 bg-gray-900 border-r border-gray-800 hover:bg-primary-600 hover:cursor-col-resize transition-colors z-30 flex-shrink-0 hidden md:block"
+                onMouseDown={(e) => startResizing('sidebar', e)}
+            />
+        )}
+
         {/* Main Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-gray-900 h-full">
+        <div className="flex-1 flex flex-col min-w-0 bg-gray-900 h-full" id="editor-container">
           {/* Tabs */}
           <div className="flex bg-gray-900 border-b border-gray-800 overflow-x-auto scrollbar-none shrink-0">
              {openFiles.map(fileId => {
@@ -1285,24 +1387,50 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                 </div>
             ) : (
                 <>
-                    <div className={`flex-1 relative flex flex-col ${isSplitView ? 'border-r border-gray-800 w-1/2' : 'w-full'}`}>
-                        {activeFile ? <CodeEditor ref={editorRef} code={activeFile.content || ''} onChange={handleFileChange} fileName={activeFile.name} config={editorConfig} onCodeAction={handleCodeAction} onSelectionChange={setEditorSelection} /> : (<div className="flex flex-col items-center justify-center h-full text-gray-500 bg-gray-950"><div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center mb-4"><Command size={32} className="opacity-20" /></div><p className="text-sm font-medium mb-2">No file is open</p><div className="text-xs flex flex-col gap-2 opacity-60"><span><kbd className="bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">Cmd+P</kbd> to search files</span></div></div>)}
+                    <div className={`relative flex flex-col ${isSplitView ? '' : 'w-full'}`} style={isSplitView ? { width: `${splitRatio}%` } : {}}>
+                        {activeFile ? (
+                            <CodeEditor 
+                                ref={editorRef} 
+                                code={activeFile.content || ''} 
+                                onChange={handleFileChange} 
+                                fileName={activeFile.name} 
+                                config={editorConfig} 
+                                onCodeAction={handleCodeAction} 
+                                onSelectionChange={setEditorSelection} 
+                                breakpoints={breakpoints}
+                                onToggleBreakpoint={handleToggleBreakpoint}
+                                onGhostTextRequest={handleGhostTextRequest}
+                            />
+                        ) : (<div className="flex flex-col items-center justify-center h-full text-gray-500 bg-gray-950"><div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center mb-4"><Command size={32} className="opacity-20" /></div><p className="text-sm font-medium mb-2">No file is open</p><div className="text-xs flex flex-col gap-2 opacity-60"><span><kbd className="bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">Cmd+P</kbd> to search files</span></div></div>)}
                     </div>
                     
                     {isSplitView && (
-                        <div className="flex-1 relative flex flex-col w-1/2 bg-gray-950">
-                            {secondaryFile ? (
-                                <>
-                                    <div className="h-8 bg-gray-900 border-b border-gray-800 flex items-center px-4 text-xs text-gray-400 font-medium"><span className="text-primary-400 mr-2">Split:</span> {secondaryFile.name} <button onClick={() => setSecondaryFileId(null)} className="ml-auto hover:text-white"><X size={12}/></button></div>
-                                    <CodeEditor code={secondaryFile.content || ''} onChange={(val) => handleFileChange(val, secondaryFileId!)} fileName={secondaryFile.name} config={editorConfig} onCodeAction={handleCodeAction} />
-                                </>
-                            ) : (
-                                <div className="flex flex-col items-center justify-center h-full text-gray-600">
-                                    <p className="text-xs mb-2">Select a file to open in split view</p>
-                                    <p className="text-[10px] opacity-60">Right-click a file > Open to Side</p>
-                                </div>
-                            )}
-                        </div>
+                        <>
+                            {/* Split Resizer */}
+                            <div 
+                                className="w-1 bg-gray-900 border-l border-r border-gray-800 hover:bg-primary-600 cursor-col-resize z-20 hidden md:block"
+                                onMouseDown={(e) => startResizing('split', e)}
+                            />
+                            <div className="relative flex flex-col bg-gray-950" style={{ width: `${100 - splitRatio}%` }}>
+                                {secondaryFile ? (
+                                    <>
+                                        <div className="h-8 bg-gray-900 border-b border-gray-800 flex items-center px-4 text-xs text-gray-400 font-medium"><span className="text-primary-400 mr-2">Split:</span> {secondaryFile.name} <button onClick={() => setSecondaryFileId(null)} className="ml-auto hover:text-white"><X size={12}/></button></div>
+                                        <CodeEditor 
+                                            code={secondaryFile.content || ''} 
+                                            onChange={(val) => handleFileChange(val, secondaryFileId!)} 
+                                            fileName={secondaryFile.name} 
+                                            config={editorConfig} 
+                                            onCodeAction={handleCodeAction} 
+                                        />
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full text-gray-600">
+                                        <p className="text-xs mb-2">Select a file to open in split view</p>
+                                        <p className="text-[10px] opacity-60">Right-click a file > Open to Side</p>
+                                    </div>
+                                )}
+                            </div>
+                        </>
                     )}
                 </>
             )}
@@ -1310,125 +1438,178 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
 
           {/* Bottom Panel (Terminal) */}
           {layout.showBottom && (
-            <div className="h-48 bg-black border-t border-gray-800 flex flex-col flex-shrink-0 transition-all">
-               <div className="flex border-b border-gray-800"><button onClick={() => setBottomPanelTab('terminal')} className={`px-4 py-1 text-xs uppercase font-bold ${bottomPanelTab === 'terminal' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Terminal</button><button onClick={() => setBottomPanelTab('problems')} className={`px-4 py-1 text-xs uppercase font-bold flex items-center gap-2 ${bottomPanelTab === 'problems' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Problems {problems.length > 0 && <span className="bg-yellow-900 text-yellow-500 px-1 rounded-full text-[10px]">{problems.length}</span>}</button><div className="ml-auto flex items-center px-2"><button onClick={() => toggleLayout('bottom')} className="text-gray-500 hover:text-white"><X size={14}/></button></div></div>
-               {bottomPanelTab === 'terminal' ? <Terminal logs={terminalLogs} onCommand={handleTerminalCommand} onAiFix={handleTerminalAiFix} /> : (<div className="flex-1 overflow-y-auto p-2 font-mono text-xs">{problems.length === 0 && <div className="text-gray-500 p-2">No problems detected.</div>}{problems.map((p, i) => (<div key={i} className="flex items-center gap-2 p-1 hover:bg-gray-900 cursor-pointer group">{p.severity === 'error' && <AlertCircle size={12} className="text-red-500"/>}{p.severity === 'warning' && <AlertTriangle size={12} className="text-yellow-500"/>}{p.severity === 'info' && <Info size={12} className="text-blue-500"/>}<span className="text-gray-300">{p.message}</span><span className="text-gray-600 ml-auto flex items-center gap-4"><span>{p.file}:{p.line}</span><button onClick={(e) => {e.stopPropagation(); handleQuickFix(p);}} className="text-yellow-500 hover:text-white opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-yellow-900/30 px-2 py-0.5 rounded border border-yellow-800/50"><Zap size={10}/> Auto Fix</button></span></div>))}</div>)}
-            </div>
+            <>
+                {/* Terminal Resize Handle */}
+                <div 
+                    className="h-1 bg-gray-900 border-t border-gray-800 hover:bg-primary-600 cursor-ns-resize z-20 hidden md:block"
+                    onMouseDown={(e) => startResizing('bottomPanel', e)}
+                />
+                <div className="bg-black border-t border-gray-800 flex flex-col flex-shrink-0 transition-all" style={{ height: bottomPanelHeight }}>
+                <div className="flex border-b border-gray-800"><button onClick={() => setBottomPanelTab('terminal')} className={`px-4 py-1 text-xs uppercase font-bold ${bottomPanelTab === 'terminal' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Terminal</button><button onClick={() => setBottomPanelTab('problems')} className={`px-4 py-1 text-xs uppercase font-bold flex items-center gap-2 ${bottomPanelTab === 'problems' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Problems {problems.length > 0 && <span className="bg-yellow-900 text-yellow-500 px-1 rounded-full text-[10px]">{problems.length}</span>}</button><div className="ml-auto flex items-center px-2"><button onClick={() => toggleLayout('bottom')} className="text-gray-500 hover:text-white"><X size={14}/></button></div></div>
+                {bottomPanelTab === 'terminal' ? <Terminal logs={terminalLogs} onCommand={handleTerminalCommand} onAiFix={handleTerminalAiFix} /> : (<div className="flex-1 overflow-y-auto p-2 font-mono text-xs">{problems.length === 0 && <div className="text-gray-500 p-2">No problems detected.</div>}{problems.map((p, i) => (<div key={i} className="flex items-center gap-2 p-1 hover:bg-gray-900 cursor-pointer group">{p.severity === 'error' && <AlertCircle size={12} className="text-red-500"/>}{p.severity === 'warning' && <AlertTriangle size={12} className="text-yellow-500"/>}{p.severity === 'info' && <Info size={12} className="text-blue-500"/>}<span className="text-gray-300">{p.message}</span><span className="text-gray-600 ml-auto flex items-center gap-4"><span>{p.file}:{p.line}</span><button onClick={(e) => {e.stopPropagation(); handleQuickFix(p);}} className="text-yellow-500 hover:text-white opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-yellow-900/30 px-2 py-0.5 rounded border border-yellow-800/50"><Zap size={10}/> Auto Fix</button></span></div>))}</div>)}
+                </div>
+            </>
           )}
         </div>
 
+        {/* Right Panel Resize Handle */}
+        {layout.showRight && (
+            <div 
+                className="w-1 bg-gray-900 border-l border-gray-800 hover:bg-primary-600 hover:cursor-col-resize transition-colors z-30 flex-shrink-0 hidden md:block"
+                onMouseDown={(e) => startResizing('rightPanel', e)}
+            />
+        )}
+
         {/* Right Panel (Preview) */}
         {layout.showRight && (
-            <PreviewPanel 
-                project={project!} 
-                previewSrc={previewSrc} 
-                activeTab={activeTab} 
-                setActiveTab={setActiveTab} 
-                onToggleLayout={() => toggleLayout('right')}
-                onExport={handleExport}
-                onRefreshPreview={() => {
-                    const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
-                    if (iframe) iframe.srcdoc = iframe.srcdoc;
+            <div 
+                className="flex-shrink-0 relative bg-gray-900 border-l border-gray-800 absolute md:static inset-0 md:inset-auto z-40 md:z-0 w-full md:w-auto"
+                style={{ 
+                    width: window.innerWidth < 768 ? '100%' : rightPanelWidth,
+                    minWidth: window.innerWidth >= 768 ? '300px' : 'auto'
                 }}
-                roadmap={roadmap}
-                isGeneratingPlan={isGeneratingPlan}
-                onGeneratePlan={handleGeneratePlan}
-                onExecutePhase={handleExecutePhase}
-                onToggleTask={handleToggleTask}
-                onLog={(msg) => setTerminalLogs(prev => [...prev, msg])}
-                files={files}
-            />
+            >
+                <PreviewPanel 
+                    project={project!} 
+                    previewSrc={previewSrc} 
+                    activeTab={activeTab} 
+                    setActiveTab={setActiveTab} 
+                    onToggleLayout={() => toggleLayout('right')}
+                    onExport={handleExport}
+                    onRefreshPreview={() => {
+                        const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
+                        if (iframe) iframe.srcdoc = iframe.srcdoc;
+                    }}
+                    roadmap={roadmap}
+                    isGeneratingPlan={isGeneratingPlan}
+                    onGeneratePlan={handleGeneratePlan}
+                    onExecutePhase={handleExecutePhase}
+                    onToggleTask={handleToggleTask}
+                    onLog={(msg) => setTerminalLogs(prev => [...prev, msg])}
+                    files={files}
+                />
+            </div>
         )}
       </div>
 
       {/* Status Bar */}
-      <div className="h-6 bg-primary-700 text-white text-[10px] flex items-center px-3 justify-between select-none z-50 flex-shrink-0">
+      <div className="h-6 bg-gray-900 border-t border-gray-800 text-gray-400 text-[10px] flex items-center px-3 justify-between select-none z-50 flex-shrink-0">
         <div className="flex items-center gap-4 overflow-hidden">
-          <button onClick={(e) => { e.stopPropagation(); setShowBranchMenu(!showBranchMenu); }} className="flex items-center gap-1 hover:bg-primary-600 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap"><GitBranch size={10} /><span>{currentBranch}</span></button>
-          <div className="flex items-center gap-1 hover:bg-primary-600 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap"><RefreshCw size={10} className={isGenerating ? "animate-spin" : ""} /><span>{isGenerating ? 'Generating...' : 'Ready'}</span></div>
-          <div className="flex items-center gap-1 whitespace-nowrap"><AlertCircle size={10} /><span>{problems.length} Problems</span></div>
+          <button onClick={(e) => { e.stopPropagation(); setShowBranchMenu(!showBranchMenu); }} className="flex items-center gap-1 hover:bg-gray-800 hover:text-white px-2 py-0.5 rounded cursor-pointer whitespace-nowrap transition-colors"><GitBranch size={10} /><span>{currentBranch}</span></button>
+          <div className="flex items-center gap-1 hover:bg-gray-800 hover:text-white px-2 py-0.5 rounded cursor-pointer whitespace-nowrap transition-colors"><RefreshCw size={10} className={isGenerating ? "animate-spin" : ""} /><span>{isGenerating ? 'Generating...' : 'Ready'}</span></div>
+          <div className="hidden sm:flex items-center gap-1 whitespace-nowrap"><AlertCircle size={10} /><span>{problems.length} Problems</span></div>
         </div>
         <div className="flex items-center gap-4">
            <div className="flex items-center gap-1">
-              <button onClick={() => toggleLayout('bottom')} className={`p-0.5 rounded hover:bg-primary-600 ${!layout.showBottom ? 'opacity-50' : ''}`} title="Toggle Terminal"><PanelBottom size={10}/></button>
-              <button onClick={() => toggleLayout('right')} className={`p-0.5 rounded hover:bg-primary-600 ${!layout.showRight ? 'opacity-50' : ''}`} title="Toggle Preview"><Columns size={10}/></button>
+              <button onClick={() => toggleLayout('bottom')} className={`p-0.5 rounded hover:bg-gray-800 hover:text-white ${!layout.showBottom ? 'opacity-50' : ''}`} title="Toggle Terminal"><PanelBottom size={10}/></button>
+              <button onClick={() => toggleLayout('right')} className={`p-0.5 rounded hover:bg-gray-800 hover:text-white ${!layout.showRight ? 'opacity-50' : ''}`} title="Toggle Preview"><Columns size={10}/></button>
            </div>
-           <div className="hidden md:flex items-center gap-2"><span>Ln {editorRef.current ? '1' : '1'}, Col 1</span></div>
+           <div className="hidden sm:flex items-center gap-2"><span>Ln {editorRef.current ? '1' : '1'}, Col 1</span></div>
            <div className="hidden md:flex items-center gap-2"><span>UTF-8</span></div>
-           <div className="hidden md:flex items-center gap-1 bg-primary-800 px-2 rounded"><Check size={10} /><span>Prettier</span></div>
-           <div className="font-semibold text-primary-200 whitespace-nowrap">{isNative ? 'TS RN' : 'TS React'}</div>
+           <div className="hidden md:flex items-center gap-1 bg-gray-800 px-2 rounded text-gray-300"><Check size={10} /><span>Prettier</span></div>
+           <div className="font-semibold text-primary-400 whitespace-nowrap">{isNative ? 'TS RN' : 'TS React'}</div>
         </div>
       </div>
 
       {/* Chat Interface (Overlay) */}
       <div className="absolute bottom-8 right-6 w-[90%] md:w-96 z-40 flex flex-col gap-4 pointer-events-none max-h-[60vh]">
-        {/* Chat History Bubbles */}
-        <div className="flex flex-col-reverse gap-2 overflow-y-auto scrollbar-none pointer-events-auto pb-2 px-1">
-           {chatHistory.slice().reverse().map((msg) => (
-               <div key={msg.id} className="flex flex-col gap-1">
-                   <MessageRenderer message={msg} onApplyCode={handleApplyCode} onApplyAll={handleApplyAll} />
-                   {msg.critique && (
-                       <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg text-xs text-gray-300 shadow-xl ml-4 relative animate-in slide-in-from-left-4">
-                           <div className="absolute -left-2 top-3 w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-r-[8px] border-r-gray-700"></div>
-                           <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
-                               <span className="font-bold text-blue-400 flex items-center gap-1"><ShieldCheck size={12}/> Omni-Critic</span>
-                               <span className={`font-bold ${msg.critique.score > 80 ? 'text-green-400' : 'text-yellow-400'}`}>{msg.critique.score}/100</span>
-                           </div>
-                           {msg.critique.issues.length > 0 && (
-                               <div className="mb-2">
-                                   <span className="text-red-400 font-bold uppercase text-[10px]">Issues</span>
-                                   <ul className="list-disc pl-3 space-y-0.5 mt-0.5">
-                                       {msg.critique.issues.slice(0, 2).map((issue, i) => <li key={i} className="text-gray-400">{issue}</li>)}
-                                   </ul>
-                               </div>
-                           )}
-                           <div className="mb-2">
-                               <span className="text-green-400 font-bold uppercase text-[10px]">Suggestion</span>
-                               <ul className="list-disc pl-3 space-y-0.5 mt-0.5">
-                                   {msg.critique.suggestions.slice(0, 2).map((s, i) => <li key={i} className="text-gray-400">{s}</li>)}
-                               </ul>
-                           </div>
-                       </div>
-                   )}
-               </div>
-           ))}
-           {isGenerating && (<div className="flex flex-col items-start animate-pulse"><div className="bg-gray-800 text-gray-400 rounded-lg p-3 text-xs flex items-center gap-2 shadow-lg border border-gray-700"><Loader2 size={12} className="animate-spin text-primary-400" /> <span>AI is thinking... ({activeModel})</span></div></div>)}
-        </div>
-
-        {/* Input Area */}
-        <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 p-3 rounded-2xl shadow-2xl pointer-events-auto flex flex-col gap-2">
-            {/* Context Pill for Image */}
-            {attachedImage && (<div className="relative inline-block w-16 h-16 rounded-lg overflow-hidden border border-gray-600 mb-2 group"><img src={attachedImage} className="w-full h-full object-cover" alt="attachment" /><button onClick={() => setAttachedImage(undefined)} className="absolute top-0 right-0 bg-black/50 text-white p-0.5 hover:bg-red-500"><X size={12} /></button></div>)}
-            
-            {/* Context Pill for Code Selection */}
-            {editorSelection && (
-               <div className="flex items-center gap-2 bg-blue-900/30 border border-blue-800 rounded-lg px-3 py-2 mb-1 animate-in fade-in slide-in-from-bottom-2">
-                  <Code2 size={14} className="text-blue-400" />
-                  <div className="flex-1 min-w-0">
-                     <div className="text-[10px] text-blue-200 font-bold uppercase">Context Active</div>
-                     <div className="text-xs text-gray-400 truncate font-mono">{editorSelection.split('\n')[0]}...</div>
-                  </div>
-                  <button onClick={() => setEditorSelection('')} className="text-gray-500 hover:text-white"><X size={14}/></button>
-               </div>
-            )}
-
-            <form onSubmit={handleChatSubmit} className="flex gap-2 items-end">
-               <div className="flex-1 bg-gray-800 rounded-xl border border-gray-700 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500 transition-all flex items-center p-1">
-                   <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors" title="Attach Image/File"><Paperclip size={18} /></button>
-                   <textarea className="flex-1 bg-transparent border-none text-sm text-white px-2 py-2 max-h-32 focus:outline-none resize-none scrollbar-none placeholder-gray-500" rows={1} placeholder="Ask Omni to generate code..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSubmit(e); } }} />
-                   <button type="button" onClick={toggleVoiceInput} className={`p-2 rounded-lg transition-colors ${isListening ? 'text-red-500 animate-pulse bg-red-900/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`} title="Voice Input">{isListening ? <MicOff size={18} /> : <Mic size={18} />}</button>
-               </div>
-               <Button id="chat-submit-btn" type="submit" disabled={!chatInput.trim() && !attachedImage && !editorSelection || isGenerating} className={`rounded-xl p-3 aspect-square flex items-center justify-center transition-all ${!chatInput.trim() && !attachedImage && !editorSelection ? 'opacity-50 cursor-not-allowed' : 'shadow-lg shadow-primary-900/50'}`}>{isGenerating ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}</Button>
-            </form>
-            <div className="flex justify-between px-1 text-[10px] text-gray-500 font-medium">
-                <div className="flex items-center gap-2">
-                    <span>Using {activeModel}</span>
-                    <label className="flex items-center gap-1 cursor-pointer hover:text-white"><input type="checkbox" checked={enableCritic} onChange={e => setEnableCritic(e.target.checked)} className="rounded bg-gray-800 border-gray-600"/> Auto-Critic</label>
-                    <button onClick={handleManualReview} className={`flex items-center gap-1 hover:text-blue-400 ${isReviewing ? 'animate-pulse text-blue-400' : ''}`} title="Run Code Review"><ShieldCheck size={10}/> Review</button>
+        {isChatOpen ? (
+            <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden max-h-[60vh] animate-in slide-in-from-bottom-4">
+                {/* Chat Header */}
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-850 border-b border-gray-700">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span className="text-xs font-bold text-gray-200">Omni Assistant</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-white transition-colors"><Minimize2 size={14}/></button>
+                    </div>
                 </div>
-                <span className="flex items-center gap-1"><Command size={8}/> + K for commands</span>
+
+                {/* Chat History Bubbles */}
+                <div className="flex-1 flex flex-col-reverse gap-2 overflow-y-auto scrollbar-none p-3 min-h-[150px]">
+                {chatHistory.slice().reverse().map((msg) => (
+                    <div key={msg.id} className="flex flex-col gap-1">
+                        <MessageRenderer message={msg} onApplyCode={handleApplyCode} onApplyAll={handleApplyAll} />
+                        {msg.critique && (
+                            <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg text-xs text-gray-300 shadow-xl ml-4 relative animate-in slide-in-from-left-4">
+                                <div className="absolute -left-2 top-3 w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-r-[8px] border-r-gray-700"></div>
+                                <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
+                                    <span className="font-bold text-blue-400 flex items-center gap-1"><ShieldCheck size={12}/> Omni-Critic</span>
+                                    <span className={`font-bold ${msg.critique.score > 80 ? 'text-green-400' : 'text-yellow-400'}`}>{msg.critique.score}/100</span>
+                                </div>
+                                {msg.critique.issues.length > 0 && (
+                                    <div className="mb-2">
+                                        <span className="text-red-400 font-bold uppercase text-[10px]">Issues</span>
+                                        <ul className="list-disc pl-3 space-y-0.5 mt-0.5">
+                                            {msg.critique.issues.slice(0, 2).map((issue, i) => <li key={i} className="text-gray-400">{issue}</li>)}
+                                        </ul>
+                                    </div>
+                                )}
+                                <div className="mb-2">
+                                    <span className="text-green-400 font-bold uppercase text-[10px]">Suggestion</span>
+                                    <ul className="list-disc pl-3 space-y-0.5 mt-0.5">
+                                        {msg.critique.suggestions.slice(0, 2).map((s, i) => <li key={i} className="text-gray-400">{s}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ))}
+                {isGenerating && (<div className="flex flex-col items-start animate-pulse"><div className="bg-gray-800 text-gray-400 rounded-lg p-3 text-xs flex items-center gap-2 shadow-lg border border-gray-700"><Loader2 size={12} className="animate-spin text-primary-400" /> <span>AI is thinking... ({activeModel})</span></div></div>)}
+                </div>
+
+                {/* Input Area */}
+                <div className="p-3 border-t border-gray-700 bg-gray-900/50">
+                    {/* Context Pill for Image */}
+                    {attachedImage && (<div className="relative inline-block w-16 h-16 rounded-lg overflow-hidden border border-gray-600 mb-2 group"><img src={attachedImage} className="w-full h-full object-cover" alt="attachment" /><button onClick={() => setAttachedImage(undefined)} className="absolute top-0 right-0 bg-black/50 text-white p-0.5 hover:bg-red-500"><X size={12} /></button></div>)}
+                    
+                    {/* Context Pill for Code Selection */}
+                    {editorSelection && (
+                    <div className="flex items-center gap-2 bg-blue-900/30 border border-blue-800 rounded-lg px-3 py-2 mb-1 animate-in fade-in slide-in-from-bottom-2">
+                        <Code2 size={14} className="text-blue-400" />
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[10px] text-blue-200 font-bold uppercase">Context Active</div>
+                            <div className="text-xs text-gray-400 truncate font-mono">{editorSelection.split('\n')[0]}...</div>
+                        </div>
+                        <button onClick={() => setEditorSelection('')} className="text-gray-500 hover:text-white"><X size={14}/></button>
+                    </div>
+                    )}
+
+                    <form onSubmit={handleChatSubmit} className="flex gap-2 items-end">
+                    <div className="flex-1 bg-gray-800 rounded-xl border border-gray-700 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500 transition-all flex items-center p-1">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors" title="Attach Image/File"><Paperclip size={18} /></button>
+                        <textarea className="flex-1 bg-transparent border-none text-sm text-white px-2 py-2 max-h-32 focus:outline-none resize-none scrollbar-none placeholder-gray-500" rows={1} placeholder="Ask Omni to generate code..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSubmit(e); } }} />
+                        <button type="button" onClick={toggleVoiceInput} className={`p-2 rounded-lg transition-colors ${isListening ? 'text-red-500 animate-pulse bg-red-900/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`} title="Voice Input">{isListening ? <MicOff size={18} /> : <Mic size={18} />}</button>
+                    </div>
+                    <Button id="chat-submit-btn" type="submit" disabled={!chatInput.trim() && !attachedImage && !editorSelection || isGenerating} className={`rounded-xl p-3 aspect-square flex items-center justify-center transition-all ${!chatInput.trim() && !attachedImage && !editorSelection ? 'opacity-50 cursor-not-allowed' : 'shadow-lg shadow-primary-900/50'}`}>{isGenerating ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}</Button>
+                    </form>
+                    <div className="flex justify-between px-1 text-[10px] text-gray-500 font-medium mt-2">
+                        <div className="flex items-center gap-2">
+                            <span>Using {activeModel}</span>
+                            <label className="flex items-center gap-1 cursor-pointer hover:text-white"><input type="checkbox" checked={enableCritic} onChange={e => setEnableCritic(e.target.checked)} className="rounded bg-gray-800 border-gray-600"/> Auto-Critic</label>
+                            <button onClick={handleManualReview} className={`flex items-center gap-1 hover:text-blue-400 ${isReviewing ? 'animate-pulse text-blue-400' : ''}`} title="Run Code Review"><ShieldCheck size={10}/> Review</button>
+                        </div>
+                        <span className="flex items-center gap-1"><Command size={8}/> + K for commands</span>
+                    </div>
+                </div>
             </div>
-        </div>
+        ) : (
+            <div className="flex justify-end pointer-events-auto">
+                <button 
+                    onClick={() => setIsChatOpen(true)} 
+                    className="bg-primary-600 text-white p-4 rounded-full shadow-2xl hover:bg-primary-500 transition-all hover:scale-110 flex items-center justify-center group"
+                >
+                    <MessageSquare size={24} className="group-hover:animate-bounce"/>
+                    {isGenerating && (
+                        <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+                        </span>
+                    )}
+                </button>
+            </div>
+        )}
       </div>
 
     </div>
