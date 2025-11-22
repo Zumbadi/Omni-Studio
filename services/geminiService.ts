@@ -161,6 +161,28 @@ export const generateGhostText = async (prefix: string, suffix: string): Promise
   }
 };
 
+export const chatWithVoice = async (prompt: string): Promise<string> => {
+  if (!process.env.API_KEY) return "API Key missing.";
+  const ai = getAiClient();
+  
+  const systemInstruction = `You are Omni, a helpful voice assistant for a code editor.
+  Keep your responses short, conversational, and helpful.
+  Do not output code blocks, as you are speaking to the user.
+  If the user asks to perform an action (like creating a file), confirm you are doing it.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { systemInstruction }
+    });
+    return response.text || "I didn't catch that.";
+  } catch (e) {
+    return "Sorry, I'm having trouble connecting.";
+  }
+};
+
 export const generateProjectScaffold = async (prompt: string, type: ProjectType): Promise<any[]> => {
   if (!process.env.API_KEY) return [];
 

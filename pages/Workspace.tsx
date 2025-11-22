@@ -1,21 +1,24 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, PanelBottom, Columns, MessageSquare, ArrowRight, X, Minimize2, SplitSquareHorizontal, GitBranch } from 'lucide-react';
+import { RefreshCw, PanelBottom, Columns, MessageSquare, ArrowRight, X, Minimize2, SplitSquareHorizontal, GitBranch, Mic } from 'lucide-react';
 import { MOCK_COMMITS, MOCK_EXTENSIONS } from '../constants';
-import { ChatMessage, Project, ProjectType, SocialPost, AudioTrack, Extension, GitCommit as GitCommitType, ProjectPhase, AgentTask, AuditIssue } from '../types';
+import { Project, ProjectType, SocialPost, AudioTrack, Extension, GitCommit as GitCommitType, ProjectPhase, AgentTask } from '../types';
 import { CodeEditor, CodeEditorHandle } from '../components/CodeEditor';
 import { Terminal } from '../components/Terminal';
-import { generateCodeResponse, critiqueCode, runAgentFileTask, generateGhostText } from '../services/geminiService';
+import { runAgentFileTask, generateGhostText } from '../services/geminiService';
 import { Button } from '../components/Button';
 import JSZip from 'jszip';
 import { generatePreviewHtml } from '../utils/runtime';
 import { MessageRenderer } from '../components/MessageRenderer';
 import { PreviewPanel } from '../components/PreviewPanel';
 import { DiffEditor } from '../components/DiffEditor';
-import { findRelevantContext } from '../utils/projectAnalysis';
 import { useFileSystem } from '../hooks/useFileSystem';
 import { useResizable } from '../hooks/useResizable';
+import { useOmniAssistant } from '../hooks/useOmniAssistant';
+import { useTerminal } from '../hooks/useTerminal';
 import { WorkspaceSidebar } from '../components/WorkspaceSidebar';
+import { VoiceCommander } from '../components/VoiceCommander';
+import { CommandPalette } from '../components/CommandPalette';
 
 interface WorkspaceProps {
   project: Project | null;
@@ -42,7 +45,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   // Hook: File System Logic
   const { 
       files, setFiles, activeFileId, setActiveFileId, openFiles, setOpenFiles, 
-      remoteDirName, setRemoteDirName, updateFileContent, findFileById, getAllFiles,
+      remoteDirName, setRemoteDirName, updateFileContent, addFile, findFileById, getAllFiles,
       handleFileClick: onFileClick, handleCloseTab: onCloseTab
   } = useFileSystem(project);
   
@@ -55,19 +58,19 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       startResizing 
   } = useResizable();
 
+  const [isResizing, setIsResizing] = useState(false);
+
   // Split View State
   const [isSplitView, setIsSplitView] = useState(false);
   const [secondaryFileId, setSecondaryFileId] = useState<string | null>(null);
+  const activeFile = findFileById(files, activeFileId);
+  const secondaryFile = secondaryFileId ? findFileById(files, secondaryFileId) : null;
   
   // Diff View State
   const [diffFileId, setDiffFileId] = useState<string | null>(null);
+  const diffFile = diffFileId ? findFileById(files, diffFileId) : null;
 
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(true);
-  
   const [activeTab, setActiveTab] = useState<'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture'>('preview');
   const [bottomPanelTab, setBottomPanelTab] = useState<'terminal' | 'problems'>('terminal');
   
@@ -78,9 +81,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const [roadmap, setRoadmap] = useState<ProjectPhase[]>([]);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   
-  // Critic
-  const [enableCritic, setEnableCritic] = useState(true);
-  
   // Git State
   const [commits, setCommits] = useState<GitCommitType[]>(MOCK_COMMITS);
   const [currentBranch, setCurrentBranch] = useState('main');
@@ -90,6 +90,36 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const [editorConfig, setEditorConfig] = useState<any>({});
   const editorRef = useRef<CodeEditorHandle>(null);
   const [editorSelection, setEditorSelection] = useState('');
+  
+  // Hook: AI Assistant (Chat, Critic, Code Gen)
+  const {
+      chatInput, setChatInput,
+      chatHistory, setChatHistory,
+      isGenerating,
+      isChatOpen, setIsChatOpen,
+      enableCritic, setEnableCritic,
+      attachedImage, setAttachedImage,
+      triggerGeneration,
+      handleChatSubmit,
+      handleCodeAction
+  } = useOmniAssistant({
+      projectType: project?.type || ProjectType.REACT_WEB,
+      files,
+      activeFile,
+      activeModel,
+      editorSelection,
+      setEditorSelection
+  });
+
+  // Hook: Terminal Logic
+  const { handleCommand, handleAiFix } = useTerminal({
+      files,
+      setFiles,
+      activeFileId,
+      projectType: project?.type || ProjectType.REACT_WEB,
+      addFile,
+      onLog: (msg) => setTerminalLogs(prev => [...prev, msg])
+  });
   
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -113,15 +143,24 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const [assets, setAssets] = useState<{type: 'image' | 'video' | 'audio', url: string, name: string}[]>([]);
   const [extensions, setExtensions] = useState<Extension[]>(MOCK_EXTENSIONS);
 
-  // Command Palette
+  // Command Palette & Voice
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showVoiceCommander, setShowVoiceCommander] = useState(false);
   const commandInputRef = useRef<HTMLInputElement>(null);
 
   // Context Menu
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, fileId: null });
-  
-  // Vision State
-  const [attachedImage, setAttachedImage] = useState<string | undefined>(undefined);
+
+  // Wrappers for resizing to handle overlay state
+  const handleResizeStart = (dir: any, e: any) => {
+      setIsResizing(true);
+      startResizing(dir, e);
+      const onMouseUp = () => {
+          setIsResizing(false);
+          window.removeEventListener('mouseup', onMouseUp);
+      };
+      window.addEventListener('mouseup', onMouseUp);
+  };
 
   // --- Agent Runner Logic ---
   useEffect(() => {
@@ -142,6 +181,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
               if (result) {
                   const filenameMatch = result.match(/^\/\/ filename: (.*)/);
                   const targetName = filenameMatch ? filenameMatch[1].trim() : `processed_${file.node.name}`;
+                  addFile(targetName, result);
                   setActiveAgentTask(prev => prev ? { ...prev, logs: [...prev.logs, `> Generated ${targetName}`] } : null);
               }
 
@@ -263,7 +303,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
        if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'k')) {
           e.preventDefault();
           setShowCommandPalette(prev => !prev);
-          setTimeout(() => commandInputRef.current?.focus(), 50);
        }
        if (e.key === 'Escape') {
           setShowCommandPalette(false);
@@ -275,10 +314,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [project, files]);
-
-  const activeFile = findFileById(files, activeFileId);
-  const secondaryFile = secondaryFileId ? findFileById(files, secondaryFileId) : null;
-  const diffFile = diffFileId ? findFileById(files, diffFileId) : null;
 
   // ... Handlers ...
   const handleCommit = (msg: string) => {
@@ -336,35 +371,12 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
     }
   }, [files, isNative, isBackend, findFileById]);
 
-  // ... Apply Code Logic ...
-  const upsertFileByPath = (nodes: any[], pathParts: string[], newContent: string): any[] => {
-    const [currentPart, ...restParts] = pathParts;
-    if (restParts.length === 0) {
-       const existingFile = nodes.find(n => n.name === currentPart && n.type === 'file');
-       if (existingFile) return nodes.map(n => n.id === existingFile.id ? { ...n, content: newContent, gitStatus: 'modified' } : n);
-       else {
-          const newFile = { id: Date.now().toString() + Math.random(), name: currentPart, type: 'file', content: newContent, gitStatus: 'added' };
-          return [...nodes, newFile];
-       }
-    }
-    const existingDir = nodes.find(n => n.name === currentPart && n.type === 'directory');
-    if (existingDir) {
-       return nodes.map(n => n.id === existingDir.id ? { ...n, isOpen: true, children: upsertFileByPath(n.children || [], restParts, newContent) } : n);
-    } else {
-       const newDir = { id: Date.now().toString() + Math.random(), name: currentPart, type: 'directory', children: [], isOpen: true };
-       newDir.children = upsertFileByPath([], restParts, newContent);
-       return [...nodes, newDir];
-    }
-  };
-
   const handleApplyCode = (code: string) => {
     const filenameMatch = code.match(/^\/\/ filename: (.*)/);
     if (filenameMatch) {
         const targetPath = filenameMatch[1].trim();
-        const normalizedPath = targetPath.replace(/^(\.\/|\/)/, '');
-        const pathParts = normalizedPath.split('/');
-        setFiles(prev => upsertFileByPath(prev, pathParts, code));
-        setTerminalLogs(prev => [...prev, `> Smart Apply: Updated ${normalizedPath}`]);
+        addFile(targetPath, code);
+        setTerminalLogs(prev => [...prev, `> Smart Apply: Updated ${targetPath}`]);
     } else if (activeFile) {
       updateFileContent(activeFile.id, code);
       setTerminalLogs(prev => [...prev, `> Applied changes to ${activeFile.name}`]);
@@ -376,46 +388,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const handleApplyAll = (codes: string[]) => {
       codes.forEach(code => handleApplyCode(code));
       setTerminalLogs(prev => [...prev, `> Bulk Apply: Processed ${codes.length} file updates.`]);
-  };
-
-  // Trigger AI Generation
-  const triggerGeneration = async (prompt: string) => {
-    setIsGenerating(true);
-    const currentCode = activeFile?.content || '';
-    const fileStructure = getAllFiles(files).map(f => f.path).join('\n');
-    let responseText = '';
-    
-    let finalPrompt = prompt;
-    if (editorSelection) finalPrompt += `\n\n[Referenced Code Selection]:\n\`\`\`\n${editorSelection}\n\`\`\`\n`;
-    const extraContext = findRelevantContext(files, prompt);
-    if (extraContext) finalPrompt += `\n\n[Relevant Context]:${extraContext}`;
-
-    const tempId = 'temp-' + Date.now();
-    setChatHistory(prev => [...prev, { id: tempId, role: 'model', text: '', timestamp: Date.now() }]);
-    
-    await generateCodeResponse(
-      finalPrompt, currentCode, project?.type || ProjectType.REACT_WEB, fileStructure, activeModel, 
-      (chunk) => { responseText += chunk; setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, text: responseText } : msg)); },
-      attachedImage, chatHistory
-    );
-    
-    if (enableCritic) runCritique(responseText, finalPrompt);
-    setAttachedImage(undefined);
-    setEditorSelection('');
-    setIsGenerating(false);
-  };
-
-  const runCritique = async (code: string, task: string) => {
-      const criticRes = await critiqueCode(code, task);
-      if (criticRes) {
-          setChatHistory(prev => [...prev, {
-              id: `critic-${Date.now()}`,
-              role: 'critic',
-              text: `Omni-Critic Review (Score: ${criticRes.score}/100)`,
-              timestamp: Date.now(),
-              critique: criticRes
-          }]);
-      }
   };
 
   // Handlers for Search
@@ -441,6 +413,38 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       if (panel === 'right') setLayout(p => ({ ...p, showRight: !p.showRight }));
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const uploadedFiles = e.target.files;
+      if (!uploadedFiles) return;
+      
+      for (let i = 0; i < uploadedFiles.length; i++) {
+          const file = uploadedFiles[i];
+          const text = await file.text();
+          addFile(file.name, text);
+          setTerminalLogs(prev => [...prev, `> Uploaded file: ${file.name}`]);
+      }
+  };
+
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const uploadedFiles = e.target.files;
+      if (!uploadedFiles) return;
+      
+      for (let i = 0; i < uploadedFiles.length; i++) {
+          const file = uploadedFiles[i];
+          const path = file.webkitRelativePath || file.name;
+          const text = await file.text();
+          addFile(path, text);
+      }
+      setTerminalLogs(prev => [...prev, `> Uploaded folder content.`]);
+  };
+
+  const handleSystemCommand = (cmd: string) => {
+      if (cmd === 'toggle_sidebar') toggleLayout('sidebar');
+      if (cmd === 'toggle_terminal') toggleLayout('bottom');
+      if (cmd === 'git_commit') setActiveActivity('GIT');
+      if (cmd === 'open_settings') { /* Navigate handled by App */ }
+  };
+
   // File Explorer Handlers
   const handleFileOps = {
       onConnectRemote: async () => {
@@ -454,48 +458,43 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
           }
       },
       onAddFile: () => {
-          const name = prompt("Enter file name:");
-          if (!name) return;
-          setFiles(prev => [...prev, { id: Date.now().toString(), name, type: 'file', content: '', gitStatus: 'added' }]);
+          const name = prompt("Enter file path (e.g. components/Button.tsx):");
+          if (name) {
+              addFile(name, '');
+              setTerminalLogs(prev => [...prev, `> Created ${name}`]);
+          }
       },
       onAddFolder: () => {},
-      onUploadFile: () => {},
-      onUploadFolder: () => {},
+      onUploadFile: handleFileUpload,
+      onUploadFolder: handleFolderUpload,
       onInstallPackage: () => {},
       onRunScript: (script: string, cmd: string) => setTerminalLogs(prev => [...prev, `> Running ${script}: ${cmd}`, '> ...'])
-  };
-
-  const handleChatSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    const newUserMsg = { id: Date.now().toString(), role: 'user' as const, text: chatInput, timestamp: Date.now() };
-    setChatHistory(prev => [...prev, newUserMsg]);
-    setChatInput('');
-    triggerGeneration(newUserMsg.text);
-  };
-
-  const handleCodeAction = (action: string, selectedCode: string) => {
-      const fileContext = activeFile ? ` in ${activeFile.name}` : '';
-      let prompt = '';
-      if (action === 'Explain') prompt = `Explain this code${fileContext}:\n\n${selectedCode}`;
-      if (action === 'Refactor') prompt = `Refactor this code${fileContext} to be cleaner and more efficient:\n\n${selectedCode}`;
-      if (action === 'Fix') prompt = `Find and fix any potential bugs in this code${fileContext}:\n\n${selectedCode}`;
-      setChatInput(prompt);
-      setIsChatOpen(true);
-      triggerGeneration(prompt);
   };
 
   const onFileClickWrapper = useCallback((id: string) => onFileClick(id, isSplitView, secondaryFileId, setSecondaryFileId), [isSplitView, secondaryFileId, onFileClick]);
   const onResultClickWrapper = useCallback((id: string, line: number) => {
       onFileClick(id, isSplitView, secondaryFileId, setSecondaryFileId);
-      // Logic to jump to line would be here (via editorRef)
+      if (editorRef.current) editorRef.current.scrollToLine(line);
   }, [isSplitView, secondaryFileId, onFileClick]);
 
   if (!project) return <div className="flex-1 flex items-center justify-center text-gray-500">Select a project to begin</div>;
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 overflow-hidden w-full">
+    <div className="flex flex-col h-full bg-gray-950 overflow-hidden w-full relative">
+      <CommandPalette 
+        isOpen={showCommandPalette} 
+        onClose={() => setShowCommandPalette(false)} 
+        files={files} 
+        onOpenFile={onFileClickWrapper} 
+        onRunCommand={handleSystemCommand} 
+      />
+      
+      {showVoiceCommander && <VoiceCommander onClose={() => setShowVoiceCommander(false)} />}
+
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Resize Overlay - Prevents Iframe Capture */}
+        {isResizing && <div className="absolute inset-0 z-[100] cursor-col-resize" />}
+
         <WorkspaceSidebar 
             layout={layout}
             sidebarWidth={sidebarWidth}
@@ -528,7 +527,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
         />
 
         {/* Sidebar Resize Handle */}
-        {layout.showSidebar && <div className="w-2 bg-gray-900 hover:bg-primary-600 hover:cursor-col-resize transition-colors z-30 flex-shrink-0 hidden md:block" onMouseDown={(e) => startResizing('sidebar', e)} />}
+        {layout.showSidebar && <div className="w-2 bg-gray-900 hover:bg-primary-600 hover:cursor-col-resize transition-colors z-30 flex-shrink-0 hidden md:block" onMouseDown={(e) => handleResizeStart('sidebar', e)} />}
 
         {/* Main Editor */}
         <div className="flex-1 flex flex-col min-w-0 bg-gray-900 h-full" id="editor-container">
@@ -567,7 +566,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                     
                     {isSplitView && (
                         <>
-                            <div className="w-2 bg-gray-900 border-l border-r border-gray-800 hover:bg-primary-600 cursor-col-resize z-20 hidden md:block" onMouseDown={(e) => startResizing('split', e)} />
+                            <div className="w-2 bg-gray-900 border-l border-r border-gray-800 hover:bg-primary-600 cursor-col-resize z-20 hidden md:block" onMouseDown={(e) => handleResizeStart('split', e)} />
                             <div className="relative flex flex-col bg-gray-950" style={{ width: `${100 - splitRatio}%` }}>
                                 {secondaryFile ? (
                                     <>
@@ -585,23 +584,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
           {/* Bottom Panel */}
           {layout.showBottom && (
             <>
-                <div className="h-2 bg-gray-900 border-t border-gray-800 hover:bg-primary-600 cursor-ns-resize z-20 hidden md:block" onMouseDown={(e) => startResizing('bottomPanel', e)} />
+                <div className="h-2 bg-gray-900 border-t border-gray-800 hover:bg-primary-600 cursor-ns-resize z-20 hidden md:block" onMouseDown={(e) => handleResizeStart('bottomPanel', e)} />
                 <div className="bg-black border-t border-gray-800 flex flex-col flex-shrink-0 transition-all" style={{ height: bottomPanelHeight }}>
                     <div className="flex border-b border-gray-800"><button onClick={() => setBottomPanelTab('terminal')} className={`px-4 py-1 text-xs uppercase font-bold ${bottomPanelTab === 'terminal' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Terminal</button><div className="ml-auto flex items-center px-2"><button onClick={() => toggleLayout('bottom')} className="text-gray-500 hover:text-white"><X size={14}/></button></div></div>
-                    {bottomPanelTab === 'terminal' && <Terminal logs={terminalLogs} onCommand={async (cmd) => { /* Command logic */ }} />}
+                    {bottomPanelTab === 'terminal' && <Terminal logs={terminalLogs} onCommand={handleCommand} onAiFix={handleAiFix} />}
                 </div>
             </>
           )}
         </div>
 
         {/* Right Panel Resize Handle */}
-        {layout.showRight && <div className="w-2 bg-gray-900 border-l border-gray-800 hover:bg-primary-600 hover:cursor-col-resize transition-colors z-30 flex-shrink-0 hidden md:block" onMouseDown={(e) => startResizing('rightPanel', e)} />}
+        {layout.showRight && <div className="w-2 bg-gray-900 border-l border-gray-800 hover:bg-primary-600 hover:cursor-col-resize transition-colors z-30 flex-shrink-0 hidden md:block" onMouseDown={(e) => handleResizeStart('rightPanel', e)} />}
 
         {/* Preview Panel */}
         {layout.showRight && (
             <div 
-                className="flex-shrink-0 relative bg-gray-900 border-l border-gray-800 absolute md:static inset-0 md:inset-auto z-40 md:z-0 w-full md:w-auto"
-                style={{ width: window.innerWidth < 768 ? '100%' : rightPanelWidth }}
+                className="flex-shrink-0 relative bg-gray-900 border-l border-gray-800 absolute md:static inset-0 md:inset-auto z-40 md:z-0 w-full md:w-auto pointer-events-auto"
+                style={{ 
+                    width: window.innerWidth < 768 ? '100%' : rightPanelWidth,
+                    pointerEvents: isResizing ? 'none' : 'auto' 
+                }}
             >
                 <PreviewPanel 
                     project={project!} 
@@ -630,6 +632,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
           <div className="flex items-center gap-1"><RefreshCw size={10} className={isGenerating ? "animate-spin" : ""} /><span>{isGenerating ? 'Generating...' : 'Ready'}</span></div>
         </div>
         <div className="flex items-center gap-4">
+           <button onClick={() => setShowVoiceCommander(true)} className={`p-0.5 rounded hover:bg-gray-800 hover:text-white ${showVoiceCommander ? 'text-red-400' : ''}`} title="Voice Mode"><Mic size={10}/></button>
            <button onClick={() => toggleLayout('bottom')} className={`p-0.5 rounded hover:bg-gray-800 hover:text-white ${!layout.showBottom ? 'opacity-50' : ''}`} title="Toggle Terminal"><PanelBottom size={10}/></button>
            <button onClick={() => toggleLayout('right')} className={`p-0.5 rounded hover:bg-gray-800 hover:text-white ${!layout.showRight ? 'opacity-50' : ''}`} title="Toggle Preview"><Columns size={10}/></button>
            <div className="hidden sm:flex items-center gap-2"><span>UTF-8</span></div>
@@ -638,7 +641,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       </div>
 
       {/* Chat Interface */}
-      <div className="absolute bottom-8 right-6 w-[90%] md:w-96 z-40 flex flex-col gap-4 pointer-events-none max-h-[60vh]">
+      <div className="absolute bottom-12 md:bottom-12 bottom-20 right-6 w-[90%] md:w-96 z-50 flex flex-col gap-4 pointer-events-none max-h-[60vh]">
         {isChatOpen ? (
             <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden max-h-[60vh] animate-in slide-in-from-bottom-4">
                 <div className="flex items-center justify-between px-4 py-2 bg-gray-850 border-b border-gray-700">

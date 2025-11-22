@@ -28,6 +28,7 @@ export const TeamManager: React.FC<TeamManagerProps> = ({ onClose }) => {
 
   useEffect(() => {
     localStorage.setItem('omni_agents', JSON.stringify(agents));
+    window.dispatchEvent(new Event('omniAgentsUpdated'));
   }, [agents]);
 
   const handleSave = () => {

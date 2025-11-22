@@ -8,11 +8,12 @@ import { MediaStudio } from './components/MediaStudio';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { AppView, Project, ProjectType, FileNode } from './types';
-import { MOCK_PROJECTS, WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, PROJECT_TEMPLATES } from './constants';
-import { LayoutGrid, Code, Settings as SettingsIcon, Zap, X, Globe, Smartphone, Server, LogOut, Music, Clapperboard, Wand2, Loader2, Rocket, Menu, ShoppingBag, Activity, Tablet, Users } from 'lucide-react';
+import { MOCK_PROJECTS } from './constants';
+import { Menu, Users } from 'lucide-react';
 import { Button } from './components/Button';
-import { generateProjectScaffold } from './services/geminiService';
 import { TeamManager } from './components/TeamManager';
+import { NewProjectModal } from './components/NewProjectModal';
+import { AppSidebar } from './components/AppSidebar';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -53,38 +54,9 @@ const App: React.FC = () => {
     setCurrentView(AppView.WORKSPACE);
   };
 
-  const handleCreateProject = async (name: string, type: ProjectType, description: string) => {
+  const handleCreateProject = (name: string, type: ProjectType, description: string, initialFiles: FileNode[]) => {
     const projectId = Date.now().toString();
-    let initialFiles: FileNode[] = [];
-
-    const isNative = type === ProjectType.REACT_NATIVE || type === ProjectType.IOS_APP || type === ProjectType.ANDROID_APP;
-
-    if (description.trim()) {
-      // AI Generation
-      const generatedNodes = await generateProjectScaffold(description, type);
-      
-      // Fallback if AI fails
-      if (generatedNodes && generatedNodes.length > 0) {
-        // Add IDs recursively to generated nodes
-        const addIds = (nodes: any[]): FileNode[] => {
-           return nodes.map(n => ({
-              ...n,
-              id: Math.random().toString(36).substr(2, 9),
-              gitStatus: 'added',
-              children: n.children ? addIds(n.children) : undefined,
-              isOpen: n.type === 'directory' // Auto-open generated folders
-           }));
-        };
-        initialFiles = addIds(generatedNodes);
-      } else {
-         // If API failed, fallback to templates
-         initialFiles = isNative ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
-      }
-    } else {
-      // Standard Template
-      initialFiles = isNative ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
-    }
-
+    
     // Save initial files to storage
     localStorage.setItem(`omni_files_${projectId}`, JSON.stringify(initialFiles));
 
@@ -107,7 +79,6 @@ const App: React.FC = () => {
     e.stopPropagation();
     if (confirm('Are you sure you want to delete this project?')) {
       setProjects(projects.filter(p => p.id !== id));
-      // Also clean up file storage
       localStorage.removeItem(`omni_files_${id}`);
       if (selectedProject?.id === id) {
         setSelectedProject(null);
@@ -123,258 +94,6 @@ const App: React.FC = () => {
       setCurrentView(view);
       setIsMobileMenuOpen(false);
   };
-
-  // Sidebar Navigation
-  const Sidebar = () => (
-    <>
-        {/* Mobile Overlay */}
-        {isMobileMenuOpen && (
-            <div 
-                className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
-                onClick={() => setIsMobileMenuOpen(false)}
-            />
-        )}
-
-        <div className={`
-            fixed md:relative top-0 left-0 h-full w-64 md:w-16 bg-gray-950 border-r border-gray-800 
-            flex flex-col items-center py-4 gap-4 z-50 transition-transform duration-300 flex-shrink-0
-            ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-        `}>
-            <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg mb-4 flex-shrink-0">
-                <Zap className="text-white" size={24} fill="currentColor" />
-            </div>
-
-            <div className="flex flex-col gap-4 w-full px-2 md:px-0 items-center">
-                <NavIcon 
-                    icon={<LayoutGrid size={20} />} 
-                    active={currentView === AppView.DASHBOARD} 
-                    onClick={() => handleNavClick(AppView.DASHBOARD)} 
-                    label="Dashboard"
-                />
-                <NavIcon 
-                    icon={<Code size={20} />} 
-                    active={currentView === AppView.WORKSPACE} 
-                    onClick={() => handleNavClick(AppView.WORKSPACE)} 
-                    label="Workspace"
-                />
-                <div className="w-8 border-t border-gray-800 my-1"></div>
-                <NavIcon 
-                    icon={<Zap size={20} />} 
-                    active={currentView === AppView.FINETUNE} 
-                    onClick={() => handleNavClick(AppView.FINETUNE)} 
-                    label="Fine-Tune"
-                />
-                <NavIcon 
-                    icon={<Music size={20} />} 
-                    active={currentView === AppView.AUDIO} 
-                    onClick={() => handleNavClick(AppView.AUDIO)} 
-                    label="Audio Studio"
-                />
-                <NavIcon 
-                    icon={<Clapperboard size={20} />} 
-                    active={currentView === AppView.MEDIA} 
-                    onClick={() => handleNavClick(AppView.MEDIA)} 
-                    label="Media Studio"
-                />
-            </div>
-            
-            <div className="mt-auto flex flex-col gap-4 w-full px-2 md:px-0 items-center">
-                <NavIcon 
-                    icon={<SettingsIcon size={20} />} 
-                    active={currentView === AppView.SETTINGS} 
-                    onClick={() => handleNavClick(AppView.SETTINGS)} 
-                    label="Settings"
-                />
-                <button 
-                    onClick={handleLogout}
-                    className="p-3 rounded-xl text-gray-500 hover:bg-red-900/20 hover:text-red-400 transition-all md:w-auto w-full flex items-center justify-center md:block"
-                    title="Sign Out"
-                >
-                    <LogOut size={20} />
-                    <span className="md:hidden ml-3 text-sm font-medium">Sign Out</span>
-                </button>
-            </div>
-        </div>
-    </>
-  );
-
-  const NavIcon = ({ icon, active, onClick, label }: any) => (
-    <button 
-      onClick={onClick}
-      className={`p-3 rounded-xl transition-all duration-200 group relative flex items-center w-full md:w-auto justify-start md:justify-center ${
-        active ? 'bg-gray-800 text-primary-500' : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'
-      }`}
-    >
-      {icon}
-      <span className="md:hidden ml-3 text-sm font-medium">{label}</span>
-      <span className="hidden md:block absolute left-14 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none border border-gray-700 shadow-xl">
-        {label}
-      </span>
-    </button>
-  );
-
-  const NewProjectModal = () => {
-    const [name, setName] = useState('');
-    const [type, setType] = useState<ProjectType>(ProjectType.REACT_WEB);
-    const [description, setDescription] = useState('');
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [mode, setMode] = useState<'blank' | 'templates'>('blank');
-
-    const handleCreate = async () => {
-        if (description) setIsGenerating(true);
-        await handleCreateProject(name, type, description);
-        setIsGenerating(false);
-    };
-
-    const handleTemplateSelect = (t: any) => {
-        setName(t.name);
-        setType(t.type);
-        setDescription(t.prompt);
-        setMode('blank'); // Switch to review
-    };
-
-    const getTemplateIcon = (icon: string) => {
-        if (icon === 'Globe') return <Globe size={18} />;
-        if (icon === 'Smartphone') return <Smartphone size={18} />;
-        if (icon === 'Server') return <Server size={18} />;
-        if (icon === 'ShoppingBag') return <ShoppingBag size={18} />;
-        if (icon === 'Activity') return <Activity size={18} />;
-        return <Code size={18} />;
-    };
-
-    return (
-      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-          <div className="flex justify-between items-center p-6 border-b border-gray-800 shrink-0">
-            <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                <Rocket className="text-primary-500" size={24}/> Create New Project
-            </h2>
-            <button onClick={() => setShowNewProjectModal(false)} className="text-gray-500 hover:text-white">
-              <X size={20} />
-            </button>
-          </div>
-          
-          <div className="p-6 overflow-y-auto">
-            <div className="flex gap-4 mb-6">
-                <button onClick={() => setMode('blank')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'blank' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>Start from Scratch</button>
-                <button onClick={() => setMode('templates')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'templates' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>Browse Templates</button>
-            </div>
-
-            {mode === 'templates' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {PROJECT_TEMPLATES.map(t => (
-                        <div key={t.id} onClick={() => handleTemplateSelect(t)} className="bg-gray-800 border border-gray-700 rounded-xl p-4 cursor-pointer hover:border-primary-500 hover:shadow-lg hover:shadow-primary-900/20 transition-all group">
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className="p-2 bg-gray-700 rounded-lg text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-colors">
-                                    {getTemplateIcon(t.icon)}
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-white">{t.name}</h3>
-                                    <span className="text-[10px] text-gray-500 bg-gray-900 px-2 py-0.5 rounded border border-gray-700 truncate max-w-[120px] block">{t.type}</span>
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-400 line-clamp-2">{t.description}</p>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="space-y-6">
-                    <div>
-                    <label className="block text-sm font-medium text-gray-400 mb-1">Project Name</label>
-                    <input 
-                        type="text" 
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="e.g., Super App" 
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-primary-500 focus:outline-none" 
-                        autoFocus
-                    />
-                    </div>
-
-                    <div>
-                    <label className="block text-sm font-medium text-gray-400 mb-2">Framework</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        <button 
-                        onClick={() => setType(ProjectType.REACT_WEB)}
-                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
-                            type === ProjectType.REACT_WEB ? 'bg-primary-900/20 border-primary-500 ring-1 ring-primary-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                        }`}
-                        >
-                        <Globe size={24} className={type === ProjectType.REACT_WEB ? 'text-primary-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-xs font-medium text-white text-center">React Web</div>
-                        </button>
-
-                        <button 
-                        onClick={() => setType(ProjectType.REACT_NATIVE)}
-                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
-                            type === ProjectType.REACT_NATIVE ? 'bg-purple-900/20 border-purple-500 ring-1 ring-purple-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                        }`}
-                        >
-                        <Tablet size={24} className={type === ProjectType.REACT_NATIVE ? 'text-purple-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-xs font-medium text-white text-center">React Native</div>
-                        </button>
-
-                        <button 
-                        onClick={() => setType(ProjectType.IOS_APP)}
-                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
-                            type === ProjectType.IOS_APP ? 'bg-blue-900/20 border-blue-500 ring-1 ring-blue-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                        }`}
-                        >
-                        <div className="w-6 h-6 mb-2 flex items-center justify-center">
-                            <img src="https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg" className="w-5 h-5 invert opacity-70" alt="iOS" />
-                        </div>
-                        <div className="text-xs font-medium text-white text-center">iOS (Swift)</div>
-                        </button>
-
-                        <button 
-                        onClick={() => setType(ProjectType.ANDROID_APP)}
-                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
-                            type === ProjectType.ANDROID_APP ? 'bg-green-900/20 border-green-500 ring-1 ring-green-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                        }`}
-                        >
-                        <Smartphone size={24} className={type === ProjectType.ANDROID_APP ? 'text-green-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-xs font-medium text-white text-center">Android (APK)</div>
-                        </button>
-                        
-                        <button 
-                        onClick={() => setType(ProjectType.NODE_API)}
-                        className={`flex flex-col items-center p-4 rounded-lg border transition-all ${
-                            type === ProjectType.NODE_API ? 'bg-green-900/20 border-green-500 ring-1 ring-green-500' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                        }`}
-                        >
-                        <Server size={24} className={type === ProjectType.NODE_API ? 'text-green-500 mb-2' : 'text-gray-500 mb-2'} />
-                        <div className="text-xs font-medium text-white text-center">Node.js API</div>
-                        </button>
-                    </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1 flex items-center gap-2">
-                            <Wand2 size={14} className="text-primary-400" /> 
-                            AI Blueprint (Optional)
-                        </label>
-                        <textarea 
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Describe your app (e.g., 'A minimalist Todo app with dark mode and local storage'). We will generate the initial file structure."
-                        className="w-full h-32 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white text-sm focus:border-primary-500 focus:outline-none resize-none"
-                        />
-                    </div>
-                </div>
-            )}
-          </div>
-
-          <div className="p-6 border-t border-gray-800 bg-gray-850 flex gap-3 justify-end shrink-0">
-             <Button variant="secondary" onClick={() => setShowNewProjectModal(false)}>Cancel</Button>
-             <Button onClick={handleCreate} disabled={isGenerating || !name}>
-                {isGenerating ? <Loader2 size={16} className="animate-spin mr-2" /> : <Rocket size={16} className="mr-2" />}
-                {isGenerating ? 'Architecting...' : 'Initialize Project'}
-             </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
@@ -395,14 +114,25 @@ const App: React.FC = () => {
          )}
       </div>
 
-      <Sidebar />
+      <AppSidebar 
+        currentView={currentView} 
+        onNavigate={handleNavClick} 
+        onLogout={handleLogout} 
+        isOpen={isMobileMenuOpen}
+        setIsOpen={setIsMobileMenuOpen}
+      />
       
-      {showNewProjectModal && <NewProjectModal />}
+      {showNewProjectModal && (
+        <NewProjectModal 
+            onClose={() => setShowNewProjectModal(false)} 
+            onCreate={handleCreateProject} 
+        />
+      )}
       {showTeamManager && <TeamManager onClose={() => setShowTeamManager(false)} />}
       
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
           {currentView === AppView.DASHBOARD && (
-              <div className="relative flex-1 flex flex-col">
+              <div className="relative flex-1 flex flex-col overflow-hidden bg-gray-950">
                   <div className="absolute top-4 right-4 md:top-8 md:right-8 z-10 flex gap-2">
                       <Button onClick={() => setShowTeamManager(true)} variant="secondary" className="shadow-lg">
                           <Users size={16} className="mr-2"/> Manage Team

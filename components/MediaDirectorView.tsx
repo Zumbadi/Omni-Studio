@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Film, Music, RotateCcw, RotateCw, Pause, Play, Loader2, Download, Scissors, Copy, Trash2, Clock, Sliders, Wand2, Layers, ArrowRightLeft, Plus, Volume2 } from 'lucide-react';
 import { Button } from './Button';
 import { SocialPost, AudioTrack, Scene } from '../types';
@@ -24,6 +24,7 @@ interface MediaDirectorViewProps {
   onOpenTrim: (sceneId: string) => void;
   onOpenMagicEdit: (sceneId: string) => void;
   onUpdateScene: (sceneId: string, updates: Partial<Scene>) => void;
+  onReorderScenes: (fromIndex: number, toIndex: number) => void;
   cycleTransition: (current: Scene['transition']) => Scene['transition'];
   historyIndex: number;
   historyLength: number;
@@ -32,10 +33,11 @@ interface MediaDirectorViewProps {
 export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
   selectedPost, audioTracks, currentTime, setCurrentTime, isPreviewPlaying, setIsPreviewPlaying,
   isRendering, renderProgress, onSelectAudio, onUndo, onRedo, onRenderMovie,
-  onGenerateImage, onSplitScene, onDuplicateScene, onDeleteScene, onOpenTrim, onOpenMagicEdit, onUpdateScene, cycleTransition,
+  onGenerateImage, onSplitScene, onDuplicateScene, onDeleteScene, onOpenTrim, onOpenMagicEdit, onUpdateScene, onReorderScenes, cycleTransition,
   historyIndex, historyLength
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const PIXELS_PER_SECOND = 40;
   
   const activeAudioTrack = audioTracks.find(t => t.id === selectedPost?.audioTrackId);
@@ -50,9 +52,23 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
       setCurrentTime(newTime);
   };
 
-  // Simplified drag handlers for now, focusing on display structure
   const handleDragStart = (e: React.DragEvent, index: number) => {
       e.dataTransfer.setData('text/plain', index.toString());
+      e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+      e.preventDefault();
+      setDragOverIndex(index);
+  };
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+      e.preventDefault();
+      const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+      if (!isNaN(fromIndex) && fromIndex !== index) {
+          onReorderScenes(fromIndex, index);
+      }
+      setDragOverIndex(null);
   };
 
   return (
@@ -100,9 +116,12 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
                       {selectedPost?.scenes?.map((scene, idx) => (
                           <React.Fragment key={scene.id}>
                               <div 
-                                  className={`relative z-10 group`}
+                                  className={`relative z-10 group transition-transform ${dragOverIndex === idx ? 'scale-105 z-30' : ''}`}
                                   draggable 
                                   onDragStart={(e) => handleDragStart(e, idx)}
+                                  onDragOver={(e) => handleDragOver(e, idx)}
+                                  onDrop={(e) => handleDrop(e, idx)}
+                                  onDragLeave={() => setDragOverIndex(null)}
                                   style={{ width: (scene.duration || 5) * PIXELS_PER_SECOND }}
                               >
                                   <div className="absolute -top-8 left-0 w-full flex justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20">
@@ -111,7 +130,7 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
                                       <button onClick={() => onDeleteScene(idx)} className="bg-gray-800 p-1.5 rounded hover:bg-red-600 text-gray-400 hover:text-white" title="Delete"><Trash2 size={12} /></button>
                                   </div>
 
-                                  <div className={`w-full h-full bg-black rounded-lg border-2 border-gray-700 overflow-hidden relative shadow-lg group-hover:border-primary-500 transition-colors flex-shrink-0 ${scene.bgRemoved ? 'bg-[url(https://www.transparenttextures.com/patterns/checkered-pattern.png)]' : ''}`}>
+                                  <div className={`w-full h-full bg-black rounded-lg border-2 overflow-hidden relative shadow-lg transition-colors flex-shrink-0 ${dragOverIndex === idx ? 'border-primary-500 ring-2 ring-primary-500/50' : 'border-gray-700 group-hover:border-primary-500'} ${scene.bgRemoved ? 'bg-[url(https://www.transparenttextures.com/patterns/checkered-pattern.png)]' : ''}`}>
                                       {scene.imageUrl ? (
                                           <img src={scene.imageUrl} className={`w-full h-full object-cover ${scene.bgRemoved ? 'object-contain' : ''}`} draggable={false} />
                                       ) : <div className="w-full h-full flex items-center justify-center text-gray-600 text-xs">No Visual</div>}

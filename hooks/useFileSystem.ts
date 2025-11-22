@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FileNode, Project, ProjectType } from '../types';
 import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE } from '../constants';
+import { findFileById, getAllFiles, upsertFileByPath } from '../utils/fileHelpers';
 
 export const useFileSystem = (project: Project | null) => {
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -62,27 +63,15 @@ export const useFileSystem = (project: Project | null) => {
       });
   }, []);
 
-  const findFileById = useCallback((nodes: FileNode[], id: string): FileNode | undefined => {
-    for (const node of nodes) {
-      if (node.id === id) return node;
-      if (node.children) {
-        const found = findFileById(node.children, id);
-        if (found) return found;
-      }
-    }
-    return undefined;
+  const addFile = useCallback((path: string, content: string) => {
+      const normalizedPath = path.replace(/^\//, ''); // Remove leading slash
+      const pathParts = normalizedPath.split('/');
+      setFiles(prev => upsertFileByPath(prev, pathParts, content));
   }, []);
 
-  // Recursive file finding for search/analysis
-  const getAllFiles = useCallback((nodes: FileNode[], parentPath = ''): {node: FileNode, path: string}[] => {
-    let results: {node: FileNode, path: string}[] = [];
-    nodes.forEach(node => {
-      const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
-      if (node.type === 'file') results.push({ node, path: currentPath });
-      if (node.children) results = results.concat(getAllFiles(node.children, currentPath));
-    });
-    return results;
-  }, []);
+  const findFileByIdWrapper = useCallback((nodes: FileNode[], id: string) => findFileById(nodes, id), []);
+  
+  const getAllFilesWrapper = useCallback((nodes: FileNode[]) => getAllFiles(nodes), []);
 
   const handleFileClick = useCallback((id: string, isSplit: boolean, secondaryId: string | null, setSecondary: (id: string | null) => void) => {
       if (isSplit && secondaryId === null) {
@@ -112,8 +101,9 @@ export const useFileSystem = (project: Project | null) => {
       remoteDirName,
       setRemoteDirName,
       updateFileContent,
-      findFileById,
-      getAllFiles,
+      addFile,
+      findFileById: findFileByIdWrapper,
+      getAllFiles: getAllFilesWrapper,
       handleFileClick,
       handleCloseTab
   };

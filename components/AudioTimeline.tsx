@@ -39,11 +39,29 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
     originalOffset: number;
   }>({ isDragging: false, trackId: null, startX: 0, originalOffset: 0 });
 
+  const [visualizerBars, setVisualizerBars] = useState<number[]>(new Array(50).fill(5));
+  const rafRef = useRef<number>();
+
   const formatTime = (seconds: number) => {
       const mins = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60);
       return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Animation Loop
+  useEffect(() => {
+      if (isPlaying) {
+          const animate = () => {
+              setVisualizerBars(prev => prev.map(() => Math.random() * 100));
+              rafRef.current = requestAnimationFrame(animate);
+          };
+          animate();
+      } else {
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          setVisualizerBars(new Array(50).fill(5));
+      }
+      return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [isPlaying]);
 
   // Dragging Listeners
   useEffect(() => {
@@ -119,11 +137,11 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
          {/* Visualizer */}
          <div className="h-32 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-center relative overflow-hidden">
             <div className="flex gap-1 h-16 items-end">
-               {[...Array(50)].map((_, i) => (
+               {visualizerBars.map((height, i) => (
                   <div 
                     key={i} 
                     className={`w-1.5 bg-gradient-to-t from-primary-600 to-purple-500 rounded-t-sm transition-all duration-100 ease-in-out`}
-                    style={{ height: isPlaying ? `${Math.random() * 100}%` : '5%' }}
+                    style={{ height: `${height}%` }}
                   ></div>
                ))}
             </div>

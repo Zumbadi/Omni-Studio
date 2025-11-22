@@ -226,11 +226,20 @@ export const MediaStudio: React.FC = () => {
       if (!selectedPost) return;
       const scene = selectedPost.scenes?.find(s => s.id === sceneId);
       if (!scene) return;
-      const win = window as any;
-      if (win.aistudio) {
-         const hasKey = await win.aistudio.hasSelectedApiKey();
-         if (!hasKey && !(await win.aistudio.openSelectKey())) return;
+      
+      // Robust Veo API Key Check
+      try {
+          const win = window as any;
+          if (win.aistudio && win.aistudio.hasSelectedApiKey) {
+             const hasKey = await win.aistudio.hasSelectedApiKey();
+             if (!hasKey && win.aistudio.openSelectKey) {
+                 await win.aistudio.openSelectKey();
+             }
+          }
+      } catch(e) {
+          console.warn("Veo API Check failed, proceeding with standard API key.", e);
       }
+
       updateScene(sceneId, { status: 'generating' });
       const enhancedPrompt = getEnhancedPrompt(scene.description);
       const videoUrl = await generateVideo(enhancedPrompt, scene.imageUrl);
@@ -349,6 +358,18 @@ export const MediaStudio: React.FC = () => {
       const updatedPost = { ...selectedPost, scenes };
       setSelectedPost(updatedPost); setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p)); pushHistory(updatedPost);
   };
+  
+  const handleReorderScenes = (fromIndex: number, toIndex: number) => {
+      if (!selectedPost?.scenes) return;
+      const scenes = [...selectedPost.scenes];
+      const [moved] = scenes.splice(fromIndex, 1);
+      scenes.splice(toIndex, 0, moved);
+      const updatedPost = { ...selectedPost, scenes };
+      setSelectedPost(updatedPost);
+      setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p));
+      pushHistory(updatedPost);
+  };
+
   const cycleTransition = (current: Scene['transition']) => {
       const types: Scene['transition'][] = ['cut', 'fade', 'dissolve', 'slide-left', 'slide-right', 'zoom', 'blur', 'wipe'];
       return types[(types.indexOf(current || 'cut') + 1) % types.length];
@@ -399,7 +420,7 @@ export const MediaStudio: React.FC = () => {
 
        {/* Sidebar */}
        <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col p-6 shadow-xl z-10 hidden md:flex">
-          <h2 className="text-xl font-bold flex items-center gap-2 mb-6"><Clapperboard className="text-red-500" /> Media Studio</h2>
+          <h2 className="text-xl font-bold flex items-center gap-2"><Clapperboard className="text-red-500" /> Media Studio</h2>
           <Button onClick={() => { setSelectedPost(null); setActiveView('create'); }} className="mb-6 w-full shadow-lg shadow-primary-900/20"><Plus size={16} className="mr-2" /> New Content</Button>
           <div className="space-y-1 mb-6">
              <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-2">Views</div>
@@ -453,6 +474,7 @@ export const MediaStudio: React.FC = () => {
                         onOpenTrim={(id) => { setTrimSceneId(id); setTrimValues({start: 0, duration: 5}); setTrimModalOpen(true); }}
                         onOpenMagicEdit={(id) => { setEditSceneId(id); setEditPrompt(''); setEditModalOpen(true); }}
                         onUpdateScene={updateSceneWithHistory}
+                        onReorderScenes={handleReorderScenes}
                         cycleTransition={cycleTransition}
                         historyIndex={historyIndex}
                         historyLength={history.length}

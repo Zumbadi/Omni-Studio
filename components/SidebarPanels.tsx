@@ -295,9 +295,15 @@ interface AgentsPanelProps {
 export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTask }) => {
   const [team, setTeam] = useState<AIAgent[]>([]);
 
-  useEffect(() => {
+  const loadAgents = () => {
       const saved = localStorage.getItem('omni_agents');
       setTeam(saved ? JSON.parse(saved) : DEFAULT_AGENTS);
+  };
+
+  useEffect(() => {
+      loadAgents();
+      window.addEventListener('omniAgentsUpdated', loadAgents);
+      return () => window.removeEventListener('omniAgentsUpdated', loadAgents);
   }, []);
 
   return (

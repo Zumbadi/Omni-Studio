@@ -99,7 +99,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
         <div className="flex-1 flex items-center justify-center p-6 bg-[radial-gradient(#333_1px,transparent_1px)] bg-[size:20px_20px] overflow-auto relative">
             {isNative && previewMode === 'mobile' ? (
                 <div className="relative transition-all duration-500 animate-in zoom-in-95">
-                    <div className={`border-[8px] border-gray-800 rounded-[3rem] overflow-hidden bg-white relative shadow-2xl ring-1 ring-white/10 ${deviceFrame === 'ipad' ? 'w-[500px] h-[700px]' : 'w-[320px] h-[650px]'}`}>
+                    <div className={`border-[8px] border-gray-800 rounded-[3rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 ${deviceFrame === 'ipad' ? 'w-[500px] h-[700px]' : 'w-[320px] h-[650px]'}`}>
                         {/* Notch */}
                         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-7 bg-gray-800 rounded-b-xl z-20 flex items-center justify-center">
                             <div className="w-12 h-1 bg-gray-700 rounded-full"></div>
@@ -129,7 +129,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                 </div>
             ) : (
                 <div className="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-700/50">
-                    <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none" sandbox="allow-scripts" />
+                    <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
                 </div>
             )}
         </div>
