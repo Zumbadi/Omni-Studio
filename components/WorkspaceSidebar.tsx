@@ -1,15 +1,15 @@
 
 import React, { memo } from 'react';
-import { Files, GitBranch, Search, Bug, Bot, Puzzle, LayoutTemplate } from 'lucide-react';
+import { Files, GitBranch, Search, Bug, Bot, Puzzle, LayoutTemplate, Scissors } from 'lucide-react';
 import { FileExplorer } from './FileExplorer';
-import { GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, AgentsPanel } from './SidebarPanels';
-import { FileNode, Project, GitCommit, Extension, AgentTask } from '../types';
+import { GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, AgentsPanel, SnippetsPanel } from './SidebarPanels';
+import { FileNode, Project, GitCommit, Extension, AgentTask, Snippet } from '../types';
 
 interface WorkspaceSidebarProps {
   layout: { showSidebar: boolean };
   sidebarWidth: number;
-  activeActivity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS';
-  setActiveActivity: (activity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS') => void;
+  activeActivity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS' | 'SNIPPETS';
+  setActiveActivity: (activity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS' | 'SNIPPETS') => void;
   onToggleSidebar: () => void;
   // Explorer Props
   files: FileNode[];
@@ -52,6 +52,11 @@ interface WorkspaceSidebarProps {
   activeAgentTask: AgentTask | null;
   onStartAgentTask: (type: any) => void;
   onCancelAgentTask: () => void;
+  // Snippets Props
+  snippets: Snippet[];
+  onAddSnippet: () => void;
+  onDeleteSnippet: (id: string) => void;
+  onInsertSnippet: (code: string) => void;
 }
 
 export const WorkspaceSidebar = memo(({
@@ -63,7 +68,8 @@ export const WorkspaceSidebar = memo(({
   extensions, onToggleExtension,
   assets,
   activeAgentTask, onStartAgentTask, onCancelAgentTask,
-  deletedFiles
+  deletedFiles,
+  snippets, onAddSnippet, onDeleteSnippet, onInsertSnippet
 }: WorkspaceSidebarProps) => {
 
   const handleActivityClick = (activity: typeof activeActivity) => {
@@ -75,7 +81,7 @@ export const WorkspaceSidebar = memo(({
     <>
       {/* Activity Bar */}
       <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0 md:flex">
-          {['EXPLORER', 'SEARCH', 'GIT', 'DEBUG', 'AGENTS', 'EXTENSIONS', 'ASSETS'].map(activity => (
+          {['EXPLORER', 'SEARCH', 'GIT', 'DEBUG', 'AGENTS', 'SNIPPETS', 'EXTENSIONS', 'ASSETS'].map(activity => (
               <button 
                 key={activity} 
                 onClick={() => handleActivityClick(activity as any)} 
@@ -89,6 +95,7 @@ export const WorkspaceSidebar = memo(({
                   {activity === 'AGENTS' && <Bot size={24} strokeWidth={1.5} />}
                   {activity === 'EXTENSIONS' && <Puzzle size={24} strokeWidth={1.5} />}
                   {activity === 'ASSETS' && <LayoutTemplate size={24} strokeWidth={1.5} />}
+                  {activity === 'SNIPPETS' && <Scissors size={24} strokeWidth={1.5} />}
               </button>
           ))}
       </div>
@@ -114,6 +121,7 @@ export const WorkspaceSidebar = memo(({
           {activeActivity === 'EXTENSIONS' && <ExtensionsPanel extensions={extensions} onToggle={onToggleExtension} />}
           {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} />}
           {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} />}
+          {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
         </div>
       )}
     </>

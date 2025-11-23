@@ -115,13 +115,18 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 flex items-center justify-center p-6 bg-[radial-gradient(#333_1px,transparent_1px)] bg-[size:20px_20px] overflow-auto relative">
+        <div className="flex-1 flex items-center justify-center p-4 bg-[radial-gradient(#333_1px,transparent_1px)] bg-[size:20px_20px] overflow-auto relative">
             {(previewMode === 'mobile') ? (
-                <div className="relative transition-all duration-500 animate-in zoom-in-95">
-                    <div className={`border-[8px] border-gray-800 rounded-[3rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 ${deviceFrame === 'ipad' ? 'w-[500px] h-[700px]' : 'w-[320px] h-[650px]'}`}>
+                <div className="relative transition-all duration-500 animate-in zoom-in-95 max-w-full max-h-full">
+                    <div 
+                        className={`border-[8px] border-gray-800 rounded-[2.5rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 mx-auto transition-all
+                            ${deviceFrame === 'ipad' ? 'w-[500px] max-w-full aspect-[3/4]' : 'w-[320px] max-w-full aspect-[9/19.5]'}
+                        `}
+                        style={{ maxHeight: '85vh' }}
+                    >
                         {/* Notch */}
-                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-7 bg-gray-800 rounded-b-xl z-20 flex items-center justify-center">
-                            <div className="w-12 h-1 bg-gray-700 rounded-full"></div>
+                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-1/3 h-[4%] bg-gray-800 rounded-b-xl z-20 flex items-center justify-center">
+                            <div className="w-1/3 h-1 bg-gray-700 rounded-full"></div>
                         </div>
                         
                         <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-black" sandbox="allow-scripts" />
@@ -139,8 +144,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                         )}
                     </div>
 
-                    {/* Device Controls */}
-                    <div className="absolute -right-14 top-0 flex flex-col gap-2 bg-gray-800 p-1.5 rounded-xl border border-gray-700 shadow-lg">
+                    {/* Device Controls - Horizontal on mobile maybe? Keep vertical for now but absolute positioned smarter */}
+                    <div className="absolute -right-12 top-4 flex flex-col gap-2 bg-gray-800 p-1.5 rounded-xl border border-gray-700 shadow-lg hidden md:flex">
                         <button onClick={() => setDeviceFrame('iphone14')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'iphone14' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="iPhone 14"><Smartphone size={18}/></button>
                         <button onClick={() => setDeviceFrame('pixel7')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'pixel7' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="Pixel 7"><Smartphone size={18} className="rotate-90"/></button>
                         <button onClick={() => setDeviceFrame('ipad')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'ipad' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="iPad Air"><Smartphone size={22} className="scale-110"/></button>

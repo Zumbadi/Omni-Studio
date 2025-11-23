@@ -1,6 +1,6 @@
 
 import React, { Suspense, lazy, memo, useState } from 'react';
-import { Download, X, Map, BrainCircuit, Gauge, Book, Server, Database, Smartphone, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import { Download, X, Map, BrainCircuit, Gauge, Book, Server, Database, Smartphone, Loader2, Maximize2, Minimize2, Settings } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, ProjectPhase, FileNode } from '../types';
 import { LivePreview } from './LivePreview';
@@ -12,11 +12,12 @@ const ArchitectureDesigner = lazy(() => import('./ArchitectureDesigner').then(m 
 const DeploymentConsole = lazy(() => import('./DeploymentConsole').then(m => ({ default: m.DeploymentConsole })));
 const AuditView = lazy(() => import('./AuditView').then(m => ({ default: m.AuditView })));
 const DocsViewer = lazy(() => import('./DocsViewer').then(m => ({ default: m.DocsViewer })));
+const ProjectSettings = lazy(() => import('./ProjectSettings').then(m => ({ default: m.ProjectSettings })));
 
 interface PreviewPanelProps {
   project: Project;
   previewSrc: string;
-  activeTab: 'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture';
+  activeTab: 'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture' | 'settings';
   setActiveTab: (tab: any) => void;
   onToggleLayout: () => void;
   onExport: () => void;
@@ -31,6 +32,7 @@ interface PreviewPanelProps {
   onSaveFile?: (path: string, content: string) => void;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
+  onUpdateProject?: (p: Project) => void;
 }
 
 const LoadingFallback = () => (
@@ -42,7 +44,7 @@ const LoadingFallback = () => (
 export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
   roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile,
-  isMaximized, onToggleMaximize
+  isMaximized, onToggleMaximize, onUpdateProject
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
 
@@ -60,6 +62,7 @@ export const PreviewPanel = memo(({
            <button onClick={() => setActiveTab('audit')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'audit' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><Gauge size={12}/> Audit</button>
            <button onClick={() => setActiveTab('docs')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'docs' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><Book size={12}/> Docs</button>
            <button onClick={() => setActiveTab('deploy')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'deploy' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><Server size={12}/> Deploy</button>
+           <button onClick={() => setActiveTab('settings')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'settings' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><Settings size={12}/> Settings</button>
          </div>
          <div className="flex gap-1 items-center">
              <Button size="sm" variant="ghost" onClick={onExport} title="Download Zip" className="h-7 w-7 p-0 flex items-center justify-center"><Download size={14}/></Button>
@@ -82,6 +85,7 @@ export const PreviewPanel = memo(({
             {activeTab === 'audit' && <AuditView files={files} />}
             {activeTab === 'docs' && <DocsViewer project={project} onSaveFile={onSaveFile} />}
             {activeTab === 'roadmap' && <RoadmapView roadmap={roadmap} isGenerating={isGeneratingPlan} onGenerate={onGeneratePlan} onExecutePhase={onExecutePhase} onToggleTask={onToggleTask} />}
+            {activeTab === 'settings' && onUpdateProject && <ProjectSettings project={project} onUpdate={onUpdateProject} />}
           </Suspense>
       </div>
     </div>

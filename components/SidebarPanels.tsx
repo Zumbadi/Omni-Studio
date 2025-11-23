@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle } from 'lucide-react';
-import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent } from '../types';
+import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle, Scissors, Copy, Code, Atom, Palette, Database, Braces } from 'lucide-react';
+import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent, Snippet } from '../types';
 import { Button } from './Button';
 import { DEFAULT_AGENTS } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -171,6 +171,97 @@ interface AssetsPanelProps { assets: any[]; }
 export const AssetsPanel: React.FC<AssetsPanelProps> = ({ assets }) => (
     <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Assets</h2></div><div className="p-2 grid grid-cols-2 gap-2">{assets.map((a, i) => <div key={i} className="bg-gray-800 h-24 rounded border border-gray-700 flex flex-col items-center justify-center text-xs text-gray-500 p-2 text-center hover:border-primary-500 transition-colors cursor-pointer group relative overflow-hidden">{a.type === 'image' ? <div className="w-full h-full absolute inset-0"><img src={a.url} className="w-full h-full object-cover opacity-50 group-hover:opacity-80 transition-opacity"/></div> : <div className="bg-gray-700 w-10 h-10 rounded-full flex items-center justify-center mb-2"><Cloud size={16}/></div>}<span className="relative z-10 truncate w-full bg-black/50 px-1 rounded">{a.name}</span></div>)}</div></div>
 );
+
+// --- SNIPPETS PANEL ---
+interface SnippetsPanelProps {
+    snippets: Snippet[];
+    onAddSnippet: () => void;
+    onDeleteSnippet: (id: string) => void;
+    onInsertSnippet: (code: string) => void;
+}
+export const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ snippets, onAddSnippet, onDeleteSnippet, onInsertSnippet }) => {
+    const getSnippetStyle = (snippet: Snippet) => {
+        const lowerName = snippet.name.toLowerCase();
+        const lowerCode = snippet.code.toLowerCase();
+        
+        if (lowerName.includes('react') || lowerName.includes('component') || lowerCode.includes('jsx')) 
+            return { icon: <Atom size={24}/>, bg: 'bg-blue-950', border: 'border-blue-800', text: 'text-blue-400', glow: 'shadow-blue-900/20' };
+        if (lowerName.includes('hook') || lowerName.includes('use')) 
+            return { icon: <Braces size={24}/>, bg: 'bg-purple-950', border: 'border-purple-800', text: 'text-purple-400', glow: 'shadow-purple-900/20' };
+        if (lowerName.includes('style') || lowerName.includes('css')) 
+            return { icon: <Palette size={24}/>, bg: 'bg-pink-950', border: 'border-pink-800', text: 'text-pink-400', glow: 'shadow-pink-900/20' };
+        if (lowerName.includes('db') || lowerName.includes('query') || lowerName.includes('api')) 
+            return { icon: <Database size={24}/>, bg: 'bg-emerald-950', border: 'border-emerald-800', text: 'text-emerald-400', glow: 'shadow-emerald-900/20' };
+            
+        return { icon: <Code size={24}/>, bg: 'bg-gray-800', border: 'border-gray-700', text: 'text-gray-400', glow: '' };
+    };
+
+    return (
+        <div className="flex flex-col h-full bg-gray-900">
+            <div className="p-4 border-b border-gray-800 bg-gray-900 sticky top-0 z-10">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Snippet Library</h2>
+                    <button onClick={onAddSnippet} className="bg-primary-600 hover:bg-primary-500 text-white p-1.5 rounded shadow-lg transition-transform hover:scale-105" title="Save Selection">
+                        <Plus size={14}/>
+                    </button>
+                </div>
+                <input type="text" placeholder="Filter snippets..." className="w-full bg-black/20 border border-gray-800 rounded px-3 py-1.5 text-xs text-white focus:border-primary-500 outline-none mb-1"/>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-3">
+                {snippets.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-2 opacity-60">
+                        <Scissors size={32} />
+                        <p className="text-xs">No snippets yet</p>
+                    </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-3">
+                    {snippets.map(s => {
+                        const style = getSnippetStyle(s);
+                        return (
+                            <div 
+                                key={s.id} 
+                                onClick={() => onInsertSnippet(s.code)}
+                                className={`relative aspect-square rounded-xl border ${style.border} ${style.bg} flex flex-col items-center justify-center p-3 cursor-pointer group overflow-hidden transition-all hover:-translate-y-1 hover:shadow-xl ${style.glow}`}
+                            >
+                                {/* Background Pattern */}
+                                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white to-transparent pointer-events-none"></div>
+                                
+                                <div className={`mb-3 p-3 rounded-full bg-black/30 backdrop-blur-sm ${style.text} group-hover:scale-110 transition-transform duration-300`}>
+                                    {style.icon}
+                                </div>
+                                
+                                <div className="text-[10px] font-bold text-gray-300 text-center uppercase tracking-wide truncate w-full z-10 group-hover:text-white">
+                                    {s.name}
+                                </div>
+                                
+                                {/* Hover Actions Overlay */}
+                                <div className="absolute inset-0 bg-gray-950/90 flex flex-col items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onInsertSnippet(s.code); }}
+                                        className="text-xs font-bold text-white bg-primary-600 px-3 py-1.5 rounded-lg shadow hover:bg-primary-500 w-20"
+                                    >
+                                        Insert
+                                    </button>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onDeleteSnippet(s.id); }}
+                                        className="text-xs font-bold text-red-300 bg-red-900/30 border border-red-800 px-3 py-1.5 rounded-lg hover:bg-red-900/50 w-20"
+                                    >
+                                        Delete
+                                    </button>
+                                    <div className="text-[8px] text-gray-500 font-mono px-2 truncate w-full text-center mt-1">
+                                        {s.language}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- AGENTS PANEL ---
 interface AgentsPanelProps {

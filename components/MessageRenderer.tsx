@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Paperclip, Layers, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Paperclip, Layers, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface MessageRendererProps {
@@ -8,9 +8,10 @@ interface MessageRendererProps {
   onApplyCode: (code: string) => void;
   onApplyAll?: (codes: string[]) => void;
   onAutoFix?: (issues: string[]) => void;
+  onCompareCode?: (code: string) => void;
 }
 
-export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApplyCode, onApplyAll, onAutoFix }) => {
+export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApplyCode, onApplyAll, onAutoFix, onCompareCode }) => {
   
   const getScoreColor = (score: number) => {
       if (score >= 90) return 'text-green-400 border-green-500/30 bg-green-900/20';
@@ -122,13 +123,24 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                            <span className="text-[10px] text-gray-500 font-mono uppercase font-bold">{lang}</span>
                            {filenameMatch && <span className="text-[10px] text-blue-300 font-mono bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-800/50">{targetFile}</span>}
                        </div>
-                       <button 
-                         onClick={() => onApplyCode(content)}
-                         className="flex items-center gap-1 text-[10px] bg-gray-800 hover:bg-primary-600 border border-gray-600 hover:border-primary-500 text-gray-300 hover:text-white px-2 py-1 rounded transition-all"
-                         title="Inject code into editor"
-                       >
-                         <CornerDownLeft size={10} /> Apply
-                       </button>
+                       <div className="flex gap-2">
+                           {onCompareCode && (
+                               <button
+                                   onClick={() => onCompareCode(content)}
+                                   className="flex items-center gap-1 text-[10px] bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 text-gray-400 hover:text-white px-2 py-1 rounded transition-all"
+                                   title="Compare with current file"
+                               >
+                                   <GitCompare size={10} /> Diff
+                               </button>
+                           )}
+                           <button 
+                             onClick={() => onApplyCode(content)}
+                             className="flex items-center gap-1 text-[10px] bg-gray-800 hover:bg-primary-600 border border-gray-600 hover:border-primary-500 text-gray-300 hover:text-white px-2 py-1 rounded transition-all"
+                             title="Inject code into editor"
+                           >
+                             <CornerDownLeft size={10} /> Apply
+                           </button>
+                       </div>
                     </div>
                     <pre className="p-4 overflow-x-auto bg-gray-950/80 font-mono text-xs text-gray-300 scrollbar-thin scrollbar-thumb-gray-700 leading-relaxed">
                        {content}

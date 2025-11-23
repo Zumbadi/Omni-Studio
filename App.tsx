@@ -15,6 +15,7 @@ import { TeamManager } from './components/TeamManager';
 import { NewProjectModal } from './components/NewProjectModal';
 import { AppSidebar } from './components/AppSidebar';
 import JSZip from 'jszip';
+import { ShortcutsModal } from './components/ShortcutsModal';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -40,6 +41,7 @@ const App: React.FC = () => {
 
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showTeamManager, setShowTeamManager] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Persist state
   useEffect(() => {
@@ -53,6 +55,24 @@ const App: React.FC = () => {
   useEffect(() => {
       if (selectedProject) localStorage.setItem('omni_active_project', JSON.stringify(selectedProject));
       else localStorage.removeItem('omni_active_project');
+  }, [selectedProject]);
+
+  // Listen for updates
+  useEffect(() => {
+      const handleProjectsUpdate = () => {
+          const saved = localStorage.getItem('omni_projects');
+          if (saved) {
+              const updatedProjects = JSON.parse(saved);
+              setProjects(updatedProjects);
+              // Sync selected project if it was updated
+              if (selectedProject) {
+                  const current = updatedProjects.find((p: Project) => p.id === selectedProject.id);
+                  if (current) setSelectedProject(current);
+              }
+          }
+      };
+      window.addEventListener('omniProjectsUpdated', handleProjectsUpdate);
+      return () => window.removeEventListener('omniProjectsUpdated', handleProjectsUpdate);
   }, [selectedProject]);
 
   const handleLogin = () => {
@@ -161,6 +181,7 @@ const App: React.FC = () => {
         onLogout={handleLogout} 
         isOpen={isMobileMenuOpen}
         setIsOpen={setIsMobileMenuOpen}
+        onShowHelp={() => setShowHelp(true)}
       />
       
       {showNewProjectModal && (
@@ -170,6 +191,7 @@ const App: React.FC = () => {
         />
       )}
       {showTeamManager && <TeamManager onClose={() => setShowTeamManager(false)} />}
+      {showHelp && <ShortcutsModal onClose={() => setShowHelp(false)} />}
       
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
           {currentView === AppView.DASHBOARD && (

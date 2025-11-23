@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { ProjectType, Voice, ChatMessage, AuditIssue, PerformanceReport, ArchNode, ArchLink, AIAgent } from "../types";
+import { ProjectType, Voice, ChatMessage, AuditIssue, PerformanceReport, ArchNode, ArchLink, AIAgent, ProjectPhase } from "../types";
 
 const getAiClient = () => {
   const apiKey = process.env.API_KEY || '';
@@ -179,6 +179,25 @@ export const generateCodeResponse = async (
     console.error("Gemini API Error:", error);
     onStream(`\nError generating code: ${error.message || 'Unknown error'}`);
   }
+};
+
+export const delegateTasks = async (phase: ProjectPhase, agents: AIAgent[]): Promise<{ assignments: { agentName: string, taskDescription: string, targetFile?: string }[] }> => {
+    if (!process.env.API_KEY) return { assignments: [] };
+    const ai = getAiClient();
+    try {
+        const agentProfiles = agents.filter(a => !a.isManager).map(a => `- ${a.name} (${a.role}): ${a.description}`).join('\n');
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Phase: ${phase.title}. Goals: ${phase.goals.join(', ')}. Tasks: ${phase.tasks.map(t => t.text).join(', ')}.
+            Available Agents:
+            ${agentProfiles}
+            
+            Assign tasks to the best agents. Return JSON. Schema: { "assignments": [{ "agentName": string, "taskDescription": string, "targetFile": string (optional) }] }`,
+            config: { responseMimeType: 'application/json' }
+        });
+        const clean = cleanJson(response.text || '{"assignments": []}');
+        return JSON.parse(clean);
+    } catch (e) { return { assignments: [] }; }
 };
 
 export const generateGhostText = async (prefix: string, suffix: string): Promise<string> => {

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Settings as SettingsIcon, LogOut, HelpCircle } from 'lucide-react';
 import { AppView } from '../types';
 
 interface AppSidebarProps {
@@ -9,9 +9,10 @@ interface AppSidebarProps {
   onLogout: () => void;
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
+  onShowHelp?: () => void;
 }
 
-export const AppSidebar: React.FC<AppSidebarProps> = ({ currentView, onNavigate, onLogout, isOpen, setIsOpen }) => {
+export const AppSidebar: React.FC<AppSidebarProps> = ({ currentView, onNavigate, onLogout, isOpen, setIsOpen, onShowHelp }) => {
   
   const NavIcon = ({ icon, active, onClick, label }: any) => (
     <button 
@@ -82,6 +83,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ currentView, onNavigate,
             </div>
             
             <div className="mt-auto flex flex-col gap-4 w-full px-2 md:px-0 items-center">
+                {onShowHelp && (
+                    <NavIcon 
+                        icon={<HelpCircle size={20} />} 
+                        active={false} 
+                        onClick={onShowHelp} 
+                        label="Help & Shortcuts"
+                    />
+                )}
                 <NavIcon 
                     icon={<SettingsIcon size={20} />} 
                     active={currentView === AppView.SETTINGS} 

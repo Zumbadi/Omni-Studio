@@ -245,3 +245,20 @@ export interface AIAgent {
   avatar?: string;
   isManager?: boolean;
 }
+
+export interface Snippet {
+  id: string;
+  name: string;
+  language: string;
+  code: string;
+  description?: string;
+}
+
+export interface ActivityItem {
+  id: string;
+  type: 'commit' | 'deploy' | 'post' | 'alert' | 'task';
+  title: string;
+  desc: string;
+  time: string;
+  projectId?: string;
+}

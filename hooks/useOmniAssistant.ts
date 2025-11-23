@@ -18,10 +18,20 @@ export const useOmniAssistant = ({
   projectType, files, activeFile, activeModel, editorSelection, setEditorSelection 
 }: UseOmniAssistantProps) => {
   const [chatInput, setChatInput] = useState('');
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  
+  // Initialize with greeting
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => [
+      {
+          id: 'init-welcome',
+          role: 'model',
+          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.`,
+          timestamp: Date.now()
+      }
+  ]);
+
   const [isGenerating, setIsGenerating] = useState(false);
-  // Default closed on mobile
-  const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 768);
+  // Default closed on mobile, open on desktop
+  const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 1024);
   const [enableCritic, setEnableCritic] = useState(true);
   const [attachedImage, setAttachedImage] = useState<string | undefined>(undefined);
 

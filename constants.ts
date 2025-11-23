@@ -1,5 +1,5 @@
 
-import { Project, ProjectType, FileNode, FineTuningJob, Voice, SocialPost, Extension, GitCommit, AIAgent } from './types';
+import { Project, ProjectType, FileNode, FineTuningJob, Voice, SocialPost, Extension, GitCommit, AIAgent, Snippet, ActivityItem } from './types';
 
 export const MOCK_PROJECTS: Project[] = [
   {
@@ -507,4 +507,17 @@ export const DEFAULT_AGENTS: AIAgent[] = [
   { id: 'a2', name: 'Frontend Architect', role: 'Frontend Dev', description: 'Specializes in React, Tailwind, and CSS animations.', model: 'gemini-2.5-flash', systemPrompt: 'You are an expert React developer.', avatar: 'F' },
   { id: 'a3', name: 'Backend Lead', role: 'Backend Dev', description: 'Expert in Node.js, Databases, and API design.', model: 'gemini-3-pro-preview', systemPrompt: 'You are a backend specialist.', avatar: 'B' },
   { id: 'a4', name: 'Omni Critic', role: 'QA & Security', description: 'Reviews code for bugs, security flaws, and performance issues.', model: 'gemini-3-pro-preview', systemPrompt: 'You are a strict code reviewer.', avatar: 'Q' },
+];
+
+export const MOCK_SNIPPETS: Snippet[] = [
+    { id: 's1', name: 'React Button', language: 'tsx', code: "export const Button = ({ children }) => (\n  <button className=\"bg-blue-500 text-white px-4 py-2 rounded\">\n    {children}\n  </button>\n);" },
+    { id: 's2', name: 'Fetch Hook', language: 'ts', code: "export const useFetch = (url) => {\n  const [data, setData] = useState(null);\n  useEffect(() => { fetch(url).then(res => res.json()).then(setData); }, [url]);\n  return data;\n};" }
+];
+
+export const MOCK_ACTIVITY: ActivityItem[] = [
+    { id: 'a1', type: 'commit', title: 'Commit: Fix auth bug', desc: 'You committed 3 files', time: '2 min ago', projectId: '1' },
+    { id: 'a2', type: 'task', title: 'Agent: Refactor components', desc: 'Frontend Architect optimized 5 files', time: '15 min ago', projectId: '1' },
+    { id: 'a3', type: 'deploy', title: 'Deployment Success', desc: 'Deployed to Production (v1.2.0)', time: '1 hour ago', projectId: '1' },
+    { id: 'a4', type: 'post', title: 'Video Published', desc: 'Top 5 React Native Tips live on YouTube', time: '3 hours ago', projectId: '2' },
+    { id: 'a5', type: 'alert', title: 'Security Alert', desc: 'High severity vulnerability detected in package.json', time: '5 hours ago', projectId: '3' }
 ];

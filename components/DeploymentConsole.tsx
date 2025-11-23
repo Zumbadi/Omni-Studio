@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { Rocket, Package, Zap, UploadCloud, Check, ExternalLink, History, Activity, Globe, Terminal, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType } from '../types';
 import { MOCK_DEPLOYMENTS } from '../constants';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { logActivity } from '../utils/activityLogger';
 
 interface DeploymentConsoleProps {
   project: Project;
@@ -60,7 +62,10 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
       setTimeout(() => {
         setDeploymentState(state as any);
         onLog(log);
-        if (state === 'deployed') setDeployUrl(`https://${project?.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app`);
+        if (state === 'deployed') {
+            setDeployUrl(`https://${project?.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app`);
+            logActivity('deploy', 'Deployment Success', `Deployed ${project.name} to production`, project.id);
+        }
       }, currentDelay);
     });
   };
