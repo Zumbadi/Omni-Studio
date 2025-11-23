@@ -33,6 +33,8 @@ interface PreviewPanelProps {
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
   onUpdateProject?: (p: Project) => void;
+  onDeleteProject?: (id: string) => void;
+  onDeploymentComplete?: (url: string) => void;
 }
 
 const LoadingFallback = () => (
@@ -44,7 +46,7 @@ const LoadingFallback = () => (
 export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
   roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile,
-  isMaximized, onToggleMaximize, onUpdateProject
+  isMaximized, onToggleMaximize, onUpdateProject, onDeleteProject, onDeploymentComplete
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
 
@@ -79,13 +81,13 @@ export const PreviewPanel = memo(({
       <div className="flex-1 overflow-hidden flex flex-col relative">
           <Suspense fallback={<LoadingFallback />}>
             {activeTab === 'preview' && <LivePreview project={project} previewSrc={previewSrc} onRefresh={onRefreshPreview} />}
-            {activeTab === 'database' && <DatabaseStudio projectType={project.type} />}
+            {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} />}
             {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} />}
-            {activeTab === 'deploy' && <DeploymentConsole project={project} onLog={onLog} />}
+            {activeTab === 'deploy' && <DeploymentConsole project={project} onLog={onLog} onDeploymentComplete={onDeploymentComplete} />}
             {activeTab === 'audit' && <AuditView files={files} />}
             {activeTab === 'docs' && <DocsViewer project={project} onSaveFile={onSaveFile} />}
             {activeTab === 'roadmap' && <RoadmapView roadmap={roadmap} isGenerating={isGeneratingPlan} onGenerate={onGeneratePlan} onExecutePhase={onExecutePhase} onToggleTask={onToggleTask} />}
-            {activeTab === 'settings' && onUpdateProject && <ProjectSettings project={project} onUpdate={onUpdateProject} />}
+            {activeTab === 'settings' && onUpdateProject && <ProjectSettings project={project} onUpdate={onUpdateProject} onDeleteProject={onDeleteProject} />}
           </Suspense>
       </div>
     </div>

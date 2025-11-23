@@ -29,9 +29,11 @@ import { EditorArea } from '../components/EditorArea';
 
 interface WorkspaceProps {
   project: Project | null;
+  onDeleteProject?: (e: React.MouseEvent, id: string) => void;
+  onUpdateProject?: (p: Project) => void;
 }
 
-export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
+export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, onUpdateProject }) => {
   const { 
       files, setFiles, deletedFiles, activeFileId, setActiveFileId, openFiles, setOpenFiles, 
       remoteDirName, setRemoteDirName, updateFileContent, addFile, addDirectory, addPackage, findFileById, getAllFiles,
@@ -352,6 +354,21 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       if (cmd === 'open_settings') setActiveTab('settings');
   };
 
+  const handleDeleteWrapper = (id: string) => {
+      if (onDeleteProject) {
+          // Mock event for interface compatibility
+          onDeleteProject({} as React.MouseEvent, id);
+      }
+  };
+
+  const handleDeploymentComplete = (url: string) => {
+      if (project && onUpdateProject) {
+          const updated = { ...project, deploymentStatus: 'live' as const, deploymentUrl: url };
+          onUpdateProject(updated);
+          addToast('success', 'Project status updated to Live');
+      }
+  };
+
   if (!project) return <div className="flex-1 flex items-center justify-center text-gray-500">Select a project to begin</div>;
 
   return (
@@ -419,7 +436,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                     project={project!} previewSrc={previewSrc} activeTab={activeTab} setActiveTab={setActiveTab} onToggleLayout={() => toggleLayout('right')}
                     onExport={handleExport} onRefreshPreview={() => {/* impl */}} roadmap={roadmap} isGeneratingPlan={isGeneratingPlan} onGeneratePlan={handleGeneratePlan}
                     onExecutePhase={handleExecutePhase} onToggleTask={() => {/* impl */}} onLog={(l) => setTerminalLogs(p => [...p, l])} files={files} onSaveFile={addFile}
-                    isMaximized={isRightPanelMaximized} onToggleMaximize={toggleMaximizeRight} onUpdateProject={() => {/* impl */}}
+                    isMaximized={isRightPanelMaximized} onToggleMaximize={toggleMaximizeRight} onUpdateProject={onUpdateProject} onDeleteProject={handleDeleteWrapper}
+                    onDeploymentComplete={handleDeploymentComplete}
                 />
             </div>
         )}

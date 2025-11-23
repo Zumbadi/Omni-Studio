@@ -69,6 +69,33 @@ export const generatePreviewHtml = (code: string, isNative: boolean) => {
       </head>
       <body>
         <div id="root"></div>
+        <script>
+          // --- Console Log Interception ---
+          (function() {
+            const originalLog = console.log;
+            const originalWarn = console.warn;
+            const originalError = console.error;
+
+            function sendToParent(type, args) {
+              try {
+                const message = args.map(arg => 
+                  typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                ).join(' ');
+                window.parent.postMessage({ type: 'console', level: type, message }, '*');
+              } catch (e) {
+                // Ignore circular structure errors
+              }
+            }
+
+            console.log = (...args) => { originalLog(...args); sendToParent('info', args); };
+            console.warn = (...args) => { originalWarn(...args); sendToParent('warn', args); };
+            console.error = (...args) => { originalError(...args); sendToParent('error', args); };
+            
+            window.onerror = (msg, url, line) => {
+               sendToParent('error', [\`Runtime Error: \${msg} (Line \${line})\`]);
+            };
+          })();
+        </script>
         <script type="text/babel">
           const { useState, useEffect, useRef, useMemo, useCallback } = React;
 

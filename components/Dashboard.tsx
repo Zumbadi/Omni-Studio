@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2 } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack, ActivityItem } from '../types';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
@@ -173,7 +173,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
                         </button>
                      </div>
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-primary-400 transition-colors truncate">{project.name}</h3>
+                  <div className="flex justify-between items-start">
+                      <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-primary-400 transition-colors truncate">{project.name}</h3>
+                      {project.deploymentStatus && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1 border ${project.deploymentStatus === 'live' ? 'bg-green-900/30 text-green-400 border-green-800' : 'bg-gray-800 text-gray-500 border-gray-700'}`}>
+                              {project.deploymentStatus === 'live' ? <Check size={10}/> : <XCircle size={10}/>} {project.deploymentStatus}
+                          </span>
+                      )}
+                  </div>
                   <p className="text-sm text-gray-400 mb-4 line-clamp-2 h-10">{project.description}</p>
                   <div className="flex items-center gap-2 text-xs text-gray-500 mt-auto">
                      <span className="px-2 py-1 bg-gray-800 rounded border border-gray-700 truncate max-w-[150px]">{project.type}</span>

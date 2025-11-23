@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Download, Play } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Download, Play, Terminal, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType } from '../types';
 
@@ -21,11 +21,40 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const [deviceFrame, setDeviceFrame] = useState<'iphone14' | 'pixel7' | 'ipad'>('iphone14');
   const [isBuilding, setIsBuilding] = useState(false);
 
+  // Console Logs
+  const [logs, setLogs] = useState<{level: string, message: string, time: string}[]>([]);
+  const [showConsole, setShowConsole] = useState(false);
+  const consoleRef = useRef<HTMLDivElement>(null);
+
   // API Console State
   const [apiMethod, setApiMethod] = useState('GET');
   const [apiPath, setApiPath] = useState('/users');
   const [apiResponse, setApiResponse] = useState<string>('// Click Send to test endpoint');
   const [apiStatus, setApiStatus] = useState<number | null>(null);
+
+  useEffect(() => {
+      const handleMessage = (event: MessageEvent) => {
+          if (event.data && event.data.type === 'console') {
+              const newLog = {
+                  level: event.data.level,
+                  message: event.data.message,
+                  time: new Date().toLocaleTimeString().split(' ')[0]
+              };
+              setLogs(prev => [...prev, newLog].slice(-100)); // Keep last 100 logs
+              // Auto-scroll
+              if (consoleRef.current) {
+                  consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+              }
+          }
+      };
+      window.addEventListener('message', handleMessage);
+      return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Clear logs on refresh
+  useEffect(() => {
+      setLogs([]);
+  }, [previewSrc]);
 
   const handleApiSend = () => {
       setApiResponse('Sending request...');
@@ -144,7 +173,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                         )}
                     </div>
 
-                    {/* Device Controls - Horizontal on mobile maybe? Keep vertical for now but absolute positioned smarter */}
+                    {/* Device Controls */}
                     <div className="absolute -right-12 top-4 flex flex-col gap-2 bg-gray-800 p-1.5 rounded-xl border border-gray-700 shadow-lg hidden md:flex">
                         <button onClick={() => setDeviceFrame('iphone14')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'iphone14' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="iPhone 14"><Smartphone size={18}/></button>
                         <button onClick={() => setDeviceFrame('pixel7')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'pixel7' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="Pixel 7"><Smartphone size={18} className="rotate-90"/></button>
@@ -152,8 +181,39 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                     </div>
                 </div>
             ) : (
-                <div className="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-700/50">
+                <div className="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-700/50 relative">
                     <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
+                </div>
+            )}
+        </div>
+
+        {/* Live Console Drawer */}
+        <div className={`absolute bottom-0 left-0 right-0 bg-gray-900/95 border-t border-gray-700 transition-all duration-300 flex flex-col ${showConsole ? 'h-48' : 'h-8'}`}>
+            <div 
+                className="h-8 flex items-center justify-between px-3 cursor-pointer hover:bg-gray-800 border-b border-gray-800"
+                onClick={() => setShowConsole(!showConsole)}
+            >
+                <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
+                    <Terminal size={12} /> Live Console
+                    {logs.length > 0 && <span className="bg-gray-700 text-gray-300 px-1.5 rounded-full text-[10px]">{logs.length}</span>}
+                </div>
+                {showConsole ? <ChevronDown size={14} className="text-gray-500"/> : <ChevronUp size={14} className="text-gray-500"/>}
+            </div>
+            
+            {showConsole && (
+                <div ref={consoleRef} className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1">
+                    {logs.length === 0 && <div className="text-gray-600 italic px-2">No logs captured yet...</div>}
+                    {logs.map((log, i) => (
+                        <div key={i} className="flex gap-2 hover:bg-white/5 px-2 rounded py-0.5">
+                            <span className="text-gray-600 min-w-[50px]">{log.time}</span>
+                            <span className={`flex-1 break-all whitespace-pre-wrap ${
+                                log.level === 'error' ? 'text-red-400' : 
+                                log.level === 'warn' ? 'text-yellow-400' : 'text-green-400'
+                            }`}>
+                                {log.message}
+                            </span>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

@@ -10,9 +10,10 @@ import { logActivity } from '../utils/activityLogger';
 interface DeploymentConsoleProps {
   project: Project;
   onLog: (msg: string) => void;
+  onDeploymentComplete?: (url: string) => void;
 }
 
-export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, onLog }) => {
+export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, onLog, onDeploymentComplete }) => {
   const [deploymentState, setDeploymentState] = useState<'idle' | 'building' | 'optimizing' | 'uploading' | 'deployed'>('idle');
   const [deployUrl, setDeployUrl] = useState('');
   const [serverLogs, setServerLogs] = useState<string[]>([]);
@@ -63,8 +64,10 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
         setDeploymentState(state as any);
         onLog(log);
         if (state === 'deployed') {
-            setDeployUrl(`https://${project?.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app`);
+            const url = `https://${project?.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app`;
+            setDeployUrl(url);
             logActivity('deploy', 'Deployment Success', `Deployed ${project.name} to production`, project.id);
+            if (onDeploymentComplete) onDeploymentComplete(url);
         }
       }, currentDelay);
     });

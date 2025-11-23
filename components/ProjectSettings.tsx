@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Plus, Trash2, Lock } from 'lucide-react';
+import { Settings, Save, Plus, Trash2, Lock, AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
 import { Project } from '../types';
 
 interface ProjectSettingsProps {
   project: Project;
   onUpdate: (updatedProject: Project) => void;
+  onDeleteProject?: (id: string) => void;
 }
 
-export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ project, onUpdate }) => {
+export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ project, onUpdate, onDeleteProject }) => {
   const [name, setName] = useState(project.name);
   const [desc, setDesc] = useState(project.description);
   const [envVars, setEnvVars] = useState<{key: string, value: string}[]>([]);
@@ -52,6 +53,12 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ project, onUpd
       const newVars = [...envVars];
       newVars[idx][field] = val;
       setEnvVars(newVars);
+  };
+
+  const handleDelete = () => {
+      if (onDeleteProject && confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+          onDeleteProject(project.id);
+      }
   };
 
   return (
@@ -111,6 +118,20 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ project, onUpd
                   </div>
                   <p className="text-[10px] text-gray-500 flex items-center gap-1"><Lock size={10}/> Values are encrypted at rest (Simulated)</p>
               </div>
+
+              {/* Danger Zone */}
+              {onDeleteProject && (
+                  <div className="space-y-4 max-w-2xl pt-4">
+                      <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider border-b border-red-900/30 pb-2 flex items-center gap-2"><AlertTriangle size={14}/> Danger Zone</h3>
+                      <div className="bg-red-900/10 border border-red-900/30 rounded-lg p-4 flex items-center justify-between">
+                          <div>
+                              <div className="text-sm font-medium text-red-200">Delete Project</div>
+                              <div className="text-xs text-red-400/70">Once you delete a project, there is no going back. Please be certain.</div>
+                          </div>
+                          <Button variant="danger" size="sm" onClick={handleDelete}>Delete Project</Button>
+                      </div>
+                  </div>
+              )}
           </div>
       </div>
   );

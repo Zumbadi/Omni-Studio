@@ -1,15 +1,18 @@
 
-import React, { useState } from 'react';
-import { Database, Play, Wand2, Loader2, Table, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Database, Play, Wand2, Loader2, Table, Search, FileJson } from 'lucide-react';
 import { Button } from './Button';
 import { generateSQL } from '../services/geminiService';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { FileNode } from '../types';
+import { getAllFiles } from '../utils/fileHelpers';
 
 interface DatabaseStudioProps {
   projectType: string;
+  files?: FileNode[];
 }
 
-export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType }) => {
+export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, files = [] }) => {
   const [dbView, setDbView] = useState<'data' | 'schema' | 'query' | 'vectors'>('data');
   const [sqlQuery, setSqlQuery] = useState('SELECT * FROM users LIMIT 10;');
   const [nlQuery, setNlQuery] = useState('');
@@ -19,6 +22,27 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType }) =
      { id: 2, name: 'Bob Smith', email: 'bob@example.com', role: 'user', created_at: '2023-10-14' },
      { id: 3, name: 'Charlie Brown', email: 'charlie@example.com', role: 'user', created_at: '2023-10-15' }
   ]);
+  const [loadedFromFile, setLoadedFromFile] = useState<string | null>(null);
+  
+  // Try to load data from files
+  useEffect(() => {
+      const allFiles = getAllFiles(files);
+      const dataFile = allFiles.find(f => f.node.name === 'data.json' || f.node.name === 'db.json' || f.node.name === 'mockData.json');
+      
+      if (dataFile && dataFile.node.content) {
+          try {
+              const parsed = JSON.parse(dataFile.node.content);
+              // Handle array or object with array property
+              let data = Array.isArray(parsed) ? parsed : (parsed.users || parsed.data || parsed.items || []);
+              if (Array.isArray(data) && data.length > 0) {
+                  setDbResults(data);
+                  setLoadedFromFile(dataFile.node.name);
+              }
+          } catch (e) {
+              console.warn("Failed to parse local data file", e);
+          }
+      }
+  }, [files]);
   
   const [vectorData] = useState(() => Array.from({length: 30}, (_, i) => ({
       x: Math.random() * 100,
@@ -29,7 +53,10 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType }) =
   })));
 
   const handleRunQuery = () => {
-      if (sqlQuery.toLowerCase().includes('users')) setDbResults(prev => [...prev]);
+      // Simulate query execution delay
+      const original = [...dbResults];
+      setDbResults([]);
+      setTimeout(() => setDbResults(original), 300);
   };
 
   const handleGenerateSQL = async () => {
@@ -142,6 +169,11 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType }) =
                               <button onClick={handleGenerateSQL} disabled={isGeneratingSQL} className="bg-purple-900/50 hover:bg-purple-800 text-purple-200 text-[10px] px-2 py-1 rounded border border-purple-800/50">
                                   {isGeneratingSQL ? <Loader2 size={10} className="animate-spin"/> : 'Generate'}
                               </button>
+                          </div>
+                      )}
+                      {loadedFromFile && (
+                          <div className="mb-2 text-[10px] text-green-400 flex items-center gap-1">
+                              <FileJson size={10} /> Loaded from {loadedFromFile}
                           </div>
                       )}
                       <div className="bg-black border border-gray-700 rounded-t-lg p-2 flex gap-2 shrink-0"><textarea className="w-full bg-transparent text-green-400 font-mono text-sm focus:outline-none resize-none h-20" value={sqlQuery} onChange={e => setSqlQuery(e.target.value)} /><button onClick={handleRunQuery} className="self-start bg-primary-600 hover:bg-primary-500 text-white p-2 rounded"><Play size={14}/></button></div>

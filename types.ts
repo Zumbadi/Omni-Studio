@@ -24,6 +24,8 @@ export interface Project {
   lastModified: string;
   fileCount: number;
   roadmap?: ProjectPhase[];
+  deploymentStatus?: 'deploying' | 'live' | 'failed' | 'offline';
+  deploymentUrl?: string;
 }
 
 export interface ProjectPhase {

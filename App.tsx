@@ -114,14 +114,18 @@ const App: React.FC = () => {
   };
   
   const handleDeleteProject = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm('Are you sure you want to delete this project?')) {
-      setProjects(projects.filter(p => p.id !== id));
-      localStorage.removeItem(`omni_files_${id}`);
-      if (selectedProject?.id === id) {
-        setSelectedProject(null);
-      }
+    if (e && e.stopPropagation) e.stopPropagation();
+    setProjects(projects.filter(p => p.id !== id));
+    localStorage.removeItem(`omni_files_${id}`);
+    if (selectedProject?.id === id) {
+      setSelectedProject(null);
+      setCurrentView(AppView.DASHBOARD);
     }
+  };
+
+  const handleUpdateProject = (updatedProject: Project) => {
+      setProjects(projects.map(p => p.id === updatedProject.id ? updatedProject : p));
+      setSelectedProject(updatedProject);
   };
 
   const handleExportProject = async (project: Project) => {
@@ -207,7 +211,7 @@ const App: React.FC = () => {
                   />
               </div>
           )}
-          {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} />}
+          {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} onDeleteProject={handleDeleteProject} onUpdateProject={handleUpdateProject} />}
           {currentView === AppView.FINETUNE && <FineTuningDashboard />}
           {currentView === AppView.AUDIO && <AudioStudio />}
           {currentView === AppView.MEDIA && <MediaStudio />}
