@@ -56,7 +56,17 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, onCommand, onAiFix }) 
       if (activeTabId === 't1') {
           onCommand(input);
       } else {
-          setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [...t.logs, `> ${input}`, `> Executed in ${t.name}`] } : t));
+          // Handle commands in extra tabs (simulation only)
+          let output = [];
+          const cmd = input.trim();
+          output.push(`> ${cmd}`);
+          if (cmd === 'ls') output.push('src  package.json  node_modules');
+          else if (cmd === 'pwd') output.push('/app');
+          else if (cmd.startsWith('git commit')) output.push('[main] Commit successful.');
+          else if (cmd.startsWith('npm')) output.push('Done in 0.5s.');
+          else output.push(`Executed: ${cmd}`);
+          
+          setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [...t.logs, ...output] } : t));
       }
       setHistory(prev => [...prev, input]);
       setHistoryIndex(-1);

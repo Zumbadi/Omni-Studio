@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud } from 'lucide-react';
+import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud, Trash2, FileCode, FileJson, Image as ImageIcon, FileType } from 'lucide-react';
 import { FileNode, Project } from '../types';
 
 interface FileExplorerProps {
@@ -8,8 +8,9 @@ interface FileExplorerProps {
   activeFileId: string;
   project: Project;
   remoteDirName: string | null;
+  deletedFiles?: FileNode[];
   onFileClick: (id: string) => void;
-  onContextMenu: (e: React.MouseEvent, id: string) => void;
+  onContextMenu: (e: React.MouseEvent, id: string, isTrash?: boolean) => void;
   onConnectRemote: () => void;
   onUploadFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onUploadFolder: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -17,22 +18,23 @@ interface FileExplorerProps {
   onAddFolder: () => void;
   onInstallPackage: () => void;
   onRunScript?: (script: string, cmd: string) => void;
+  onEmptyTrash?: () => void;
 }
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({
-  files, activeFileId, project, remoteDirName,
+  files, activeFileId, project, remoteDirName, deletedFiles = [],
   onFileClick, onContextMenu, onConnectRemote,
-  onUploadFile, onUploadFolder, onAddFile, onAddFolder, onInstallPackage, onRunScript
+  onUploadFile, onUploadFolder, onAddFile, onAddFolder, onInstallPackage, onRunScript, onEmptyTrash
 }) => {
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [scriptsOpen, setScriptsOpen] = useState(true);
   const [depsOpen, setDepsOpen] = useState(true);
+  const [trashOpen, setTrashOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper to find package.json content
   const findPackageJson = (nodes: FileNode[]): string | undefined => {
       for (const node of nodes) {
           if (node.name === 'package.json' && node.type === 'file') return node.content;
@@ -56,32 +58,47 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       }
   } catch (e) {}
 
-  const renderFileTree = (nodes: FileNode[], depth = 0) => {
+  const getFileIcon = (name: string) => {
+      if (name.endsWith('.tsx') || name.endsWith('.jsx')) return <FileCode size={14} className="text-blue-400"/>;
+      if (name.endsWith('.ts') || name.endsWith('.js')) return <FileCode size={14} className="text-yellow-400"/>;
+      if (name.endsWith('.css') || name.endsWith('.scss')) return <FileType size={14} className="text-cyan-400"/>;
+      if (name.endsWith('.json')) return <FileJson size={14} className="text-orange-400"/>;
+      if (name.endsWith('.html')) return <FileType size={14} className="text-red-400"/>;
+      if (name.match(/\.(png|jpg|jpeg|svg|gif)$/)) return <ImageIcon size={14} className="text-purple-400"/>;
+      if (name.endsWith('.md')) return <FileIcon size={14} className="text-gray-300"/>;
+      return <FileIcon size={14} className="text-gray-500"/>;
+  };
+
+  const renderFileTree = (nodes: FileNode[], depth = 0, isTrash = false) => {
     return nodes.map(node => (
       <div key={node.id}>
         <div 
           className={`flex items-center justify-between px-4 py-1 cursor-pointer text-sm hover:bg-gray-800 transition-colors border-l-2 group relative
             ${node.id === activeFileId ? 'bg-gray-800 text-white border-primary-500' : 'text-gray-400 border-transparent'}
+            ${isTrash ? 'opacity-75' : ''}
           `}
           style={{ paddingLeft: `${depth * 12 + 12}px` }}
-          onClick={() => node.type === 'file' && onFileClick(node.id)}
-          onContextMenu={(e) => onContextMenu(e, node.id)}
+          onClick={() => !isTrash && node.type === 'file' && onFileClick(node.id)}
+          onContextMenu={(e) => onContextMenu(e, node.id, isTrash)}
           onMouseEnter={() => setHoveredFileId(node.id)}
           onMouseLeave={() => setHoveredFileId(null)}
         >
           <div className="flex items-center overflow-hidden">
               <span className="mr-2 opacity-70 flex-shrink-0 relative">
-                {node.type === 'directory' ? (node.isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <FileIcon size={14} />}
-                {node.gitStatus === 'modified' && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>}
-                {node.gitStatus === 'added' && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full"></div>}
+                {node.type === 'directory' ? 
+                    (node.isOpen ? <ChevronDown size={14} className="text-gray-300"/> : <ChevronRight size={14} className="text-gray-500"/>) 
+                    : getFileIcon(node.name)
+                }
+                {!isTrash && node.gitStatus === 'modified' && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>}
+                {!isTrash && node.gitStatus === 'added' && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full"></div>}
               </span>
-              <span className={`truncate ${node.gitStatus === 'modified' ? 'text-yellow-400' : node.gitStatus === 'added' ? 'text-green-400' : ''}`}>{node.name}</span>
+              <span className={`truncate ${!isTrash && node.gitStatus === 'modified' ? 'text-yellow-400' : !isTrash && node.gitStatus === 'added' ? 'text-green-400' : isTrash ? 'line-through text-gray-500' : ''}`}>{node.name}</span>
           </div>
           {(hoveredFileId === node.id && node.id !== 'root' && node.id !== '1') && (
-             <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, node.id); }} className="text-gray-600 hover:text-white p-1"><MoreVertical size={12} /></button>
+             <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, node.id, isTrash); }} className="text-gray-600 hover:text-white p-1"><MoreVertical size={12} /></button>
           )}
         </div>
-        {node.children && node.isOpen && renderFileTree(node.children, depth + 1)}
+        {node.children && node.isOpen && renderFileTree(node.children, depth + 1, isTrash)}
       </div>
     ));
   };
@@ -99,13 +116,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       e.preventDefault();
       setIsDragOver(false);
       const files = e.dataTransfer.files;
-      // Manually trigger change event for file input logic reuse
       if (files && files.length > 0) {
-          // Create a synthetic event or call upload handler directly if possible
-          // For now, we can assign to the input ref
           if (fileInputRef.current) {
               fileInputRef.current.files = files;
-              // Trigger the change handler manually or via event dispatch
               const event = new Event('change', { bubbles: true });
               fileInputRef.current.dispatchEvent(event);
           }
@@ -119,7 +132,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
     >
-        {/* Hidden Inputs */}
         <input type="file" ref={fileInputRef} className="hidden" onChange={onUploadFile} multiple />
         <input type="file" ref={folderInputRef} className="hidden" onChange={onUploadFolder} {...{ webkitdirectory: "" } as any} />
 
@@ -148,6 +160,24 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         </div>
         <div className="flex-1 overflow-y-auto py-2 font-mono text-sm">{renderFileTree(files)}</div>
         
+        {/* Trash Bin */}
+        {deletedFiles.length > 0 && (
+            <div className="border-t border-gray-800 bg-gray-900">
+                <div className="px-4 py-2 text-xs font-bold text-red-500/70 uppercase tracking-wider flex items-center justify-between cursor-pointer hover:text-red-400" onClick={() => setTrashOpen(!trashOpen)}>
+                    <span className="flex items-center gap-2"><Trash2 size={12}/> Trash ({deletedFiles.length})</span> 
+                    {trashOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
+                </div>
+                {trashOpen && (
+                    <div className="pb-2">
+                        <div className="px-4 mb-2">
+                            <button onClick={onEmptyTrash} className="text-[10px] text-red-400 hover:text-red-300 hover:underline w-full text-left">Empty Trash</button>
+                        </div>
+                        {renderFileTree(deletedFiles, 0, true)}
+                    </div>
+                )}
+            </div>
+        )}
+
         {/* NPM Scripts */}
         <div className="border-t border-gray-800 bg-gray-900">
             <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between cursor-pointer hover:text-white" onClick={() => setScriptsOpen(!scriptsOpen)}>

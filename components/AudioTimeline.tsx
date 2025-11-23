@@ -52,7 +52,16 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
   useEffect(() => {
       if (isPlaying) {
           const animate = () => {
-              setVisualizerBars(prev => prev.map(() => Math.random() * 100));
+              const time = Date.now() / 150;
+              setVisualizerBars(prev => prev.map((_, i) => {
+                  // Create organic wave movement using combined sine waves
+                  const wave1 = Math.sin(time + i * 0.2);
+                  const wave2 = Math.sin(time * 0.5 + i * 0.1);
+                  const noise = Math.random() * 20;
+                  
+                  const value = ((wave1 + wave2 + 2) / 4) * 60 + noise + 10;
+                  return Math.min(100, Math.max(5, value));
+              }));
               rafRef.current = requestAnimationFrame(animate);
           };
           animate();
@@ -140,7 +149,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                {visualizerBars.map((height, i) => (
                   <div 
                     key={i} 
-                    className={`w-1.5 bg-gradient-to-t from-primary-600 to-purple-500 rounded-t-sm transition-all duration-100 ease-in-out`}
+                    className={`w-1.5 bg-gradient-to-t from-primary-600 to-purple-500 rounded-t-sm transition-all duration-75 ease-out`}
                     style={{ height: `${height}%` }}
                   ></div>
                ))}

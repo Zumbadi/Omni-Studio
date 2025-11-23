@@ -1,12 +1,12 @@
 
 import React, { useRef } from 'react';
-import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2 } from 'lucide-react';
+import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid } from 'lucide-react';
 import { Button } from './Button';
 import { Voice } from '../types';
 
 interface AudioSidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'mixer' | 'cloning' | 'pro') => void;
+  setActiveTab: (tab: 'mixer' | 'cloning' | 'pro' | 'sequencer') => void;
   voices: Voice[];
   selectedVoice: string;
   setSelectedVoice: (id: string) => void;
@@ -43,10 +43,11 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
            <p className="text-xs text-gray-500">Create podcasts, music & clones</p>
         </div>
 
-        <div className="flex gap-2 bg-gray-800 p-1 rounded-lg">
-           <button onClick={() => setActiveTab('mixer')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === 'mixer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Mixer</button>
-           <button onClick={() => setActiveTab('cloning')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === 'cloning' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Voice Lab</button>
-           <button onClick={() => setActiveTab('pro')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === 'pro' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Pro</button>
+        <div className="grid grid-cols-2 gap-2 bg-gray-800 p-1 rounded-lg">
+           <button onClick={() => setActiveTab('mixer')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'mixer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Mixer</button>
+           <button onClick={() => setActiveTab('sequencer')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'sequencer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Sequencer</button>
+           <button onClick={() => setActiveTab('cloning')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'cloning' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Voice Lab</button>
+           <button onClick={() => setActiveTab('pro')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'pro' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Pro Tools</button>
         </div>
 
         {activeTab === 'mixer' && (
@@ -69,6 +70,13 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
                  <Button size="sm" variant="secondary" className="w-full mb-2" onClick={onSmartMix}>Auto-Mix (Ducking)</Button>
               </div>
            </div>
+        )}
+
+        {activeTab === 'sequencer' && (
+            <div className="p-4 bg-gray-800 rounded-xl border border-gray-700 text-center text-xs text-gray-400">
+                <Grid size={24} className="mx-auto mb-2 text-primary-500"/>
+                <p>Use the main panel to program beats.</p>
+            </div>
         )}
 
         {activeTab === 'pro' && (

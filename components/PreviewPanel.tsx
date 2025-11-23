@@ -1,6 +1,6 @@
 
-import React, { Suspense, lazy, memo } from 'react';
-import { Download, X, Map, BrainCircuit, Gauge, Book, Server, Database, Smartphone, Loader2 } from 'lucide-react';
+import React, { Suspense, lazy, memo, useState } from 'react';
+import { Download, X, Map, BrainCircuit, Gauge, Book, Server, Database, Smartphone, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, ProjectPhase, FileNode } from '../types';
 import { LivePreview } from './LivePreview';
@@ -29,6 +29,8 @@ interface PreviewPanelProps {
   onLog: (msg: string) => void;
   files: FileNode[];
   onSaveFile?: (path: string, content: string) => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
 }
 
 const LoadingFallback = () => (
@@ -39,7 +41,8 @@ const LoadingFallback = () => (
 
 export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
-  roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile
+  roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile,
+  isMaximized, onToggleMaximize
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
 
@@ -47,7 +50,7 @@ export const PreviewPanel = memo(({
     <div className="w-full h-full flex flex-col bg-gray-900 border-l border-gray-800">
       {/* Panel Header */}
       <div className="h-10 bg-gray-900 border-b border-gray-800 flex items-center px-2 justify-between shrink-0">
-         <div className="flex gap-1 bg-gray-800 p-0.5 rounded-lg overflow-x-auto scrollbar-none w-full md:w-auto max-w-[calc(100%-80px)]">
+         <div className="flex gap-1 bg-gray-800 p-0.5 rounded-lg overflow-x-auto scrollbar-none w-full md:w-auto max-w-[calc(100%-110px)]">
            <button onClick={() => setActiveTab('preview')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'preview' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
                <Smartphone size={12}/> Preview
            </button>
@@ -60,6 +63,11 @@ export const PreviewPanel = memo(({
          </div>
          <div className="flex gap-1 items-center">
              <Button size="sm" variant="ghost" onClick={onExport} title="Download Zip" className="h-7 w-7 p-0 flex items-center justify-center"><Download size={14}/></Button>
+             {onToggleMaximize && (
+                 <button onClick={onToggleMaximize} className="text-gray-500 hover:text-white h-7 w-7 flex items-center justify-center rounded hover:bg-gray-800 transition-colors" title={isMaximized ? "Restore" : "Maximize"}>
+                     {isMaximized ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}
+                 </button>
+             )}
              <button onClick={onToggleLayout} className="text-gray-500 hover:text-white h-7 w-7 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"><X size={14}/></button>
          </div>
       </div>

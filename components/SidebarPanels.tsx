@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square } from 'lucide-react';
+import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle } from 'lucide-react';
 import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent } from '../types';
 import { Button } from './Button';
 import { DEFAULT_AGENTS } from '../constants';
@@ -15,40 +15,161 @@ export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranc
       <div className="p-4 border-b border-gray-800 bg-gray-900 sticky top-0 z-10">
          <div className="flex justify-between items-center mb-4">
              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Source Control</h2>
-             <button onClick={onSwitchBranch} className="flex items-center gap-1 text-xs text-primary-400"><GitBranch size={12}/> {currentBranch}</button>
+             <button onClick={onSwitchBranch} className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300"><GitBranch size={12}/> {currentBranch}</button>
          </div>
-         <textarea className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-gray-300 mb-2 h-16" placeholder="Commit message..." value={message} onChange={e => setMessage(e.target.value)} />
-         <Button size="sm" className="w-full" onClick={() => { onCommit(message); setMessage(''); }}>Commit</Button>
+         
+         {/* Git Graph Visualization */}
+         <div className="mb-4 pl-1">
+             <div className="relative h-16 flex items-center">
+                 <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-700"></div>
+                 {commits.slice(0, 3).map((c, i) => (
+                     <div key={c.id} className="absolute left-0 flex items-center" style={{ top: `${i * 24}px` }}>
+                         <div className="w-4 h-4 rounded-full bg-gray-900 border-2 border-blue-500 z-10"></div>
+                         <div className="ml-3 text-[10px] text-gray-500 truncate w-40">{c.message}</div>
+                     </div>
+                 ))}
+                 <div className="absolute left-0 top-[72px] flex items-center">
+                     <div className="w-4 h-4 rounded-full bg-gray-800 border-2 border-dashed border-gray-600 z-10"></div>
+                     <div className="ml-3 text-[10px] text-gray-600">Initial commit</div>
+                 </div>
+             </div>
+         </div>
+
+         <textarea className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-gray-300 mb-2 h-16 focus:border-primary-500 outline-none transition-colors" placeholder="Commit message..." value={message} onChange={e => setMessage(e.target.value)} />
+         <Button size="sm" className="w-full" onClick={() => { onCommit(message); setMessage(''); }} disabled={!message.trim()}>Commit Changes</Button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-          {commits.map(c => <div key={c.id} className="text-xs text-gray-400 p-2 border-l border-gray-700 pl-3">{c.message}</div>)}
+      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="text-[10px] font-bold text-gray-500 px-2 mb-1 uppercase">History</div>
+          {commits.map(c => (
+              <div key={c.id} className="text-xs text-gray-400 p-2 rounded hover:bg-gray-800 flex justify-between group">
+                  <span className="truncate max-w-[140px]">{c.message}</span>
+                  <span className="text-gray-600 font-mono text-[10px]">{c.hash}</span>
+              </div>
+          ))}
       </div>
     </div>
   );
 };
 
 // --- SEARCH PANEL ---
-interface SearchPanelProps { query: string; onSearch: (q: string) => void; results: any[]; onResultClick: (id: string, line: number) => void; }
-export const SearchPanel: React.FC<SearchPanelProps> = ({ query, onSearch, results, onResultClick }) => (
-    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><input type="text" className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-white" placeholder="Search..." value={query} onChange={e => onSearch(e.target.value)} /></div><div className="flex-1 overflow-y-auto p-2">{results.map((res, i) => <div key={i} onClick={() => onResultClick(res.fileId, res.line)} className="p-2 cursor-pointer hover:bg-gray-800 text-xs text-gray-300">{res.fileName} ({res.line})</div>)}</div></div>
-);
+interface SearchPanelProps { 
+    query: string; 
+    onSearch: (q: string) => void; 
+    results: any[]; 
+    onResultClick: (id: string, line: number) => void;
+    onReplace: (fileId: string, line: number, text: string, newText: string) => void;
+    onReplaceAll: (searchText: string, newText: string) => void;
+}
+export const SearchPanel: React.FC<SearchPanelProps> = ({ query, onSearch, results, onResultClick, onReplace, onReplaceAll }) => {
+    const [replaceMode, setReplaceMode] = useState(false);
+    const [replaceText, setReplaceText] = useState('');
+
+    return (
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-gray-800 bg-gray-900 sticky top-0 z-10 space-y-3">
+                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center">
+                    Search 
+                    <button onClick={() => setReplaceMode(!replaceMode)} className={`p-1 rounded hover:bg-gray-700 ${replaceMode ? 'text-white' : 'text-gray-500'}`} title="Toggle Replace"><ChevronRight size={14} className={`transition-transform ${replaceMode ? 'rotate-90' : ''}`}/></button>
+                </h2>
+                <div className="relative">
+                    <input 
+                        type="text" 
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 pl-8 text-xs text-white focus:border-primary-500 outline-none" 
+                        placeholder="Search..." 
+                        value={query} 
+                        onChange={e => onSearch(e.target.value)} 
+                    />
+                    <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500"/>
+                </div>
+                {replaceMode && (
+                    <div className="relative animate-in slide-in-from-top-2 fade-in">
+                        <input 
+                            type="text" 
+                            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 pl-8 text-xs text-white focus:border-primary-500 outline-none" 
+                            placeholder="Replace with..." 
+                            value={replaceText} 
+                            onChange={e => setReplaceText(e.target.value)} 
+                        />
+                        <Replace size={14} className="absolute left-2.5 top-2.5 text-gray-500"/>
+                        <div className="flex justify-end mt-2">
+                            <button 
+                                onClick={() => onReplaceAll(query, replaceText)}
+                                disabled={!query || results.length === 0}
+                                className="text-[10px] bg-gray-800 border border-gray-600 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50"
+                            >
+                                <RefreshCw size={10}/> Replace All
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+                <div className="px-2 pb-2 text-[10px] text-gray-500">{results.length} results found</div>
+                {results.map((res, i) => (
+                    <div key={i} className="group flex flex-col p-2 rounded hover:bg-gray-800 transition-colors cursor-pointer border border-transparent hover:border-gray-700 mb-1">
+                        <div onClick={() => onResultClick(res.fileId, res.line)} className="flex items-center gap-2 mb-1">
+                            <FileText size={12} className="text-blue-400 shrink-0"/>
+                            <span className="text-xs font-medium text-gray-300 truncate">{res.fileName}</span>
+                            <span className="text-[10px] text-gray-600 bg-gray-900 px-1 rounded">{res.line}</span>
+                        </div>
+                        <div className="pl-5 text-[10px] text-gray-400 font-mono truncate flex justify-between items-center">
+                            <span>{res.text}</span>
+                            {replaceMode && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onReplace(res.fileId, res.line, res.text, replaceText); }}
+                                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-yellow-400 transition-opacity"
+                                    title="Replace this instance"
+                                >
+                                    <Replace size={12}/>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ))}
+                {query && results.length === 0 && <div className="text-center py-8 text-xs text-gray-600">No results found.</div>}
+            </div>
+        </div>
+    );
+};
 
 // --- DEBUG PANEL ---
 interface DebugPanelProps { variables: any[]; breakpoints: number[]; onRemoveBreakpoint: (l: number) => void; }
 export const DebugPanel: React.FC<DebugPanelProps> = ({ variables, breakpoints, onRemoveBreakpoint }) => (
-    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Debug</h2></div><div className="p-4 text-xs text-gray-400">{breakpoints.length} breakpoints active</div></div>
+    <div className="flex flex-col h-full">
+        <div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Debug</h2></div>
+        <div className="p-4 space-y-4">
+            <div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 flex items-center gap-2"><Circle size={8} fill="red" className="text-red-500"/> Breakpoints</div>
+                {breakpoints.length === 0 && <div className="text-xs text-gray-600 italic">No breakpoints set. Click gutter to add.</div>}
+                {breakpoints.map(bp => (
+                    <div key={bp} className="flex items-center justify-between text-xs text-gray-300 p-2 bg-gray-800 rounded mb-1">
+                        <span>Line {bp}</span>
+                        <button onClick={() => onRemoveBreakpoint(bp)} className="text-gray-500 hover:text-white"><X size={12}/></button>
+                    </div>
+                ))}
+            </div>
+            <div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase mb-2">Variables (Scope)</div>
+                <div className="bg-gray-800 rounded p-2 font-mono text-[10px] text-green-400">
+                    <div>count: 42</div>
+                    <div>user: "Alice"</div>
+                    <div>isLoading: false</div>
+                </div>
+            </div>
+        </div>
+    </div>
 );
 
 // --- EXTENSIONS PANEL ---
 interface ExtensionsPanelProps { extensions: Extension[]; onToggle: (id: string) => void; }
 export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ extensions, onToggle }) => (
-    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Extensions</h2></div><div className="p-2">{extensions.map(e => <div key={e.id} className="p-2 hover:bg-gray-800 text-xs text-gray-300 flex justify-between"><span>{e.name}</span><button onClick={() => onToggle(e.id)}>{e.installed ? 'On' : 'Off'}</button></div>)}</div></div>
+    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Extensions</h2></div><div className="p-2">{extensions.map(e => <div key={e.id} className="p-3 mb-2 bg-gray-800 rounded border border-gray-700 flex justify-between items-center group"><div className="flex items-center gap-3"><div className="w-8 h-8 bg-gray-700 rounded flex items-center justify-center font-bold text-white">{e.icon}</div><div><div className="text-sm text-gray-200 font-medium">{e.name}</div><div className="text-[10px] text-gray-500">{e.publisher}</div></div></div><button onClick={() => onToggle(e.id)} className={`px-3 py-1 text-[10px] rounded border transition-colors ${e.installed ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-gray-700 text-gray-400 border-gray-600 hover:text-white'}`}>{e.installed ? 'Installed' : 'Install'}</button></div>)}</div></div>
 );
 
 // --- ASSETS PANEL ---
 interface AssetsPanelProps { assets: any[]; }
 export const AssetsPanel: React.FC<AssetsPanelProps> = ({ assets }) => (
-    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Assets</h2></div><div className="p-2 grid grid-cols-2 gap-2">{assets.map((a, i) => <div key={i} className="bg-gray-800 h-20 rounded flex items-center justify-center text-xs text-gray-500">{a.name}</div>)}</div></div>
+    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Assets</h2></div><div className="p-2 grid grid-cols-2 gap-2">{assets.map((a, i) => <div key={i} className="bg-gray-800 h-24 rounded border border-gray-700 flex flex-col items-center justify-center text-xs text-gray-500 p-2 text-center hover:border-primary-500 transition-colors cursor-pointer group relative overflow-hidden">{a.type === 'image' ? <div className="w-full h-full absolute inset-0"><img src={a.url} className="w-full h-full object-cover opacity-50 group-hover:opacity-80 transition-opacity"/></div> : <div className="bg-gray-700 w-10 h-10 rounded-full flex items-center justify-center mb-2"><Cloud size={16}/></div>}<span className="relative z-10 truncate w-full bg-black/50 px-1 rounded">{a.name}</span></div>)}</div></div>
 );
 
 // --- AGENTS PANEL ---

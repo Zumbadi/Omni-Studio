@@ -13,11 +13,12 @@ interface WorkspaceSidebarProps {
   onToggleSidebar: () => void;
   // Explorer Props
   files: FileNode[];
+  deletedFiles?: FileNode[];
   activeFileId: string;
   project: Project;
   remoteDirName: string | null;
   onFileClick: (id: string) => void;
-  onContextMenu: (e: React.MouseEvent, id: string) => void;
+  onContextMenu: (e: React.MouseEvent, id: string, isTrash?: boolean) => void;
   onFileOps: {
       onConnectRemote: () => void;
       onAddFile: () => void;
@@ -26,6 +27,7 @@ interface WorkspaceSidebarProps {
       onUploadFolder: (e: React.ChangeEvent<HTMLInputElement>) => void;
       onInstallPackage: () => void;
       onRunScript: (script: string, cmd: string) => void;
+      onEmptyTrash?: () => void;
   };
   // Git Props
   commits: GitCommit[];
@@ -49,6 +51,7 @@ interface WorkspaceSidebarProps {
   // Agents Props
   activeAgentTask: AgentTask | null;
   onStartAgentTask: (type: any) => void;
+  onCancelAgentTask: () => void;
 }
 
 export const WorkspaceSidebar = memo(({
@@ -59,7 +62,8 @@ export const WorkspaceSidebar = memo(({
   debugVariables, breakpoints, onRemoveBreakpoint,
   extensions, onToggleExtension,
   assets,
-  activeAgentTask, onStartAgentTask
+  activeAgentTask, onStartAgentTask, onCancelAgentTask,
+  deletedFiles
 }: WorkspaceSidebarProps) => {
 
   const handleActivityClick = (activity: typeof activeActivity) => {
@@ -98,6 +102,7 @@ export const WorkspaceSidebar = memo(({
                 activeFileId={activeFileId} 
                 project={project} 
                 remoteDirName={remoteDirName} 
+                deletedFiles={deletedFiles}
                 onFileClick={onFileClick} 
                 onContextMenu={onContextMenu}
                 {...onFileOps}
@@ -108,7 +113,7 @@ export const WorkspaceSidebar = memo(({
           {activeActivity === 'DEBUG' && <DebugPanel variables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={onRemoveBreakpoint} />}
           {activeActivity === 'EXTENSIONS' && <ExtensionsPanel extensions={extensions} onToggle={onToggleExtension} />}
           {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} />}
-          {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} onStartTask={onStartAgentTask} />}
+          {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} />}
         </div>
       )}
     </>

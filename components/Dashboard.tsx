@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack } from '../types';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
@@ -12,9 +12,10 @@ interface DashboardProps {
   onNewProject: () => void;
   onNavigate: (view: AppView) => void;
   onManageTeam: () => void;
+  onExportProject?: (project: Project) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect, onDeleteProject, onNewProject, onNavigate, onManageTeam }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect, onDeleteProject, onNewProject, onNavigate, onManageTeam, onExportProject }) => {
     const [activeTab, setActiveTab] = useState<'all' | 'code' | 'media' | 'audio'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [recentMedia, setRecentMedia] = useState<SocialPost[]>([]);
@@ -37,7 +38,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
     const getProjectIcon = (type: ProjectType) => {
         switch(type) {
             case ProjectType.REACT_NATIVE: return <Smartphone size={20} />;
-            case ProjectType.IOS_APP: return <Tablet size={20} />; // Using Tablet for iOS distinction
+            case ProjectType.IOS_APP: return <Tablet size={20} />;
             case ProjectType.ANDROID_APP: return <Smartphone size={20} />;
             case ProjectType.NODE_API: return <Server size={20} />;
             default: return <Globe size={20} />;
@@ -124,18 +125,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
               <div 
                 key={project.id} 
                 onClick={() => onProjectSelect(project)}
-                className="group bg-gray-900 border border-gray-800 rounded-xl p-6 cursor-pointer hover:border-primary-600/50 hover:shadow-2xl hover:shadow-primary-900/20 transition-all duration-300 relative overflow-hidden"
+                className="group bg-gray-900 border border-gray-800 rounded-xl p-6 cursor-pointer hover:border-primary-600/50 hover:shadow-2xl hover:shadow-primary-900/20 transition-all duration-300 relative overflow-hidden flex flex-col"
               >
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="flex justify-between items-start mb-4">
                    <div className={`p-2 rounded-lg ${getProjectColor(project.type)}`}>
                        {getProjectIcon(project.type)}
                    </div>
-                   <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">{project.lastModified}</span>
+                   <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500 mr-1">{project.lastModified}</span>
+                      {onExportProject && (
+                          <button onClick={(e) => { e.stopPropagation(); onExportProject(project); }} className="text-gray-600 hover:text-white p-1.5 rounded hover:bg-gray-800 transition-colors" title="Export Zip">
+                              <Download size={14} />
+                          </button>
+                      )}
                       <button 
                         onClick={(e) => onDeleteProject(e, project.id)}
-                        className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                        className="text-gray-600 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-gray-800"
+                        title="Delete Project"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -143,7 +150,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-primary-400 transition-colors truncate">{project.name}</h3>
                 <p className="text-sm text-gray-400 mb-4 line-clamp-2 h-10">{project.description}</p>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
+                <div className="flex items-center gap-2 text-xs text-gray-500 mt-auto">
                    <span className="px-2 py-1 bg-gray-800 rounded border border-gray-700 truncate max-w-[150px]">{project.type}</span>
                    <span>•</span>
                    <span>{project.fileCount} files</span>

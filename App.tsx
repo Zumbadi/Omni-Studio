@@ -14,6 +14,7 @@ import { Button } from './components/Button';
 import { TeamManager } from './components/TeamManager';
 import { NewProjectModal } from './components/NewProjectModal';
 import { AppSidebar } from './components/AppSidebar';
+import JSZip from 'jszip';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -103,6 +104,29 @@ const App: React.FC = () => {
     }
   };
 
+  const handleExportProject = async (project: Project) => {
+      const filesKey = `omni_files_${project.id}`;
+      const filesRaw = localStorage.getItem(filesKey);
+      if (!filesRaw) {
+          alert("Could not load project files.");
+          return;
+      }
+      const files = JSON.parse(filesRaw);
+      
+      const zip = new JSZip();
+      const addToZip = (nodes: any[], path = '') => {
+          nodes.forEach(n => {
+              if (n.type === 'file') zip.file(path + n.name, n.content || '');
+              if (n.children) addToZip(n.children, path + n.name + '/');
+          });
+      };
+      addToZip(files);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `${project.name}.zip`; a.click();
+      URL.revokeObjectURL(url);
+  };
+
   const handleNavClick = (view: AppView) => {
       if (view === AppView.WORKSPACE && !selectedProject) {
           alert("Please select a project from the dashboard first.");
@@ -157,6 +181,7 @@ const App: React.FC = () => {
                       onNewProject={() => setShowNewProjectModal(true)}
                       onNavigate={handleNavClick}
                       onManageTeam={() => setShowTeamManager(true)}
+                      onExportProject={handleExportProject}
                   />
               </div>
           )}

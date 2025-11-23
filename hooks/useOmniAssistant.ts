@@ -20,7 +20,8 @@ export const useOmniAssistant = ({
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  // Default closed on mobile
+  const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 768);
   const [enableCritic, setEnableCritic] = useState(true);
   const [attachedImage, setAttachedImage] = useState<string | undefined>(undefined);
 

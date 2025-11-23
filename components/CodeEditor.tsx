@@ -24,6 +24,7 @@ interface CodeEditorProps {
   // Ghost Text
   onGhostTextRequest?: (prefix: string, suffix: string) => Promise<string>;
   onSave?: () => void;
+  onCursorChange?: (line: number, col: number) => void;
 }
 
 const KEYWORDS = [
@@ -39,7 +40,7 @@ const KEYWORDS = [
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
   code, onChange, fileName, config, onCodeAction, onSelectionChange, 
-  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave
+  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange
 }, ref) => {
   const lines = code.split('\n');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -174,6 +175,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
      }
   };
 
+  const calculateCursorStats = (val: string, pos: number) => {
+      const lines = val.substring(0, pos).split('\n');
+      const line = lines.length;
+      const col = lines[lines.length - 1].length + 1;
+      if (onCursorChange) onCursorChange(line, col);
+  };
+
   const insertSuggestion = (suggestion: string) => {
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -193,6 +201,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
       setTimeout(() => {
           textarea.selectionStart = textarea.selectionEnd = start + suggestion.length;
           textarea.focus();
+          calculateCursorStats(newValue, textarea.selectionStart);
       }, 0);
   };
 
@@ -200,6 +209,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
       const textarea = e.currentTarget;
       const { selectionStart, selectionEnd, value } = textarea;
       
+      // Update cursor position stats
+      calculateCursorStats(value, selectionStart);
+
       if (selectionEnd > selectionStart) {
           const selected = value.substring(selectionStart, selectionEnd);
           if (selected.trim().length > 0) {
@@ -221,6 +233,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
       setGhostText('');
       
       const { selectionStart } = e.target;
+      calculateCursorStats(val, selectionStart);
       
       // Check for autocomplete trigger
       let start = selectionStart - 1;
@@ -271,6 +284,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
     // Save Shortcut
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
+        e.stopPropagation(); // Prevent global save conflict
         onSave?.();
         return;
     }
@@ -306,6 +320,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
         setGhostText('');
         setTimeout(() => {
             textarea.selectionStart = textarea.selectionEnd = selectionStart + ghostText.length;
+            calculateCursorStats(newValue, textarea.selectionStart);
         }, 0);
         return;
     } else if (ghostText) {
@@ -320,6 +335,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
         onChange(newValue);
         setTimeout(() => {
             textarea.selectionStart = textarea.selectionEnd = selectionStart + tabSizeVal;
+            calculateCursorStats(newValue, textarea.selectionStart);
         }, 0);
     }
 
@@ -346,7 +362,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
         
         setTimeout(() => {
             textarea.selectionStart = textarea.selectionEnd = selectionStart + insertion.length;
-            setShowSuggestions(false); 
+            setShowSuggestions(false);
+            calculateCursorStats(newValue, textarea.selectionStart);
         }, 0);
     }
 
@@ -358,6 +375,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
         onChange(newValue);
         setTimeout(() => {
             textarea.selectionStart = textarea.selectionEnd = selectionStart + 1;
+            calculateCursorStats(newValue, textarea.selectionStart);
         }, 0);
     }
   };
