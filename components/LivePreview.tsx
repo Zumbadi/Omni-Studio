@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2 } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Download, Play } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType } from '../types';
 
@@ -11,12 +11,15 @@ interface LivePreviewProps {
 }
 
 export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, onRefresh }) => {
-  const isNative = project.type === ProjectType.REACT_NATIVE || project.type === ProjectType.IOS_APP || project.type === ProjectType.ANDROID_APP;
+  const isNative = project.type === ProjectType.REACT_NATIVE;
+  const isIOS = project.type === ProjectType.IOS_APP;
+  const isAndroid = project.type === ProjectType.ANDROID_APP;
   const isBackend = project.type === ProjectType.NODE_API;
 
-  const [previewMode, setPreviewMode] = useState<'web' | 'mobile'>(isNative ? 'mobile' : 'web');
+  const [previewMode, setPreviewMode] = useState<'web' | 'mobile'>((isNative || isIOS || isAndroid) ? 'mobile' : 'web');
   const [showQrCode, setShowQrCode] = useState(false);
   const [deviceFrame, setDeviceFrame] = useState<'iphone14' | 'pixel7' | 'ipad'>('iphone14');
+  const [isBuilding, setIsBuilding] = useState(false);
 
   // API Console State
   const [apiMethod, setApiMethod] = useState('GET');
@@ -34,6 +37,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
           else if (apiMethod === 'POST') { setApiStatus(201); setApiResponse(JSON.stringify({ id: 3, status: 'created', timestamp: new Date().toISOString() }, null, 2)); }
           else { setApiStatus(404); setApiResponse(JSON.stringify({ error: 'Route not found' }, null, 2)); }
       }, 600);
+  };
+
+  const handleSimulatedBuild = () => {
+      setIsBuilding(true);
+      setTimeout(() => {
+          setIsBuilding(false);
+          alert(`Build Complete! ${isIOS ? 'Simulator launched.' : 'APK ready.'}`);
+      }, 2000);
   };
 
   if (isBackend) {
@@ -80,15 +91,23 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                     <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/50"></div>
                 </div>
                 <div className="flex-1 max-w-xs bg-gray-900/50 rounded text-[10px] text-gray-500 px-3 py-1 text-center font-mono truncate border border-gray-700/50 flex items-center justify-center gap-1">
-                    <Globe size={10}/> localhost:3000
+                    {isIOS || isAndroid ? (isIOS ? ' iOS Simulator' : '🤖 Android Emulator') : <><Globe size={10}/> localhost:3000</>}
                 </div>
             </div>
             
-            {isNative ? (
-                <div className="flex bg-gray-700/50 rounded p-0.5 gap-0.5">
-                    <button onClick={() => setPreviewMode('mobile')} className={`p-1.5 rounded transition-all ${previewMode === 'mobile' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Mobile Simulator"><Smartphone size={14}/></button>
-                    <button onClick={() => setPreviewMode('web')} className={`p-1.5 rounded transition-all ${previewMode === 'web' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Web Fallback"><Globe size={14}/></button>
-                    <button onClick={() => setShowQrCode(!showQrCode)} className={`p-1.5 rounded transition-all ${showQrCode ? 'text-green-400 bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Scan Expo QR"><QrCode size={14}/></button>
+            {(isNative || isIOS || isAndroid) ? (
+                <div className="flex items-center gap-2">
+                    {(isIOS || isAndroid) && (
+                        <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>
+                            {isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}
+                            {isBuilding ? 'Building...' : 'Run Build'}
+                        </Button>
+                    )}
+                    <div className="flex bg-gray-700/50 rounded p-0.5 gap-0.5">
+                        <button onClick={() => setPreviewMode('mobile')} className={`p-1.5 rounded transition-all ${previewMode === 'mobile' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Mobile Simulator"><Smartphone size={14}/></button>
+                        <button onClick={() => setPreviewMode('web')} className={`p-1.5 rounded transition-all ${previewMode === 'web' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Web Fallback" disabled={isIOS || isAndroid}><Globe size={14}/></button>
+                        <button onClick={() => setShowQrCode(!showQrCode)} className={`p-1.5 rounded transition-all ${showQrCode ? 'text-green-400 bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Scan Expo QR" disabled={isIOS || isAndroid}><QrCode size={14}/></button>
+                    </div>
                 </div>
             ) : (
                 <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh Preview"><RefreshCw size={14}/></Button>
@@ -97,7 +116,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
 
         {/* Canvas */}
         <div className="flex-1 flex items-center justify-center p-6 bg-[radial-gradient(#333_1px,transparent_1px)] bg-[size:20px_20px] overflow-auto relative">
-            {isNative && previewMode === 'mobile' ? (
+            {(previewMode === 'mobile') ? (
                 <div className="relative transition-all duration-500 animate-in zoom-in-95">
                     <div className={`border-[8px] border-gray-800 rounded-[3rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 ${deviceFrame === 'ipad' ? 'w-[500px] h-[700px]' : 'w-[320px] h-[650px]'}`}>
                         {/* Notch */}
@@ -105,7 +124,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                             <div className="w-12 h-1 bg-gray-700 rounded-full"></div>
                         </div>
                         
-                        <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
+                        <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-black" sandbox="allow-scripts" />
                         
                         {/* QR Overlay */}
                         {showQrCode && (

@@ -1,5 +1,6 @@
+
 import React, { useState, useCallback } from 'react';
-import { FileNode, ProjectType } from '../types';
+import { FileNode, ProjectType, AIAgent } from '../types';
 import { generateTerminalCommand, runAgentFileTask } from '../services/geminiService';
 import { getAllFiles, findFileById } from '../utils/fileHelpers';
 
@@ -134,7 +135,17 @@ export const useTerminal = ({
       if (!targetFile) return;
 
       onLog(`> Omni-Agent: Attempting fix on ${targetFile.name}...`);
-      const fixedCode = await runAgentFileTask('refactor', targetFile.name, targetFile.content || '');
+      
+      const fixerAgent: AIAgent = {
+          id: 'terminal-fixer',
+          name: 'Terminal Fixer',
+          role: 'Debugger',
+          description: 'Automated fixer for terminal errors',
+          model: 'gemini-2.5-flash',
+          systemPrompt: `You are an expert debugger. A user ran into this error: "${errorMsg}". Fix the code.`
+      };
+
+      const fixedCode = await runAgentFileTask(fixerAgent, targetFile.name, targetFile.content || '');
       
       if (fixedCode) {
           const filenameMatch = fixedCode.match(/^\/\/ filename: (.*)/);

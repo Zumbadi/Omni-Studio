@@ -2,7 +2,46 @@
 import React from 'react';
 
 export const generatePreviewHtml = (code: string, isNative: boolean) => {
-  // Improved sanitizer to handle export defaults and imports
+  // Detection for native code that cannot run in browser
+  const isSwift = code.includes('import SwiftUI') || code.includes('struct') && code.includes('View');
+  const isKotlin = code.includes('import androidx.compose') || code.includes('fun main');
+  
+  if (isSwift || isKotlin) {
+      const lang = isSwift ? 'Swift (iOS)' : 'Kotlin (Android)';
+      const color = isSwift ? '#007AFF' : '#3DDC84';
+      
+      return `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+              body { margin: 0; padding: 0; background-color: #000; color: white; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+              .mockup { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); text-align: center; padding: 20px; box-sizing: border-box; }
+              .icon { font-size: 48px; margin-bottom: 20px; color: ${color}; }
+              h1 { font-size: 24px; margin-bottom: 10px; }
+              p { color: #888; font-size: 14px; max-width: 300px; line-height: 1.5; }
+              .badge { background: #333; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-top: 20px; border: 1px solid #444; }
+            </style>
+          </head>
+          <body>
+            <div class="mockup">
+               <div class="icon">
+                 ${isSwift ? '' : '🤖'}
+               </div>
+               <h1>${lang} Preview</h1>
+               <p>Native compilation is required to run this code.</p>
+               <p>The AI has generated valid <strong>${lang}</strong> code, but it cannot be executed directly in the browser.</p>
+               <div class="badge">UI Simulation Mode</div>
+            </div>
+          </body>
+        </html>
+      `;
+  }
+
+  // Improved sanitizer to handle export defaults and imports for React/React Native Web
   const sanitizedCode = code
     .replace(/import\s+React.*?;/g, '')
     .replace(/import\s+{.*?}\s+from\s+['"]react-native['"];/g, '')

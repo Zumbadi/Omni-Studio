@@ -1,13 +1,25 @@
+
 import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check } from 'lucide-react';
+import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from './Button';
+
+interface ApiProvider {
+  id: string;
+  name: string;
+  key: string;
+  endpoint?: string;
+  type: 'openai' | 'anthropic' | 'groq' | 'custom';
+  status?: 'verified' | 'error' | 'pending';
+}
 
 export const Settings: React.FC = () => {
   const [activeModel, setActiveModel] = useState(() => localStorage.getItem('omni_active_model') || 'Gemini 2.5 Flash (Fastest)');
   const [temperature, setTemperature] = useState(0.7);
   const [systemPrompt, setSystemPrompt] = useState("You are an expert React developer.");
   const [customModels, setCustomModels] = useState<any[]>([]);
+  const [apiProviders, setApiProviders] = useState<ApiProvider[]>([]);
   const [isSaved, setIsSaved] = useState(false);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   
   // Editor Settings State
   const [fontSize, setFontSize] = useState('14px');
@@ -30,6 +42,12 @@ export const Settings: React.FC = () => {
         setTabSize(config.tabSize || '2 Spaces');
         setVimMode(config.vimMode || false);
     }
+
+    // Load API Providers
+    const savedProviders = localStorage.getItem('omni_api_providers');
+    if (savedProviders) {
+        setApiProviders(JSON.parse(savedProviders));
+    }
     
     // Listen for deployment events
     window.addEventListener('modelsUpdated', loadModels);
@@ -43,11 +61,42 @@ export const Settings: React.FC = () => {
       const editorConfig = { fontSize, tabSize, vimMode };
       localStorage.setItem('omni_editor_config', JSON.stringify(editorConfig));
       
+      // Save API Providers
+      localStorage.setItem('omni_api_providers', JSON.stringify(apiProviders));
+      
       // Dispatch event for real-time sync
       window.dispatchEvent(new Event('omniSettingsChanged'));
 
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const handleAddProvider = (type: ApiProvider['type'] = 'custom') => {
+      const names = { openai: 'OpenAI (GPT-4)', anthropic: 'Anthropic (Claude 3)', groq: 'Groq (Llama 3)', custom: 'Custom Provider' };
+      const newProvider: ApiProvider = {
+          id: `prov-${Date.now()}`,
+          name: names[type],
+          key: '',
+          type,
+          status: 'pending'
+      };
+      setApiProviders([...apiProviders, newProvider]);
+  };
+
+  const handleUpdateProvider = (id: string, field: keyof ApiProvider, value: string) => {
+      setApiProviders(prev => prev.map(p => p.id === id ? { ...p, [field]: value, status: 'pending' } : p));
+  };
+
+  const handleDeleteProvider = (id: string) => {
+      setApiProviders(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleVerifyProvider = (id: string) => {
+      setVerifyingId(id);
+      setTimeout(() => {
+          setApiProviders(prev => prev.map(p => p.id === id ? { ...p, status: Math.random() > 0.2 ? 'verified' : 'error' } : p));
+          setVerifyingId(null);
+      }, 1500);
   };
 
   return (
@@ -80,10 +129,13 @@ export const Settings: React.FC = () => {
                     <option>Gemini 2.5 Pro (Latest)</option>
                     <option>Gemini 2.5 Flash (Fastest)</option>
                 </optgroup>
-                <optgroup label="External Providers">
-                    <option>Llama 3 70B (Groq)</option>
-                    <option>GPT-4o</option>
-                </optgroup>
+                {apiProviders.filter(p => p.status === 'verified' || p.status === 'pending').length > 0 && (
+                    <optgroup label="External Providers">
+                        {apiProviders.filter(p => p.status === 'verified' || p.status === 'pending').map(p => (
+                            <option key={p.id} value={p.name}>{p.name}</option>
+                        ))}
+                    </optgroup>
+                )}
                 {customModels.length > 0 && (
                     <optgroup label="My Fine-Tuned Models">
                         {customModels.map((m, idx) => (
@@ -114,6 +166,90 @@ export const Settings: React.FC = () => {
                 <span>Creative (1.0)</span>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* External Providers */}
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 shadow-lg">
+           <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-green-400 font-semibold">
+                    <Globe size={20} />
+                    <h2>External API Providers</h2>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={() => handleAddProvider('openai')} className="px-2 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 text-gray-300">OpenAI</button>
+                    <button onClick={() => handleAddProvider('anthropic')} className="px-2 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 text-gray-300">Anthropic</button>
+                    <button onClick={() => handleAddProvider('groq')} className="px-2 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 text-gray-300">Groq</button>
+                </div>
+           </div>
+          
+          <div className="space-y-4">
+              {apiProviders.map((provider) => (
+                  <div key={provider.id} className="flex flex-col gap-3 p-4 bg-gray-800/50 rounded-lg border border-gray-700 relative group">
+                      <div className="flex gap-3 items-start">
+                          <div className="mt-2">
+                              {provider.type === 'openai' && <Globe size={16} className="text-green-500"/>}
+                              {provider.type === 'anthropic' && <Shield size={16} className="text-purple-500"/>}
+                              {provider.type === 'groq' && <Zap size={16} className="text-orange-500"/>}
+                              {provider.type === 'custom' && <Server size={16} className="text-blue-500"/>}
+                          </div>
+                          <div className="flex-1 space-y-3">
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <label className="text-[10px] text-gray-500 font-bold uppercase">Provider Name</label>
+                                      <input 
+                                        type="text" 
+                                        value={provider.name} 
+                                        onChange={(e) => handleUpdateProvider(provider.id, 'name', e.target.value)}
+                                        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-primary-500 outline-none"
+                                      />
+                                  </div>
+                                  <div>
+                                      <label className="text-[10px] text-gray-500 font-bold uppercase flex justify-between">
+                                          <span>API Key</span>
+                                          {provider.status === 'verified' && <span className="text-green-500 flex items-center gap-1"><Check size={10}/> Verified</span>}
+                                          {provider.status === 'error' && <span className="text-red-500 flex items-center gap-1"><AlertCircle size={10}/> Failed</span>}
+                                      </label>
+                                      <div className="relative">
+                                          <Key size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"/>
+                                          <input 
+                                            type="password" 
+                                            value={provider.key} 
+                                            onChange={(e) => handleUpdateProvider(provider.id, 'key', e.target.value)}
+                                            className={`w-full bg-gray-900 border rounded pl-9 pr-20 py-2 text-sm text-white font-mono focus:border-primary-500 outline-none transition-colors ${provider.status === 'error' ? 'border-red-500' : 'border-gray-700'}`}
+                                            placeholder="sk-..."
+                                          />
+                                          <button 
+                                            onClick={() => handleVerifyProvider(provider.id)}
+                                            disabled={verifyingId === provider.id || !provider.key}
+                                            className="absolute right-1 top-1 bottom-1 px-3 bg-gray-800 hover:bg-gray-700 rounded text-[10px] text-gray-300 border border-gray-700 disabled:opacity-50"
+                                          >
+                                              {verifyingId === provider.id ? <RefreshCw size={12} className="animate-spin"/> : 'Test'}
+                                          </button>
+                                      </div>
+                                  </div>
+                              </div>
+                              {provider.type === 'custom' && (
+                                  <div>
+                                      <label className="text-[10px] text-gray-500 font-bold uppercase">Endpoint URL</label>
+                                      <input 
+                                        type="text" 
+                                        value={provider.endpoint || ''} 
+                                        onChange={(e) => handleUpdateProvider(provider.id, 'endpoint', e.target.value)}
+                                        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300 font-mono focus:border-primary-500 outline-none"
+                                        placeholder="https://api.example.com/v1"
+                                      />
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                      <button onClick={() => handleDeleteProvider(provider.id)} className="absolute top-2 right-2 p-1.5 text-gray-600 hover:text-red-400 rounded opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                  </div>
+              ))}
+              
+              <Button variant="secondary" className="w-full border-dashed border-gray-600" onClick={() => handleAddProvider('custom')}>
+                  <Plus size={16} className="mr-2"/> Add Custom Provider
+              </Button>
           </div>
         </section>
 

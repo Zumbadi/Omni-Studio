@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack } from '../types';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
@@ -32,6 +32,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
     const filteredProjects = projects.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
     const filteredMedia = recentMedia.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
     const filteredAudio = recentAudio.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const getProjectIcon = (type: ProjectType) => {
+        switch(type) {
+            case ProjectType.REACT_NATIVE: return <Smartphone size={20} />;
+            case ProjectType.IOS_APP: return <Tablet size={20} />; // Using Tablet for iOS distinction
+            case ProjectType.ANDROID_APP: return <Smartphone size={20} />;
+            case ProjectType.NODE_API: return <Server size={20} />;
+            default: return <Globe size={20} />;
+        }
+    };
+
+    const getProjectColor = (type: ProjectType) => {
+        switch(type) {
+            case ProjectType.REACT_NATIVE: return 'bg-purple-900/30 text-purple-400';
+            case ProjectType.IOS_APP: return 'bg-blue-900/30 text-blue-300';
+            case ProjectType.ANDROID_APP: return 'bg-green-900/30 text-green-400';
+            case ProjectType.NODE_API: return 'bg-emerald-900/30 text-emerald-400';
+            default: return 'bg-indigo-900/30 text-indigo-400';
+        }
+    };
 
     return (
       <div className="flex-1 bg-gray-950 overflow-y-auto p-4 md:p-8 w-full">
@@ -104,14 +124,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
               >
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="flex justify-between items-start mb-4">
-                   <div className={`p-2 rounded-lg ${
-                      project.type === ProjectType.REACT_NATIVE ? 'bg-purple-900/30 text-purple-400' : 
-                      project.type === ProjectType.NODE_API ? 'bg-green-900/30 text-green-400' :
-                      'bg-blue-900/30 text-blue-400'
-                   }`}>
-                       {project.type === ProjectType.REACT_NATIVE ? <Smartphone size={20} /> : 
-                        project.type === ProjectType.NODE_API ? <Server size={20} /> : 
-                        <Globe size={20} />}
+                   <div className={`p-2 rounded-lg ${getProjectColor(project.type)}`}>
+                       {getProjectIcon(project.type)}
                    </div>
                    <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500">{project.lastModified}</span>
@@ -126,7 +140,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
                 <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-primary-400 transition-colors truncate">{project.name}</h3>
                 <p className="text-sm text-gray-400 mb-4 line-clamp-2 h-10">{project.description}</p>
                 <div className="flex items-center gap-2 text-xs text-gray-500">
-                   <span className="px-2 py-1 bg-gray-800 rounded border border-gray-700">{project.type}</span>
+                   <span className="px-2 py-1 bg-gray-800 rounded border border-gray-700 truncate max-w-[150px]">{project.type}</span>
                    <span>•</span>
                    <span>{project.fileCount} files</span>
                 </div>
