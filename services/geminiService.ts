@@ -301,7 +301,20 @@ export const critiqueCode = async (code: string, task: string): Promise<any> => 
         model: 'gemini-2.5-flash',
         contents: `Task: ${task}\nCode:\n${code}`,
         config: { 
-            systemInstruction: `You are Omni-Critic. Review code. Return JSON: { "score": 0-100, "issues": [], "suggestions": [], "nextPrompt": "" }`, 
+            systemInstruction: `You are Omni-Critic. Review the provided code snippet.
+            
+            Return a JSON object with the following structure:
+            {
+              "score": 0-100,
+              "issues": ["Critical issue 1", "Performance issue 2"],
+              "suggestions": ["Suggestion 1", "Suggestion 2"]
+            }
+            
+            Be strict. Check for:
+            1. Bugs and Logic Errors
+            2. Security Vulnerabilities
+            3. Performance Bottlenecks
+            4. Code Style and Best Practices`,
             responseMimeType: 'application/json' 
         }
     });

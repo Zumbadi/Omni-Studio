@@ -30,7 +30,7 @@ export const useOmniAssistant = ({
           setChatHistory(prev => [...prev, {
               id: `critic-${Date.now()}`,
               role: 'critic',
-              text: `Omni-Critic Review (Score: ${criticRes.score}/100)`,
+              text: '', // Text is optional for critic role if critique object is present
               timestamp: Date.now(),
               critique: criticRes
           }]);
@@ -83,6 +83,11 @@ export const useOmniAssistant = ({
       triggerGeneration(prompt);
   };
 
+  const handleAutoFix = (issues: string[]) => {
+      const prompt = `Fix the following issues identified in the code review:\n- ${issues.join('\n- ')}\n\nPlease output the corrected code.`;
+      triggerGeneration(prompt);
+  };
+
   return {
       chatInput, setChatInput,
       chatHistory, setChatHistory,
@@ -92,6 +97,7 @@ export const useOmniAssistant = ({
       attachedImage, setAttachedImage,
       triggerGeneration,
       handleChatSubmit,
-      handleCodeAction
+      handleCodeAction,
+      handleAutoFix
   };
 };

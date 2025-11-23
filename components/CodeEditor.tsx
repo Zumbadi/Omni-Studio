@@ -23,6 +23,7 @@ interface CodeEditorProps {
   onToggleBreakpoint?: (line: number) => void;
   // Ghost Text
   onGhostTextRequest?: (prefix: string, suffix: string) => Promise<string>;
+  onSave?: () => void;
 }
 
 const KEYWORDS = [
@@ -38,7 +39,7 @@ const KEYWORDS = [
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
   code, onChange, fileName, config, onCodeAction, onSelectionChange, 
-  breakpoints = [], onToggleBreakpoint, onGhostTextRequest 
+  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave
 }, ref) => {
   const lines = code.split('\n');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -266,6 +267,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget;
     const { selectionStart, selectionEnd, value } = textarea;
+
+    // Save Shortcut
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        onSave?.();
+        return;
+    }
 
     // Autocomplete Navigation
     if (showSuggestions) {

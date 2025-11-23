@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle } from 'lucide-react';
+import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
 
 interface ApiProvider {
@@ -97,6 +97,13 @@ export const Settings: React.FC = () => {
           setApiProviders(prev => prev.map(p => p.id === id ? { ...p, status: Math.random() > 0.2 ? 'verified' : 'error' } : p));
           setVerifyingId(null);
       }, 1500);
+  };
+
+  const handleFactoryReset = () => {
+      if (confirm("DANGER: This will delete ALL local projects, settings, and data. Are you sure?")) {
+          localStorage.clear();
+          window.location.reload();
+      }
   };
 
   return (
@@ -314,6 +321,18 @@ export const Settings: React.FC = () => {
                 />
                 <label htmlFor="vim" className="text-sm text-gray-300">Enable Vim Mode (Simulation)</label>
              </div>
+          </div>
+        </section>
+
+        {/* Danger Zone */}
+        <section className="bg-red-900/10 rounded-xl border border-red-900/50 p-6 shadow-lg">
+           <div className="flex items-center gap-2 mb-4 text-red-500 font-semibold">
+            <AlertTriangle size={20} />
+            <h2>Danger Zone</h2>
+          </div>
+          <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-400">Reset the entire workspace, deleting all projects, settings, and agents.</p>
+              <Button variant="danger" onClick={handleFactoryReset}>Factory Reset</Button>
           </div>
         </section>
 

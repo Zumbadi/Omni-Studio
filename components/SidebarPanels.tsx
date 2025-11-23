@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap } from 'lucide-react';
+import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square } from 'lucide-react';
 import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent } from '../types';
 import { Button } from './Button';
 import { DEFAULT_AGENTS } from '../constants';
@@ -55,9 +55,10 @@ export const AssetsPanel: React.FC<AssetsPanelProps> = ({ assets }) => (
 interface AgentsPanelProps {
   activeTask: AgentTask | null;
   onStartTask: (agent: AIAgent, type: AgentTask['type']) => void;
+  onCancelTask?: () => void;
 }
 
-export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTask }) => {
+export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTask, onCancelTask }) => {
   const [team, setTeam] = useState<AIAgent[]>([]);
   const [stats, setStats] = useState<{time: string, velocity: number}[]>([]);
 
@@ -130,21 +131,44 @@ export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTas
         
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
             {activeTask ? (
-                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 animate-in fade-in shadow-lg shadow-blue-900/10">
-                    <div className="flex items-center justify-between mb-3">
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 animate-in fade-in shadow-lg shadow-blue-900/10 flex flex-col h-full">
+                    <div className="flex items-center justify-between mb-3 shrink-0">
                         <h3 className="text-sm font-bold text-white truncate max-w-[150px]">{activeTask.name}</h3>
-                        {activeTask.status === 'completed' ? <Check size={16} className="text-green-500"/> : <RefreshCw size={14} className="text-blue-500 animate-spin"/>}
+                        {activeTask.status === 'completed' ? <Check size={16} className="text-green-500"/> : activeTask.status === 'cancelled' ? <AlertCircle size={16} className="text-red-500"/> : <RefreshCw size={14} className="text-blue-500 animate-spin"/>}
                     </div>
-                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2 overflow-hidden">
-                        <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${(activeTask.processedFiles / (activeTask.totalFiles || 1)) * 100}%` }}></div>
+                    
+                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2 overflow-hidden shrink-0">
+                        <div className={`h-full transition-all duration-300 ${activeTask.status === 'cancelled' ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${(activeTask.processedFiles / (activeTask.totalFiles || 1)) * 100}%` }}></div>
                     </div>
-                    <div className="text-xs text-gray-400 flex justify-between mb-4">
-                        <span>{activeTask.status === 'completed' ? 'Done' : 'Processing...'}</span>
+                    <div className="text-xs text-gray-400 flex justify-between mb-4 shrink-0">
+                        <span>{activeTask.status === 'completed' ? 'Done' : activeTask.status === 'cancelled' ? 'Stopped' : 'Processing...'}</span>
                         <span>{activeTask.processedFiles}/{activeTask.totalFiles} files</span>
                     </div>
                     
-                    <div className="bg-black rounded p-2 font-mono text-[10px] h-32 overflow-y-auto text-gray-400 border border-gray-800">
-                        {activeTask.logs.map((log, i) => <div key={i} className="break-words">{log}</div>)}
+                    {activeTask.status === 'running' && onCancelTask && (
+                        <button 
+                            onClick={onCancelTask}
+                            className="w-full mb-4 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-800/50 rounded-lg py-1.5 text-xs font-medium flex items-center justify-center gap-2 transition-colors shrink-0"
+                        >
+                            <Square size={10} fill="currentColor" /> Stop Task
+                        </button>
+                    )}
+
+                    {/* Task List Visualization */}
+                    <div className="flex-1 overflow-y-auto border border-gray-700 rounded-lg bg-black/50 p-2 space-y-1 mb-2">
+                        {activeTask.fileList?.map((file, i) => (
+                            <div key={i} className="flex items-center justify-between text-[10px] text-gray-300 p-1.5 rounded hover:bg-white/5">
+                                <span className="truncate max-w-[140px]">{file.name}</span>
+                                {file.status === 'pending' && <span className="w-2 h-2 rounded-full bg-gray-600"></span>}
+                                {file.status === 'processing' && <Loader2 size={10} className="text-blue-400 animate-spin"/>}
+                                {file.status === 'done' && <Check size={10} className="text-green-500"/>}
+                                {file.status === 'error' && <AlertCircle size={10} className="text-red-500"/>}
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="bg-black rounded p-2 font-mono text-[10px] h-24 overflow-y-auto text-gray-400 border border-gray-800 shrink-0">
+                        {activeTask.logs.slice(-5).map((log, i) => <div key={i} className="break-words">{log}</div>)}
                         {activeTask.status === 'running' && <div className="animate-pulse">_</div>}
                     </div>
                 </div>

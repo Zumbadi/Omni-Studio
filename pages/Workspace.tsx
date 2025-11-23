@@ -19,22 +19,22 @@ import { useTerminal } from '../hooks/useTerminal';
 import { WorkspaceSidebar } from '../components/WorkspaceSidebar';
 import { VoiceCommander } from '../components/VoiceCommander';
 import { CommandPalette } from '../components/CommandPalette';
+import { ContextMenu } from '../components/ContextMenu';
+import { ToastContainer, ToastMessage } from '../components/Toast';
 
 interface WorkspaceProps {
   project: Project | null;
 }
 
-// ... (SearchResult, ContextMenuState interfaces unchanged)
-
 export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
-  // ... (Initial hooks and state unchanged)
   const isNative = project?.type === ProjectType.REACT_NATIVE || project?.type === ProjectType.IOS_APP || project?.type === ProjectType.ANDROID_APP;
   const isBackend = project?.type === ProjectType.NODE_API;
   
   const { 
       files, setFiles, activeFileId, setActiveFileId, openFiles, setOpenFiles, 
       remoteDirName, setRemoteDirName, updateFileContent, addFile, findFileById, getAllFiles,
-      handleFileClick: onFileClick, handleCloseTab: onCloseTab
+      handleFileClick: onFileClick, handleCloseTab: onCloseTab,
+      deleteFile, renameFile, duplicateFile
   } = useFileSystem(project);
   
   const { 
@@ -55,7 +55,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const diffFile = diffFileId ? findFileById(files, diffFileId) : null;
 
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture'>(() => (localStorage.getItem('omni_active_preview_tab') as any) || 'preview');
   const [bottomPanelTab, setBottomPanelTab] = useState<'terminal' | 'problems'>('terminal');
   
   const [previewSrc, setPreviewSrc] = useState<string>('');
@@ -81,7 +81,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       attachedImage, setAttachedImage,
       triggerGeneration,
       handleChatSubmit,
-      handleCodeAction
+      handleCodeAction,
+      handleAutoFix
   } = useOmniAssistant({
       projectType: project?.type || ProjectType.REACT_WEB,
       files,
@@ -100,9 +101,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const [debugVariables, setDebugVariables] = useState<{name: string, value: string}[]>([]);
   const [breakpoints, setBreakpoints] = useState<number[]>([]);
 
-  // Agents State - Modified to include current agent info
+  // Agents State
   const [activeAgentTask, setActiveAgentTask] = useState<AgentTask | null>(null);
   const [activeAgent, setActiveAgent] = useState<AIAgent | null>(null);
+  const abortAgentRef = useRef(false);
 
   const [activeActivity, setActiveActivity] = useState<'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS'>('EXPLORER');
   const [layout, setLayout] = useState({ showSidebar: window.innerWidth >= 768, showBottom: true, showRight: window.innerWidth >= 1024 });
@@ -112,6 +114,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showVoiceCommander, setShowVoiceCommander] = useState(false);
   const [contextMenu, setContextMenu] = useState<any>({ visible: false, x: 0, y: 0, fileId: null });
+  
+  // Toasts
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const addToast = (type: 'success' | 'error' | 'info', message: string) => {
+      setToasts(prev => [...prev, { id: Date.now().toString(), type, message }]);
+  };
+  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
   // Sync Settings
   useEffect(() => {
@@ -126,6 +135,46 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       return () => window.removeEventListener('omniSettingsChanged', handleSettingsChange);
   }, []);
 
+  // Save Active Tab
+  useEffect(() => {
+      localStorage.setItem('omni_active_preview_tab', activeTab);
+  }, [activeTab]);
+
+  const toggleLayout = useCallback((p: any) => { 
+      setLayout(prev => ({...prev, [p === 'sidebar' ? 'showSidebar' : p === 'bottom' ? 'showBottom' : 'showRight']: !prev[p === 'sidebar' ? 'showSidebar' : p === 'bottom' ? 'showBottom' : 'showRight']}));
+  }, []);
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+      const handleGlobalKeyDown = (e: KeyboardEvent) => {
+          // Avoid handling if event was already processed (e.g., by CodeEditor)
+          if (e.defaultPrevented) return;
+
+          // Save: Ctrl+S / Cmd+S
+          if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+              e.preventDefault();
+              addToast('success', 'File saved successfully.');
+          }
+          // Command Palette: Ctrl+P / Cmd+K
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'k')) {
+              e.preventDefault();
+              setShowCommandPalette(prev => !prev);
+          }
+          // Toggle Sidebar: Ctrl+B
+          if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+              e.preventDefault();
+              toggleLayout('sidebar');
+          }
+          // Toggle Terminal: Ctrl+J
+          if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
+              e.preventDefault();
+              toggleLayout('bottom');
+          }
+      };
+      window.addEventListener('keydown', handleGlobalKeyDown);
+      return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [toggleLayout]);
+
   const handleResizeStart = (dir: any, e: any) => {
       setIsResizing(true);
       startResizing(dir, e);
@@ -136,23 +185,44 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       window.addEventListener('mouseup', onMouseUp);
   };
 
-  // --- Agent Runner Logic (Updated for Productivity Tracking) ---
+  // --- Agent Runner Logic ---
   useEffect(() => {
-      if (!activeAgentTask || activeAgentTask.status === 'completed' || !activeAgent) return;
+      if (!activeAgentTask || activeAgentTask.status !== 'running' || !activeAgent) return;
 
       const run = async () => {
           const allFiles = getAllFiles(files);
-          const relevantFiles = allFiles.filter(f => f.node.name.endsWith('.tsx') || f.node.name.endsWith('.ts') || f.node.name.endsWith('.js'));
+          const relevantFiles = allFiles.filter(f => 
+              f.node.name.endsWith('.tsx') || 
+              f.node.name.endsWith('.ts') || 
+              f.node.name.endsWith('.js') ||
+              f.node.name.endsWith('.jsx')
+          );
           
-          setActiveAgentTask(prev => prev ? { ...prev, totalFiles: relevantFiles.length } : null);
+          if (!activeAgentTask.fileList || activeAgentTask.fileList.length === 0) {
+              setActiveAgentTask(prev => prev ? { 
+                  ...prev, 
+                  totalFiles: relevantFiles.length,
+                  fileList: relevantFiles.map(f => ({ name: f.node.name, status: 'pending' }))
+              } : null);
+          }
 
+          abortAgentRef.current = false;
           let processedCount = 0;
 
           for (let i = 0; i < relevantFiles.length; i++) {
+              if (abortAgentRef.current) {
+                  setActiveAgentTask(prev => prev ? { ...prev, status: 'cancelled', logs: [...prev.logs, `Task cancelled by user.`] } : null);
+                  return;
+              }
+
               const file = relevantFiles[i];
-              setActiveAgentTask(prev => prev ? { ...prev, currentFile: file.node.name, logs: [...prev.logs, `[${activeAgent.name}] Analyzing ${file.node.name}...`] } : null);
               
-              // Pass the full agent object to the service
+              setActiveAgentTask(prev => {
+                  if (!prev) return null;
+                  const newList = prev.fileList?.map(f => f.name === file.node.name ? { ...f, status: 'processing' as const } : f) || [];
+                  return { ...prev, currentFile: file.node.name, logs: [...prev.logs, `[${activeAgent.name}] Analyzing ${file.node.name}...`], fileList: newList };
+              });
+              
               const result = await runAgentFileTask(activeAgent, file.node.name, file.node.content || '');
               
               if (result) {
@@ -163,29 +233,34 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
               }
 
               processedCount++;
-              setActiveAgentTask(prev => prev ? { ...prev, processedFiles: processedCount } : null);
+              
+              setActiveAgentTask(prev => {
+                  if (!prev) return null;
+                  const newList = prev.fileList?.map(f => f.name === file.node.name ? { ...f, status: 'done' as const } : f) || [];
+                  return { ...prev, processedFiles: processedCount, fileList: newList };
+              });
+
               await new Promise(r => setTimeout(r, 500));
           }
 
-          // Record Productivity Stats
           const statsKey = 'omni_team_stats';
           const currentStats = JSON.parse(localStorage.getItem(statsKey) || '[]');
           const newStat = {
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              velocity: processedCount * 10, // Arbitrary score based on files processed
+              velocity: processedCount * 10,
               agent: activeAgent.name
           };
-          // Keep last 20 points
           const updatedStats = [...currentStats, newStat].slice(-20);
           localStorage.setItem(statsKey, JSON.stringify(updatedStats));
           window.dispatchEvent(new Event('omniStatsUpdated'));
 
           setActiveAgentTask(prev => prev ? { ...prev, status: 'completed', logs: [...prev.logs, `Task Completed by ${activeAgent.name}. Velocity recorded.`] } : null);
           setActiveAgent(null);
+          addToast('success', 'Agent task completed successfully!');
       };
 
       run();
-  }, [activeAgentTask?.status, activeAgent]);
+  }, [activeAgentTask?.id]);
 
   const handleStartAgentTask = (agent: AIAgent, type: AgentTask['type']) => {
       setActiveAgent(agent);
@@ -196,8 +271,17 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
           status: 'running',
           totalFiles: 0,
           processedFiles: 0,
-          logs: [`Starting Agent: ${agent.name}`, `Model: ${agent.model}`, `Role: ${agent.role}`]
+          logs: [`Starting Agent: ${agent.name}`, `Model: ${agent.model}`, `Role: ${agent.role}`],
+          fileList: []
       });
+      addToast('info', `${agent.name} started task: ${type}`);
+  };
+
+  const handleCancelAgentTask = () => {
+      abortAgentRef.current = true;
+      setActiveAgentTask(prev => prev ? { ...prev, status: 'cancelled' } : null);
+      setActiveAgent(null);
+      addToast('error', 'Agent task cancelled.');
   };
 
   useEffect(() => {
@@ -209,22 +293,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Helper for wrapper functions
   const onFileClickWrapper = useCallback((id: string) => onFileClick(id, isSplitView, secondaryFileId, setSecondaryFileId), [isSplitView, secondaryFileId, onFileClick]);
   const onResultClickWrapper = useCallback((id: string, line: number) => { onFileClick(id, isSplitView, secondaryFileId, setSecondaryFileId); if (editorRef.current) editorRef.current.scrollToLine(line); }, [isSplitView, secondaryFileId, onFileClick]);
 
-  // Mock handlers for simplicity
   const handleSearch = (q: string) => { setSearchQuery(q); };
-  const toggleLayout = (p: any) => { setLayout(prev => ({...prev, [p === 'sidebar' ? 'showSidebar' : p === 'bottom' ? 'showBottom' : 'showRight']: !prev[p === 'sidebar' ? 'showSidebar' : p === 'bottom' ? 'showBottom' : 'showRight']}))};
-  const handleCommit = (m: string) => setCommits(prev => [...prev, { id: Date.now().toString(), message: m, author: 'You', date: 'Now', hash: 'abc' }]);
+  const handleCommit = (m: string) => {
+      setCommits(prev => [...prev, { id: Date.now().toString(), message: m, author: 'You', date: 'Now', hash: 'abc' }]);
+      addToast('success', 'Changes committed to git.');
+  };
+  
   const handleFileUpload = (e: any) => {
       const files = e.target.files;
       if (files && files.length > 0) {
+          let count = 0;
           for (let i = 0; i < files.length; i++) {
               const reader = new FileReader();
               reader.onload = (ev) => {
                   const content = ev.target?.result as string;
                   addFile(files[i].name, content);
+                  count++;
+                  if (count === files.length) addToast('success', `Uploaded ${count} files.`);
               };
               reader.readAsText(files[i]);
           }
@@ -242,21 +330,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
               }
               reader.readAsText(file);
           }
+          addToast('success', `Uploaded folder with ${files.length} files.`);
       }
   };
+  
   const handleSystemCommand = (c: string) => {
       if (c === 'toggle_sidebar') toggleLayout('sidebar');
       if (c === 'toggle_terminal') toggleLayout('bottom');
-      if (c === 'git_commit') setBottomPanelTab('terminal');
+      if (c === 'git_commit') setActiveActivity('GIT');
+      if (c === 'open_settings') window.location.hash = '#settings'; // Simplified
   };
-  const handleFileOps = { onConnectRemote: () => {}, onAddFile: () => addFile(`new_file_${Date.now()}.tsx`, ''), onAddFolder: () => {}, onUploadFile: handleFileUpload, onUploadFolder: handleFolderUpload, onInstallPackage: () => {}, onRunScript: (name: string, cmd: string) => setTerminalLogs(prev => [...prev, `> npm run ${name}`, `> ${cmd}`]) };
+  const handleFileOps = { onConnectRemote: () => {}, onAddFile: () => addFile(`new_file_${Date.now()}.tsx`, ''), onAddFolder: () => {}, onUploadFile: handleFileUpload, onUploadFolder: handleFolderUpload, onInstallPackage: () => addToast('info', 'Package installation simulated'), onRunScript: (name: string, cmd: string) => setTerminalLogs(prev => [...prev, `> npm run ${name}`, `> ${cmd}`]) };
 
   const handleApplyCode = useCallback((code: string) => {
     const filenameMatch = code.match(/^\/\/ filename: (.*)/);
     if (filenameMatch) {
       addFile(filenameMatch[1].trim(), code);
+      addToast('success', `Applied code to ${filenameMatch[1].trim()}`);
     } else {
       updateFileContent(activeFileId, code);
+      addToast('success', 'Applied code to active file');
     }
   }, [activeFileId, addFile, updateFileContent]);
 
@@ -265,6 +358,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       const plan = await generateProjectPlan(project?.description || "Project", project?.type || ProjectType.REACT_WEB);
       setRoadmap(plan);
       setIsGeneratingPlan(false);
+      addToast('success', 'Project Roadmap Generated');
   };
   
   const handleExecutePhase = (phase: ProjectPhase) => {
@@ -279,7 +373,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
   const handleRefreshPreview = () => {
       setPreviewSrc('');
       setTimeout(() => {
-          // Trigger re-render in LivePreview via src change logic
+          // Trigger re-render logic would be here
+          addToast('info', 'Preview refreshed');
       }, 100);
   };
   
@@ -295,19 +390,65 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${project?.name || 'project'}.zip`; a.click();
+      addToast('success', 'Project exported successfully');
   };
 
   const handleApplyAll = (codes: string[]) => {
     codes.forEach(code => handleApplyCode(code));
+    addToast('success', `Applied ${codes.length} code blocks`);
+  };
+
+  // Context Menu Handlers
+  const handleRename = () => {
+      const name = prompt("Enter new name:");
+      if (name && contextMenu.fileId) {
+          renameFile(contextMenu.fileId, name);
+          setContextMenu({ ...contextMenu, visible: false });
+          addToast('success', 'File renamed');
+      }
+  };
+  const handleDelete = () => {
+      if (confirm("Delete this file?") && contextMenu.fileId) {
+          deleteFile(contextMenu.fileId);
+          setContextMenu({ ...contextMenu, visible: false });
+          addToast('success', 'File deleted');
+      }
+  };
+  const handleDuplicate = () => {
+      if (contextMenu.fileId) {
+          duplicateFile(contextMenu.fileId);
+          setContextMenu({ ...contextMenu, visible: false });
+          addToast('success', 'File duplicated');
+      }
+  };
+  const handleContextExplain = () => {
+      const file = findFileById(files, contextMenu.fileId);
+      if (file && file.content) {
+          setChatInput(`Explain ${file.name}:\n\n${file.content}`);
+          setIsChatOpen(true);
+          setContextMenu({ ...contextMenu, visible: false });
+      }
   };
 
   if (!project) return <div className="flex-1 flex items-center justify-center text-gray-500">Select a project to begin</div>;
 
   return (
     <div className="flex flex-col h-full bg-gray-950 overflow-hidden w-full relative">
-      {/* ... (CommandPalette, VoiceCommander) ... */}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} files={files} onOpenFile={onFileClickWrapper} onRunCommand={handleSystemCommand} />
       {showVoiceCommander && <VoiceCommander onClose={() => setShowVoiceCommander(false)} />}
+      
+      {contextMenu.visible && (
+          <ContextMenu 
+              x={contextMenu.x} 
+              y={contextMenu.y} 
+              onClose={() => setContextMenu({ ...contextMenu, visible: false })} 
+              onRename={handleRename}
+              onDelete={handleDelete}
+              onDuplicate={handleDuplicate}
+              onExplain={handleContextExplain}
+          />
+      )}
 
       <div className="flex-1 flex overflow-hidden relative">
         {isResizing && <div className="absolute inset-0 z-[100] cursor-col-resize" />}
@@ -323,7 +464,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
             project={project}
             remoteDirName={remoteDirName}
             onFileClick={onFileClickWrapper}
-            onContextMenu={(e, id) => setContextMenu({ visible: true, x: e.clientX, y: e.clientY, fileId: id })}
+            onContextMenu={(e, id) => { e.preventDefault(); setContextMenu({ visible: true, x: e.clientX, y: e.clientY, fileId: id }); }}
             onFileOps={handleFileOps}
             commits={commits}
             currentBranch={currentBranch}
@@ -341,6 +482,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
             assets={assets}
             activeAgentTask={activeAgentTask}
             onStartAgentTask={handleStartAgentTask}
+            onCancelAgentTask={handleCancelAgentTask}
         />
 
         {/* ... (Sidebar Resize Handle) ... */}
@@ -377,6 +519,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                                 breakpoints={breakpoints}
                                 onToggleBreakpoint={(line) => setBreakpoints(p => p.includes(line) ? p.filter(b => b !== line) : [...p, line])}
                                 onGhostTextRequest={async (p, s) => await generateGhostText(p, s)}
+                                onSave={() => addToast('success', 'File Saved')}
                             />
                         ) : <div className="flex flex-col items-center justify-center h-full text-gray-500">No file open</div>}
                     </div>
@@ -410,13 +553,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
         )}
       </div>
 
-      {/* Status Bar & Chat (keeping same) */}
+      {/* Status Bar & Chat */}
       <div className="h-6 bg-gray-900 border-t border-gray-800 text-gray-400 text-[10px] flex items-center px-3 justify-between select-none z-50 flex-shrink-0">
         <div className="flex items-center gap-4"><GitBranch size={10} /><span>{currentBranch}</span></div>
         <div className="flex items-center gap-4">
-           <button onClick={() => setShowVoiceCommander(true)}><Mic size={10}/></button>
-           <button onClick={() => toggleLayout('bottom')}><PanelBottom size={10}/></button>
-           <button onClick={() => toggleLayout('right')}><Columns size={10}/></button>
+           <button onClick={() => setShowVoiceCommander(true)} title="Voice Command"><Mic size={10}/></button>
+           <button onClick={() => toggleLayout('bottom')} title="Toggle Terminal (Ctrl+J)"><PanelBottom size={10}/></button>
+           <button onClick={() => toggleLayout('right')} title="Toggle Sidebar (Ctrl+B)"><Columns size={10}/></button>
         </div>
       </div>
 
@@ -432,7 +575,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project }) => {
                     </div>
                 </div>
                 <div className="flex-1 flex flex-col-reverse gap-2 overflow-y-auto p-3 min-h-[150px]">
-                    {chatHistory.slice().reverse().map((msg) => <MessageRenderer key={msg.id} message={msg} onApplyCode={handleApplyCode} onApplyAll={handleApplyAll} />)}
+                    {chatHistory.slice().reverse().map((msg) => <MessageRenderer key={msg.id} message={msg} onApplyCode={handleApplyCode} onApplyAll={handleApplyAll} onAutoFix={handleAutoFix} />)}
                 </div>
                 <div className="p-3 border-t border-gray-700 bg-gray-900/50">
                     <form onSubmit={handleChatSubmit} className="flex gap-2">

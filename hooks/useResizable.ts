@@ -1,11 +1,17 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 
 export const useResizable = () => {
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [rightPanelWidth, setRightPanelWidth] = useState(500);
-  const [bottomPanelHeight, setBottomPanelHeight] = useState(200);
-  const [splitRatio, setSplitRatio] = useState(50);
+  const [sidebarWidth, setSidebarWidth] = useState(() => parseInt(localStorage.getItem('omni_layout_sidebar') || '260'));
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => parseInt(localStorage.getItem('omni_layout_right') || '500'));
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(() => parseInt(localStorage.getItem('omni_layout_bottom') || '200'));
+  const [splitRatio, setSplitRatio] = useState(() => parseInt(localStorage.getItem('omni_layout_split') || '50'));
+
+  // Persist changes
+  useEffect(() => localStorage.setItem('omni_layout_sidebar', sidebarWidth.toString()), [sidebarWidth]);
+  useEffect(() => localStorage.setItem('omni_layout_right', rightPanelWidth.toString()), [rightPanelWidth]);
+  useEffect(() => localStorage.setItem('omni_layout_bottom', bottomPanelHeight.toString()), [bottomPanelHeight]);
+  useEffect(() => localStorage.setItem('omni_layout_split', splitRatio.toString()), [splitRatio]);
 
   const startResizing = useCallback((direction: 'sidebar' | 'rightPanel' | 'bottomPanel' | 'split', e: React.MouseEvent) => {
       e.preventDefault();

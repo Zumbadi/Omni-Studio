@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack } from '../types';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
@@ -11,9 +11,10 @@ interface DashboardProps {
   onDeleteProject: (e: React.MouseEvent, id: string) => void;
   onNewProject: () => void;
   onNavigate: (view: AppView) => void;
+  onManageTeam: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect, onDeleteProject, onNewProject, onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect, onDeleteProject, onNewProject, onNavigate, onManageTeam }) => {
     const [activeTab, setActiveTab] = useState<'all' | 'code' | 'media' | 'audio'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [recentMedia, setRecentMedia] = useState<SocialPost[]>([]);
@@ -61,7 +62,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
               <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Welcome back, Creator</h1>
               <p className="text-sm md:text-base text-gray-400">Unified control center for your Code, Media, and Audio projects.</p>
             </div>
-            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto items-stretch md:items-center">
                <div className="relative w-full md:w-64">
                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={16} />
                    <input 
@@ -73,6 +74,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
                    />
                </div>
                <div className="flex gap-2 w-full md:w-auto">
+                   <Button onClick={onManageTeam} variant="ghost" className="flex-1 md:flex-none border border-gray-700 hover:bg-gray-800" title="Manage AI Team">
+                     <Users size={16} />
+                   </Button>
                    <Button onClick={() => onNavigate(AppView.MEDIA)} variant="secondary" className="flex-1 md:flex-none">
                      <Clapperboard size={16} className="mr-2" /> New Content
                    </Button>

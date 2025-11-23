@@ -9,7 +9,7 @@ import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { AppView, Project, ProjectType, FileNode } from './types';
 import { MOCK_PROJECTS } from './constants';
-import { Menu, Users } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { Button } from './components/Button';
 import { TeamManager } from './components/TeamManager';
 import { NewProjectModal } from './components/NewProjectModal';
@@ -19,7 +19,11 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('omni_auth') === 'true';
   });
-  const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
+  
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+      return (localStorage.getItem('omni_current_view') as AppView) || AppView.DASHBOARD;
+  });
+  
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Initialize projects from localStorage or fallback to mock
@@ -28,14 +32,27 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : MOCK_PROJECTS;
   });
   
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(() => {
+      const saved = localStorage.getItem('omni_active_project');
+      return saved ? JSON.parse(saved) : null;
+  });
+
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showTeamManager, setShowTeamManager] = useState(false);
 
-  // Persist projects whenever they change
+  // Persist state
   useEffect(() => {
     localStorage.setItem('omni_projects', JSON.stringify(projects));
   }, [projects]);
+
+  useEffect(() => {
+      localStorage.setItem('omni_current_view', currentView);
+  }, [currentView]);
+
+  useEffect(() => {
+      if (selectedProject) localStorage.setItem('omni_active_project', JSON.stringify(selectedProject));
+      else localStorage.removeItem('omni_active_project');
+  }, [selectedProject]);
 
   const handleLogin = () => {
     localStorage.setItem('omni_auth', 'true');
@@ -133,17 +150,13 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
           {currentView === AppView.DASHBOARD && (
               <div className="relative flex-1 flex flex-col overflow-hidden bg-gray-950">
-                  <div className="absolute top-4 right-4 md:top-8 md:right-8 z-10 flex gap-2">
-                      <Button onClick={() => setShowTeamManager(true)} variant="secondary" className="shadow-lg">
-                          <Users size={16} className="mr-2"/> Manage Team
-                      </Button>
-                  </div>
                   <Dashboard 
                       projects={projects} 
                       onProjectSelect={handleProjectSelect} 
                       onDeleteProject={handleDeleteProject} 
                       onNewProject={() => setShowNewProjectModal(true)}
                       onNavigate={handleNavClick}
+                      onManageTeam={() => setShowTeamManager(true)}
                   />
               </div>
           )}

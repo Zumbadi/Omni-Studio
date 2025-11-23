@@ -69,6 +69,61 @@ export const useFileSystem = (project: Project | null) => {
       setFiles(prev => upsertFileByPath(prev, pathParts, content));
   }, []);
 
+  const deleteFile = useCallback((id: string) => {
+      setFiles(prev => {
+          const remove = (nodes: FileNode[]): FileNode[] => {
+              return nodes.filter(node => node.id !== id).map(node => {
+                  if (node.children) return { ...node, children: remove(node.children) };
+                  return node;
+              });
+          };
+          return remove(prev);
+      });
+      // Close tab if deleted
+      setOpenFiles(prev => prev.filter(fid => fid !== id));
+      if (activeFileId === id) setActiveFileId('');
+  }, [activeFileId]);
+
+  const renameFile = useCallback((id: string, newName: string) => {
+      setFiles(prev => {
+          const rename = (nodes: FileNode[]): FileNode[] => nodes.map(node => {
+              if (node.id === id) return { ...node, name: newName, gitStatus: 'modified' };
+              if (node.children) return { ...node, children: rename(node.children) };
+              return node;
+          });
+          return rename(prev);
+      });
+  }, []);
+
+  const duplicateFile = useCallback((id: string) => {
+      setFiles(prev => {
+          const duplicate = (nodes: FileNode[]): FileNode[] => {
+              let newNodes = [...nodes];
+              for (const node of nodes) {
+                  if (node.id === id) {
+                      const copy: FileNode = {
+                          ...node,
+                          id: Date.now().toString() + Math.random(),
+                          name: `${node.name}_copy`,
+                          gitStatus: 'added'
+                      };
+                      newNodes.push(copy);
+                  }
+                  if (node.children) {
+                      // If children are modified, we need to update the node in newNodes
+                      const newChildren = duplicate(node.children);
+                      if (newChildren !== node.children) { // Reference check optimization could be better but this works
+                          const index = newNodes.findIndex(n => n.id === node.id);
+                          newNodes[index] = { ...node, children: newChildren };
+                      }
+                  }
+              }
+              return newNodes;
+          };
+          return duplicate(prev);
+      });
+  }, []);
+
   const findFileByIdWrapper = useCallback((nodes: FileNode[], id: string) => findFileById(nodes, id), []);
   
   const getAllFilesWrapper = useCallback((nodes: FileNode[]) => getAllFiles(nodes), []);
@@ -102,6 +157,9 @@ export const useFileSystem = (project: Project | null) => {
       setRemoteDirName,
       updateFileContent,
       addFile,
+      deleteFile,
+      renameFile,
+      duplicateFile,
       findFileById: findFileByIdWrapper,
       getAllFiles: getAllFilesWrapper,
       handleFileClick,

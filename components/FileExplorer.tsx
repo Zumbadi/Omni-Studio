@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play } from 'lucide-react';
+import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud } from 'lucide-react';
 import { FileNode, Project } from '../types';
 
 interface FileExplorerProps {
@@ -27,6 +27,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [scriptsOpen, setScriptsOpen] = useState(true);
   const [depsOpen, setDepsOpen] = useState(true);
+  const [isDragOver, setIsDragOver] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -85,11 +86,49 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     ));
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+      setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const files = e.dataTransfer.files;
+      // Manually trigger change event for file input logic reuse
+      if (files && files.length > 0) {
+          // Create a synthetic event or call upload handler directly if possible
+          // For now, we can assign to the input ref
+          if (fileInputRef.current) {
+              fileInputRef.current.files = files;
+              // Trigger the change handler manually or via event dispatch
+              const event = new Event('change', { bubbles: true });
+              fileInputRef.current.dispatchEvent(event);
+          }
+      }
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <div 
+        className="flex flex-col h-full relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+    >
         {/* Hidden Inputs */}
         <input type="file" ref={fileInputRef} className="hidden" onChange={onUploadFile} multiple />
         <input type="file" ref={folderInputRef} className="hidden" onChange={onUploadFolder} {...{ webkitdirectory: "" } as any} />
+
+        {isDragOver && (
+            <div className="absolute inset-0 bg-primary-900/80 z-50 flex flex-col items-center justify-center text-white backdrop-blur-sm pointer-events-none">
+                <UploadCloud size={48} className="mb-2 animate-bounce"/>
+                <span className="font-bold">Drop files to upload</span>
+            </div>
+        )}
 
         <div className="p-4 border-b border-gray-800 flex flex-col gap-3 bg-gray-900 sticky top-0 z-10">
             <div className="flex justify-between items-center font-semibold text-gray-200 text-sm">

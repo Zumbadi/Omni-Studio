@@ -189,11 +189,12 @@ export interface AgentTask {
   id: string;
   type: 'docs' | 'tests' | 'refactor' | 'custom';
   name: string;
-  status: 'idle' | 'running' | 'completed';
+  status: 'idle' | 'running' | 'completed' | 'cancelled';
   totalFiles: number;
   processedFiles: number;
   currentFile?: string;
   logs: string[];
+  fileList?: { name: string; status: 'pending' | 'processing' | 'done' | 'error' }[];
 }
 
 export interface AuditIssue {
