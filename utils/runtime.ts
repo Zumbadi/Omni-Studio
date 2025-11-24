@@ -325,4 +325,50 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
           
           const Chevron = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="6 9 12 15 18 9"></polyline></svg>;
           const Menu = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>;
-          const Star = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18
+          const Star = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>;
+          const User = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>;
+          const FontAwesomeShim = (props) => <div style={{ fontSize: 14, border: '1px solid #888', padding: 2, borderRadius: 4 }}>Icon</div>;
+
+          // Proxy for undefined components
+          const ProxyComponent = new Proxy({}, {
+             get: (target, prop) => {
+                 if (prop === 'ChevronDown' || prop === 'ChevronUp' || prop === 'ChevronRight' || prop === 'ChevronLeft') return Chevron;
+                 if (prop === 'Menu') return Menu;
+                 if (prop === 'Star') return Star;
+                 if (prop === 'User') return User;
+                 return IconShim;
+             }
+          });
+          const TabBarIcon = IconShim;
+
+          // Assign icons to window scope
+          Object.assign(window, ProxyComponent);
+          const Bell = IconShim;
+          const Search = IconShim;
+          const Home = IconShim;
+          const Settings = IconShim;
+          const Check = IconShim;
+          const X = IconShim;
+
+          class ErrorBoundary extends React.Component {
+            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+              if (this.state.hasError) return <div style={{ padding: 20, color: '#ef4444', backgroundColor: '#fee2e2' }}><h3>Runtime Error</h3><pre>{this.state.error.toString()}</pre></div>;
+              return this.props.children;
+            }
+          }
+
+          try {
+            ${sanitizedCode}
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+          } catch (err) {
+             const root = ReactDOM.createRoot(document.getElementById('root'));
+             root.render(<div style={{ padding: 20, color: '#ef4444' }}><h3>Compilation Error</h3><pre>{err.toString()}</pre></div>);
+          }
+        </script>
+      </body>
+    </html>
+  `;
+};
