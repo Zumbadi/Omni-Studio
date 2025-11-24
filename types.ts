@@ -26,6 +26,7 @@ export interface Project {
   roadmap?: ProjectPhase[];
   deploymentStatus?: 'deploying' | 'live' | 'failed' | 'offline';
   deploymentUrl?: string;
+  aiRules?: string; // Custom instructions for Agents
 }
 
 export interface ProjectPhase {
@@ -44,6 +45,7 @@ export interface FileNode {
   children?: FileNode[];
   isOpen?: boolean;
   gitStatus?: 'modified' | 'added' | 'deleted' | 'unmodified';
+  isPinned?: boolean; // Context Pinning
 }
 
 export interface ChatMessage {
@@ -56,6 +58,7 @@ export interface ChatMessage {
     score: number;
     issues: string[];
     suggestions: string[];
+    fixCode?: string; // The Critic's suggested fix
   };
 }
 
@@ -65,7 +68,7 @@ export interface Dataset {
   description: string;
   format: 'jsonl' | 'txt';
   size: string;
-  content: string; // The actual training data
+  content: string;
   created: string;
 }
 
@@ -87,7 +90,7 @@ export interface Voice {
   gender: 'male' | 'female' | 'robot';
   style: 'narrative' | 'casual' | 'news' | 'energetic';
   isCloned: boolean;
-  apiMapping?: string; // Maps to a valid Gemini Voice Name (e.g., 'Puck')
+  apiMapping?: string;
   voiceId?: string;
 }
 
@@ -95,11 +98,10 @@ export interface AudioTrack {
   id: string;
   name: string;
   type: 'voiceover' | 'music' | 'sfx';
-  duration: number; // seconds
-  startOffset: number; // seconds
-  audioUrl?: string; // Blob URL or Data URI
-  // Pro Mixing Features
-  volume?: number; // 0.0 to 1.0
+  duration: number;
+  startOffset: number;
+  audioUrl?: string;
+  volume?: number;
   muted?: boolean;
   solo?: boolean;
 }
@@ -118,9 +120,8 @@ export interface Scene {
   imageUrl?: string;
   videoUrl?: string;
   status: 'pending' | 'generating' | 'done';
-  // Pro Timeline Features
-  duration?: number; // seconds
-  mediaStartTime?: number; // Offset in seconds from the start of the source video
+  duration?: number;
+  mediaStartTime?: number;
   transition?: 'cut' | 'fade' | 'dissolve' | 'slide-left' | 'slide-right' | 'zoom' | 'blur' | 'wipe';
   bgRemoved?: boolean;
 }
@@ -129,14 +130,14 @@ export interface Character {
   id: string;
   name: string;
   imageUrl: string;
-  description?: string; // AI-generated visual description for consistency
+  description?: string;
 }
 
 export interface ReferenceAsset {
   id: string;
   type: 'image' | 'video' | 'audio';
   url: string;
-  stylePrompt?: string; // Extracted style description
+  stylePrompt?: string;
 }
 
 export interface ContentStrategy {
@@ -158,10 +159,9 @@ export interface SocialPost {
   hashtags?: string[];
   scenes?: Scene[];
   scheduledDate?: string;
-  // Pro Features
   characters?: Character[];
   styleReferences?: ReferenceAsset[];
-  audioTrackId?: string; // Linked audio track from Audio Studio
+  audioTrackId?: string;
 }
 
 export interface Extension {
@@ -196,7 +196,7 @@ export interface AgentTask {
   processedFiles: number;
   currentFile?: string;
   logs: string[];
-  fileList?: { name: string; status: 'pending' | 'processing' | 'done' | 'error' }[];
+  fileList?: { name: string; path?: string; status: 'pending' | 'processing' | 'done' | 'error' }[];
 }
 
 export interface AuditIssue {
@@ -263,4 +263,37 @@ export interface ActivityItem {
   desc: string;
   time: string;
   projectId?: string;
+}
+
+export interface AgentContext {
+  roadmap?: ProjectPhase[];
+  terminalLogs?: string[];
+  liveLogs?: string[];
+  debugVariables?: {name: string, value: string}[];
+  projectRules?: string; // Custom project-level instructions
+  relatedCode?: string; // Code from imported files or dependencies
+}
+
+export interface TestResult {
+  id: string;
+  file: string;
+  status: 'pass' | 'fail' | 'running' | 'pending';
+  duration: number;
+  passed: number;
+  failed: number;
+  suites: {
+      name: string;
+      status: 'pass' | 'fail';
+      assertions: { name: string; status: 'pass' | 'fail'; error?: string }[];
+  }[];
+}
+
+export interface Problem {
+  id: string;
+  file: string;
+  line: number;
+  col: number;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  source: 'ts' | 'eslint' | 'ai';
 }

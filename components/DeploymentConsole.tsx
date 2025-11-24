@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Rocket, Package, Zap, UploadCloud, Check, ExternalLink, History, Activity, Globe, Terminal, Loader2 } from 'lucide-react';
+import { Rocket, Package, Zap, UploadCloud, Check, ExternalLink, History, Activity, Globe, Terminal, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType } from '../types';
 import { MOCK_DEPLOYMENTS } from '../constants';
@@ -14,8 +14,8 @@ interface DeploymentConsoleProps {
 }
 
 export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, onLog, onDeploymentComplete }) => {
-  const [deploymentState, setDeploymentState] = useState<'idle' | 'building' | 'optimizing' | 'uploading' | 'deployed'>('idle');
-  const [deployUrl, setDeployUrl] = useState('');
+  const [deploymentState, setDeploymentState] = useState<'idle' | 'building' | 'optimizing' | 'uploading' | 'deployed' | 'rolling_back'>('idle');
+  const [deployUrl, setDeployUrl] = useState(project.deploymentUrl || '');
   const [serverLogs, setServerLogs] = useState<string[]>([]);
   const [metricsData, setMetricsData] = useState<{time: string, reqs: number, latency: number}[]>([]);
 
@@ -71,6 +71,23 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
         }
       }, currentDelay);
     });
+  };
+
+  const handleRollback = (hash: string) => {
+      if (confirm(`Are you sure you want to rollback to version ${hash}? This will revert the live site immediately.`)) {
+          onLog(`> Initiating rollback to ${hash}...`);
+          setDeploymentState('rolling_back');
+          
+          setTimeout(() => {
+              onLog(`> Version ${hash} checked out.`);
+              setDeploymentState('uploading');
+              setTimeout(() => {
+                  setDeploymentState('deployed');
+                  onLog(`> Rollback complete. Live version is now ${hash}.`);
+                  logActivity('deploy', 'Rollback Success', `Rolled back to ${hash}`, project.id);
+              }, 1500);
+          }, 1000);
+      }
   };
 
   if (deploymentState === 'deployed') {
@@ -134,18 +151,51 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
                       {deploymentState === 'building' && <Package size={32} className="text-blue-500 animate-bounce" />}
                       {deploymentState === 'optimizing' && <Zap size={32} className="text-yellow-500 animate-pulse" />}
                       {deploymentState === 'uploading' && <UploadCloud size={32} className="text-purple-500 animate-pulse" />}
+                      {deploymentState === 'rolling_back' && <RotateCcw size={32} className="text-red-500 animate-spin" />}
                   </div>
                   {deploymentState !== 'idle' && (<div className="absolute inset-0 bg-primary-500/20 rounded-full blur-xl animate-pulse"></div>)}
               </div>
               <div>
-                  <h2 className="text-2xl font-bold text-white mb-2">{deploymentState === 'idle' ? 'Ready to Deploy' : 'Deploying to Production...'}</h2>
-                  <p className="text-gray-400">{deploymentState === 'idle' ? `Deploy ${project?.name} to our global edge network.` : 'Optimizing assets and configuring SSL...'}</p>
+                  <h2 className="text-2xl font-bold text-white mb-2">
+                      {deploymentState === 'idle' ? 'Ready to Deploy' : 
+                       deploymentState === 'rolling_back' ? 'Rolling Back Version...' : 
+                       'Deploying to Production...'}
+                  </h2>
+                  <p className="text-gray-400">
+                      {deploymentState === 'idle' ? `Deploy ${project?.name} to our global edge network.` : 
+                       deploymentState === 'rolling_back' ? 'Restoring previous stable state.' : 
+                       'Optimizing assets and configuring SSL...'}
+                  </p>
               </div>
+              
               {deploymentState === 'idle' && (<Button size="lg" className="w-full" onClick={handleDeploy}><Rocket size={18} className="mr-2" /> Deploy Now</Button>)}
+              
               <div className="border-t border-gray-800 pt-6 mt-8 text-left">
                   <h3 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2"><History size={12}/> Past Deployments</h3>
                   <div className="bg-gray-800 rounded-lg overflow-hidden">
-                      {MOCK_DEPLOYMENTS.map((dep) => (<div key={dep.id} className="flex items-center justify-between p-3 border-b border-gray-700 last:border-0 hover:bg-gray-750"><div className="flex items-center gap-3"><div className={`w-2 h-2 rounded-full ${dep.status === 'Success' ? 'bg-green-500' : 'bg-red-500'}`}></div><div><div className="text-xs font-medium text-gray-300">{dep.hash} <span className="text-gray-500">• {dep.env}</span></div><div className="text-[10px] text-gray-500">{dep.date}</div></div></div><div className="text-xs text-gray-400">{dep.status}</div></div>))}
+                      {MOCK_DEPLOYMENTS.map((dep) => (
+                          <div key={dep.id} className="flex items-center justify-between p-3 border-b border-gray-700 last:border-0 hover:bg-gray-750 group">
+                              <div className="flex items-center gap-3">
+                                  <div className={`w-2 h-2 rounded-full ${dep.status === 'Success' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                  <div>
+                                      <div className="text-xs font-medium text-gray-300">{dep.hash} <span className="text-gray-500">• {dep.env}</span></div>
+                                      <div className="text-[10px] text-gray-500">{dep.date}</div>
+                                  </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-400 mr-2">{dep.status}</span>
+                                  {dep.status === 'Success' && (
+                                      <button 
+                                          onClick={() => handleRollback(dep.hash)}
+                                          className="p-1.5 bg-gray-700 hover:bg-red-900/30 text-gray-400 hover:text-red-300 rounded transition-all opacity-0 group-hover:opacity-100"
+                                          title="Rollback to this version"
+                                      >
+                                          <RotateCcw size={12}/>
+                                      </button>
+                                  )}
+                              </div>
+                          </div>
+                      ))}
                   </div>
               </div>
           </div>

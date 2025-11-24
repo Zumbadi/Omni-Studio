@@ -5,9 +5,10 @@ import { chatWithVoice } from '../services/geminiService';
 
 interface VoiceCommanderProps {
   onClose: () => void;
+  onProcess?: (text: string) => void;
 }
 
-export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose }) => {
+export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose, onProcess }) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -49,7 +50,12 @@ export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose }) => {
       recognitionRef.current.onend = async () => {
         setIsListening(false);
         if (transcript.trim()) {
-           await handleProcessVoice(transcript);
+           if (onProcess) {
+               onProcess(transcript);
+               setAiResponse('Processing...');
+           } else {
+               await handleProcessVoice(transcript);
+           }
         }
       };
     }
@@ -99,7 +105,7 @@ export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-10 fade-in duration-300">
         <div className="bg-gray-900/90 backdrop-blur-xl border border-primary-500/30 rounded-full shadow-2xl flex items-center px-6 py-3 gap-6 min-w-[300px] max-w-[500px] relative overflow-hidden">
             {/* Ambient Glow */}
             <div className={`absolute inset-0 bg-primary-500/10 transition-opacity duration-500 ${isListening || isSpeaking ? 'opacity-100 animate-pulse' : 'opacity-0'}`}></div>

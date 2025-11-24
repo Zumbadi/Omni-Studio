@@ -1,9 +1,77 @@
 
 import React from 'react';
+import { FileNode } from '../types';
+import { getAllFiles } from './fileHelpers';
 
-export const generatePreviewHtml = (code: string, isNative: boolean) => {
-  // Detection for native code that cannot run in browser
-  const isSwift = code.includes('import SwiftUI') || code.includes('struct') && code.includes('View');
+// Simple recursive bundler to inline dependencies
+const bundleCode = (entryCode: string, files: FileNode[], depth = 0, visited = new Set<string>(), collectedStyles: string[] = []): string => {
+    if (depth > 15) return entryCode; // Prevent infinite recursion
+    
+    let bundled = entryCode;
+    const allFiles = getAllFiles(files);
+    
+    // 1. Handle CSS Imports: import './style.css';
+    const cssRegex = /import\s+['"](\..+?\.css)['"];?/g;
+    let cssMatch;
+    while ((cssMatch = cssRegex.exec(entryCode)) !== null) {
+        const importStatement = cssMatch[0];
+        const importPath = cssMatch[1];
+        const filename = importPath.split('/').pop()?.replace(/['"]/g, '');
+        
+        const fileNode = allFiles.find(f => f.node.name === filename)?.node;
+        if (fileNode && fileNode.content) {
+            collectedStyles.push(fileNode.content);
+        }
+        bundled = bundled.replace(importStatement, `// ${importStatement} (Injected)`);
+    }
+
+    // 2. Handle JS/TS Imports: import ... from './File' OR '@/components/File';
+    // Regex matches relative (./) or alias (@/) paths
+    const importRegex = /import\s+.*?\s+from\s+['"]((\.|@\/).+?)['"];?/g;
+    let match;
+    while ((match = importRegex.exec(entryCode)) !== null) {
+        const importStatement = match[0];
+        const importPath = match[1];
+        
+        // Resolve path (naive)
+        // If it's an alias like '@/components/Themed', we look for 'Themed'
+        const filename = importPath.split('/').pop()?.replace(/['"]/g, '');
+        
+        // Try to find file matching name (ignoring extension)
+        const fileNode = allFiles.find(f => {
+            const fname = f.node.name.split('.')[0];
+            return fname === filename && (f.node.name.endsWith('.tsx') || f.node.name.endsWith('.ts') || f.node.name.endsWith('.js') || f.node.name.endsWith('.jsx'));
+        });
+
+        if (fileNode && fileNode.node.content && !visited.has(fileNode.node.id)) {
+            visited.add(fileNode.node.id);
+            
+            // Recursively bundle the imported file first
+            let inlinedContent = bundleCode(fileNode.node.content, files, depth + 1, visited, collectedStyles);
+            
+            // Strip imports from the inlined content to avoid duplicates (simplified)
+            inlinedContent = inlinedContent
+                .replace(/import\s+.*?\s+from\s+['"].*?['"];?/g, '') // Remove imports from child
+                .replace(/import\s+['"].*?\.css['"];?/g, '') // Remove css imports from child (already collected)
+                .replace(/export\s+default\s+function\s+(\w+)/g, 'function $1')
+                .replace(/export\s+const\s+(\w+)/g, 'const $1')
+                .replace(/export\s+class\s+(\w+)/g, 'class $1')
+                .replace(/export\s+default\s+(\w+);?/g, '') // Remove standalone export default
+                .replace(/export\s+{.*?};?/g, ''); // Remove named exports
+
+            // Prepend inlined content
+            bundled = `${inlinedContent}\n\n${bundled}`;
+        }
+        
+        // Comment out the original import
+        bundled = bundled.replace(importStatement, `// ${importStatement} (Inlined)`);
+    }
+    
+    return bundled;
+};
+
+export const generatePreviewHtml = (code: string, isNative: boolean, files: FileNode[] = [], activeFilePath?: string, envVars: Record<string, string> = {}) => {
+  const isSwift = code.includes('import SwiftUI') || (code.includes('struct') && code.includes('View'));
   const isKotlin = code.includes('import androidx.compose') || code.includes('fun main');
   
   if (isSwift || isKotlin) {
@@ -41,14 +109,65 @@ export const generatePreviewHtml = (code: string, isNative: boolean) => {
       `;
   }
 
-  // Improved sanitizer to handle export defaults and imports for React/React Native Web
-  const sanitizedCode = code
+  // 1. Bundle Dependencies & Collect Styles
+  const collectedStyles: string[] = [];
+  let bundledCode = bundleCode(code, files, 0, new Set(), collectedStyles);
+  const styleBlock = collectedStyles.length > 0 ? `<style>${collectedStyles.join('\n')}</style>` : '';
+
+  // 2. Asset Resolution
+  if (files.length > 0) {
+      const allFiles = getAllFiles(files);
+      const pathRegex = /['"](\.{0,2}\/?[^'"]+\.(png|jpg|jpeg|gif|svg))['"]/gi;
+      const matches = [...bundledCode.matchAll(pathRegex)];
+      
+      const resolvePath = (relativePath: string, basePath: string): string => {
+          if (relativePath.startsWith('/')) return relativePath.substring(1);
+          const stack = basePath.split('/');
+          stack.pop(); 
+          const parts = relativePath.split('/');
+          for (const part of parts) {
+              if (part === '.') continue;
+              if (part === '..') stack.pop();
+              else stack.push(part);
+          }
+          return stack.join('/');
+      };
+
+      matches.forEach(match => {
+          const originalString = match[1];
+          let targetPath = originalString;
+          if (activeFilePath) targetPath = resolvePath(originalString, activeFilePath);
+          else targetPath = originalString.split('/').pop() || '';
+
+          let fileNode = allFiles.find(f => f.path === targetPath)?.node;
+          if (!fileNode) fileNode = allFiles.find(f => f.node.name === originalString.split('/').pop())?.node;
+          
+          if (fileNode && fileNode.content) {
+              let replacement = '';
+              if (originalString.match(/\.(png|jpg|jpeg|gif)$/i)) {
+                  if (fileNode.content.startsWith('data:')) replacement = fileNode.content;
+                  else replacement = `data:image/png;base64,${fileNode.content}`; 
+              } else if (originalString.endsWith('.svg')) {
+                  if (fileNode.content.startsWith('<svg')) replacement = `data:image/svg+xml;base64,${btoa(fileNode.content)}`;
+                  else replacement = fileNode.content;
+              }
+              if (replacement) bundledCode = bundledCode.split(originalString).join(replacement);
+          }
+      });
+  }
+
+  // 3. Shim & Sanitize
+  const sanitizedCode = bundledCode
     .replace(/import\s+React.*?;/g, '')
     .replace(/import\s+{.*?}\s+from\s+['"]react-native['"];/g, '')
+    .replace(/import\s+{.*?}\s+from\s+['"]lucide-react['"];/g, '')
+    .replace(/import\s+{.*?}\s+from\s+['"]expo-router['"];/g, '') // Handle expo-router imports
+    .replace(/import\s+.*?\s+from\s+['"]@expo\/vector-icons\/.*?['"];/g, '') // Handle vector icons
+    .replace(/import\s+['"].*?\.css['"];?/g, '')
     .replace(/import\s+.*?;/g, '')
-    .replace(/export\s+default\s+function\s+App/g, 'function App') // Convert export default to regular function
+    .replace(/export\s+default\s+function\s+App/g, 'function App')
     .replace(/export\s+default\s+class\s+App/g, 'class App')
-    .replace(/export\s+default\s+App;/g, ''); // Remove standalone export
+    .replace(/export\s+default\s+App;/g, '');
 
   return `
     <!DOCTYPE html>
@@ -60,31 +179,31 @@ export const generatePreviewHtml = (code: string, isNative: boolean) => {
         <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
         <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
         <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        ${styleBlock}
         <style>
           body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
           #root { height: 100vh; width: 100%; display: flex; flex-direction: column; }
-          /* Custom Scrollbar for "mobile" feel */
           ::-webkit-scrollbar { width: 0px; background: transparent; }
         </style>
       </head>
       <body>
         <div id="root"></div>
         <script>
-          // --- Console Log Interception ---
           (function() {
+            window.process = { 
+                env: ${JSON.stringify(envVars)},
+                version: 'v18.0.0'
+            };
+
             const originalLog = console.log;
             const originalWarn = console.warn;
             const originalError = console.error;
 
             function sendToParent(type, args) {
               try {
-                const message = args.map(arg => 
-                  typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-                ).join(' ');
+                const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
                 window.parent.postMessage({ type: 'console', level: type, message }, '*');
-              } catch (e) {
-                // Ignore circular structure errors
-              }
+              } catch (e) {}
             }
 
             console.log = (...args) => { originalLog(...args); sendToParent('info', args); };
@@ -99,22 +218,31 @@ export const generatePreviewHtml = (code: string, isNative: boolean) => {
         <script type="text/babel">
           const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+          // --- Helper: Flatten Styles for React Native ---
+          const flattenStyles = (style) => {
+             if (!style) return {};
+             if (Array.isArray(style)) {
+                 return style.reduce((acc, curr) => ({ ...acc, ...flattenStyles(curr) }), {});
+             }
+             return style;
+          };
+
           // --- React Native Shim for Web ---
-          const View = ({ style, children, ...props }) => <div style={{ display: 'flex', flexDirection: 'column', ...style }} {...props}>{children}</div>;
-          const Text = ({ style, children, ...props }) => <span style={{ display: 'block', ...style }} {...props}>{children}</span>;
+          const View = ({ style, children, ...props }) => <div style={{ display: 'flex', flexDirection: 'column', boxSizing: 'border-box', ...flattenStyles(style) }} {...props}>{children}</div>;
+          const Text = ({ style, children, ...props }) => <span style={{ display: 'block', ...flattenStyles(style) }} {...props}>{children}</span>;
           const TouchableOpacity = ({ style, children, onPress, ...props }) => (
             <button 
-              style={{ border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', ...style }} 
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', ...flattenStyles(style) }} 
               onClick={onPress}
               {...props}
             >
               {children}
             </button>
           );
-          const Image = ({ style, source, ...props }) => <img src={source?.uri || 'https://via.placeholder.com/150'} style={{ objectFit: 'cover', ...style }} {...props} />;
+          const Image = ({ style, source, ...props }) => <img src={source?.uri || 'https://via.placeholder.com/150'} style={{ objectFit: 'cover', ...flattenStyles(style) }} {...props} />;
           const ScrollView = ({ style, children, contentContainerStyle, ...props }) => (
-            <div style={{ overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', ...style }} {...props}>
-              <div style={{ display: 'flex', flexDirection: 'column', ...contentContainerStyle }}>{children}</div>
+            <div style={{ overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', ...flattenStyles(style) }} {...props}>
+              <div style={{ display: 'flex', flexDirection: 'column', ...flattenStyles(contentContainerStyle) }}>{children}</div>
             </div>
           );
           const TextInput = ({ style, value, onChangeText, placeholder, secureTextEntry, ...props }) => (
@@ -123,12 +251,12 @@ export const generatePreviewHtml = (code: string, isNative: boolean) => {
               value={value}
               onChange={(e) => onChangeText && onChangeText(e.target.value)}
               placeholder={placeholder}
-              style={{ outline: 'none', border: '1px solid #ccc', padding: '8px', ...style }}
+              style={{ outline: 'none', border: '1px solid #ccc', padding: '8px', ...flattenStyles(style) }}
               {...props}
             />
           );
           const FlatList = ({ data, renderItem, keyExtractor, style, ...props }) => (
-             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', ...style }}>
+             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', ...flattenStyles(style) }}>
                 {data && data.map((item, index) => (
                    <React.Fragment key={keyExtractor ? keyExtractor(item) : index}>
                       {renderItem({ item, index })}
@@ -156,52 +284,45 @@ export const generatePreviewHtml = (code: string, isNative: boolean) => {
 
           const StyleSheet = { 
             create: (styles) => styles, 
+            flatten: flattenStyles,
             absoluteFillObject: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } 
           };
-          const SafeAreaView = ({ style, children, ...props }) => <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', ...style }} {...props}>{children}</div>;
+          const SafeAreaView = ({ style, children, ...props }) => <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', ...flattenStyles(style) }} {...props}>{children}</div>;
 
-          // --- Error Boundary ---
-          class ErrorBoundary extends React.Component {
-            constructor(props) {
-              super(props);
-              this.state = { hasError: false, error: null };
-            }
-            static getDerivedStateFromError(error) { return { hasError: true, error }; }
-            render() {
-              if (this.state.hasError) {
-                return (
-                  <div style={{ padding: 20, color: '#ef4444', backgroundColor: '#fee2e2', height: '100vh' }}>
-                    <h3 style={{fontWeight: 'bold'}}>Runtime Error</h3>
-                    <pre style={{whiteSpace: 'pre-wrap', fontSize: 12}}>{this.state.error.toString()}</pre>
+          // --- Expo Router Shims ---
+          const Slot = () => <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed #444', borderRadius: 8, margin: 10, color: '#666' }}>[Router Slot]</div>;
+          const Stack = ({ children }) => <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>{children}</div>;
+          Stack.Screen = () => null;
+          const Tabs = ({ children, screenOptions }) => (
+             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  {/* Mock active tab content */}
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>
+                     [Tab Content Area]
                   </div>
-                );
-              }
-              return this.props.children;
-            }
-          }
-
-          // --- User Code Injection ---
-          try {
-            ${sanitizedCode}
-
-            // --- Mount ---
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(
-              <ErrorBoundary>
-                <App />
-              </ErrorBoundary>
-            );
-          } catch (err) {
-             const root = ReactDOM.createRoot(document.getElementById('root'));
-             root.render(
-                <div style={{ padding: 20, color: '#ef4444', backgroundColor: '#fee2e2', height: '100vh' }}>
-                  <h3 style={{fontWeight: 'bold'}}>Compilation Error</h3>
-                  <pre style={{whiteSpace: 'pre-wrap', fontSize: 12}}>{err.toString()}</pre>
                 </div>
-             );
-          }
-        </script>
-      </body>
-    </html>
-  `;
-};
+                <div style={{ height: 60, borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#fff' }}>
+                   {/* We simulate tab buttons based on children */}
+                   {React.Children.map(children, child => {
+                      if(!child) return null;
+                      const { name, options } = child.props;
+                      return (
+                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.6 }}>
+                             {options?.tabBarIcon && options.tabBarIcon({ color: '#888' })}
+                             <span style={{ fontSize: 10, marginTop: 2 }}>{options?.title || name}</span>
+                         </div>
+                      );
+                   })}
+                </div>
+             </div>
+          );
+          Tabs.Screen = () => null;
+
+          // --- Icon Shim ---
+          const IconShim = ({ size = 24, color = 'currentColor', ...props }) => (
+             <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+          );
+          
+          const Chevron = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="6 9 12 15 18 9"></polyline></svg>;
+          const Menu = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>;
+          const Star = (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18

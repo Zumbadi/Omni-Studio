@@ -39,9 +39,6 @@ export const analyzeDependencies = (files: FileNode[]): DepNode[] => {
   traverse(files, '');
 
   // 2. Assign Levels for Visualization
-  // Level 0: App root
-  // Level 1: Components / Pages
-  // Level 2: Utils / Hooks / Services
   nodes.forEach(node => {
      if (node.name === 'App.tsx' || node.name === 'index.tsx' || node.name === 'index.js') {
          node.level = 0;
@@ -62,12 +59,15 @@ export const findRelevantContext = (files: FileNode[], prompt: string): string =
     const traverse = (n: FileNode[]) => {
         n.forEach(node => {
             if (node.type === 'file' && node.content) {
-                // Check if file name matches
+                // 1. Check for keyword match
                 const nameMatch = keywords.some(k => node.name.toLowerCase().includes(k));
-                // Check if content defines something relevant (e.g. matching function name)
-                // Simple heuristic: if prompt contains "Button", grab Button.tsx content
-                if (nameMatch) {
-                    context += `\n\n[File: ${node.name}]\n\`\`\`tsx\n${node.content}\n\`\`\``;
+                
+                // 2. Check for Pinned Status
+                const isPinned = node.isPinned;
+
+                if (nameMatch || isPinned) {
+                    const label = isPinned ? `[File: ${node.name} (PINNED)]` : `[File: ${node.name}]`;
+                    context += `\n\n${label}\n\`\`\`tsx\n${node.content}\n\`\`\``;
                 }
             }
             if (node.children) traverse(node.children);
@@ -75,5 +75,68 @@ export const findRelevantContext = (files: FileNode[], prompt: string): string =
     };
     traverse(files);
     
+    // Always include package.json if found (Config Awareness)
+    // This ensures agents know dependencies even if not explicitly asked
+    if (!context.includes('package.json')) {
+        const traversePkg = (n: FileNode[]) => {
+            for (const node of n) {
+                if (node.name === 'package.json' && node.content) {
+                    context += `\n\n[Config: package.json]\n\`\`\`json\n${node.content}\n\`\`\``;
+                    return;
+                }
+                if (node.children) traversePkg(node.children);
+            }
+        };
+        traversePkg(files);
+    }
+    
+    return context;
+};
+
+export const findDependents = (targetFileName: string, allFiles: {node: FileNode, path: string}[]): {node: FileNode, path: string}[] => {
+    const targetNameNoExt = targetFileName.split('.')[0];
+    
+    return allFiles.filter(f => {
+        if (!f.node.content) return false;
+        if (f.node.name === targetFileName) return false;
+        
+        const regex = new RegExp(`from\\s+['"].*${targetNameNoExt}['"]`, 'i');
+        return regex.test(f.node.content);
+    });
+};
+
+export const getRelatedFileContent = (targetFileContent: string, allFiles: {node: FileNode, path: string}[]): string => {
+    let context = "";
+    const seenFiles = new Set<string>();
+    
+    // Parse imports: import ... from './path/to/File';
+    const regex = /from\s+['"](.+?)['"]/g;
+    let match;
+    
+    while ((match = regex.exec(targetFileContent)) !== null) {
+        const importPath = match[1];
+        
+        // Skip node_modules
+        if (!importPath.startsWith('.')) continue;
+
+        // Extract filename from path
+        const importName = importPath.split('/').pop()?.replace(/\.(tsx|ts|js|jsx)/, '') || '';
+        
+        // Find matching file in project (Loose match by name)
+        const relatedFile = allFiles.find(f => {
+            const fname = f.node.name.split('.')[0];
+            return fname === importName && f.node.content;
+        });
+
+        if (relatedFile && relatedFile.node.content && !seenFiles.has(relatedFile.node.name)) {
+            seenFiles.add(relatedFile.node.name);
+            // Truncate very large files to save context window
+            const content = relatedFile.node.content.length > 2000 
+                ? relatedFile.node.content.substring(0, 2000) + "\n... (truncated)" 
+                : relatedFile.node.content;
+                
+            context += `\n\n[Context from ${relatedFile.node.name}]:\n\`\`\`typescript\n${content}\n\`\`\``;
+        }
+    }
     return context;
 };

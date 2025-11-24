@@ -22,6 +22,35 @@ export const getAllFiles = (nodes: FileNode[], parentPath = ''): {node: FileNode
   return results;
 };
 
+export const getFilePath = (nodes: FileNode[], id: string, parentPath = ''): string | null => {
+    for (const node of nodes) {
+        const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+        if (node.id === id) return currentPath;
+        if (node.children) {
+            const found = getFilePath(node.children, id, currentPath);
+            if (found) return found;
+        }
+    }
+    return null;
+};
+
+export const normalizePath = (path: string): string => {
+    // Remove leading ./ or /
+    return path.replace(/^\.?\//, '');
+};
+
+export const findNodeByPath = (nodes: FileNode[], path: string): FileNode | undefined => {
+    const normalized = normalizePath(path);
+    const allFiles = getAllFiles(nodes);
+    // Try exact match first
+    const exact = allFiles.find(f => f.path === normalized);
+    if (exact) return exact.node;
+    
+    // Try loose match (ends with)
+    const loose = allFiles.find(f => f.path.endsWith(normalized));
+    return loose ? loose.node : undefined;
+};
+
 export const upsertFileByPath = (nodes: FileNode[], pathParts: string[], newContent: string | null, isDirectory = false): FileNode[] => {
   const [currentPart, ...restParts] = pathParts;
   

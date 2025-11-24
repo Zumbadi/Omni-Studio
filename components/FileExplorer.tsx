@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud, Trash2, FileCode, FileJson, Image as ImageIcon, FileType } from 'lucide-react';
+import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud, Trash2, FileCode, FileJson, Image as ImageIcon, FileType, Pin } from 'lucide-react';
 import { FileNode, Project } from '../types';
 
 interface FileExplorerProps {
@@ -19,18 +19,21 @@ interface FileExplorerProps {
   onInstallPackage: () => void;
   onRunScript?: (script: string, cmd: string) => void;
   onEmptyTrash?: () => void;
+  onMoveNode?: (nodeId: string, targetId: string) => void;
+  onToggleDirectory?: (id: string) => void;
 }
 
 export const FileExplorer: React.FC<FileExplorerProps> = ({
   files, activeFileId, project, remoteDirName, deletedFiles = [],
   onFileClick, onContextMenu, onConnectRemote,
-  onUploadFile, onUploadFolder, onAddFile, onAddFolder, onInstallPackage, onRunScript, onEmptyTrash
+  onUploadFile, onUploadFolder, onAddFile, onAddFolder, onInstallPackage, onRunScript, onEmptyTrash, onMoveNode, onToggleDirectory
 }) => {
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [scriptsOpen, setScriptsOpen] = useState(true);
   const [depsOpen, setDepsOpen] = useState(true);
   const [trashOpen, setTrashOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dragTargetId, setDragTargetId] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +61,23 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       }
   } catch (e) {}
 
+  const findNativeDeps = (nodes: FileNode[], filename: string): string | undefined => {
+      for (const node of nodes) {
+          if (node.name === filename && node.type === 'file') return node.content;
+          if (node.children) {
+              const found = findNativeDeps(node.children, filename);
+              if (found) return found;
+          }
+      }
+      return undefined;
+  };
+
+  const podfileContent = findNativeDeps(files, 'Podfile');
+  if (podfileContent) dependencies = { ...dependencies, ...{'iOS Pods': 'Native'} };
+  
+  const gradleContent = findNativeDeps(files, 'build.gradle.kts');
+  if (gradleContent) dependencies = { ...dependencies, ...{'Android Gradle': 'Native'} };
+
   const getFileIcon = (name: string) => {
       if (name.endsWith('.tsx') || name.endsWith('.jsx')) return <FileCode size={14} className="text-blue-400"/>;
       if (name.endsWith('.ts') || name.endsWith('.js')) return <FileCode size={14} className="text-yellow-400"/>;
@@ -69,21 +89,57 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       return <FileIcon size={14} className="text-gray-500"/>;
   };
 
+  const handleNodeDragStart = (e: React.DragEvent, id: string) => {
+      e.stopPropagation();
+      e.dataTransfer.setData('application/omni-node-id', id);
+      e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleNodeDragOver = (e: React.DragEvent, id: string, type: 'file' | 'directory') => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (type === 'directory') {
+          setDragTargetId(id);
+      }
+  };
+
+  const handleNodeDrop = (e: React.DragEvent, targetId: string, type: 'file' | 'directory') => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragTargetId(null);
+      const nodeId = e.dataTransfer.getData('application/omni-node-id');
+      if (nodeId && type === 'directory' && nodeId !== targetId && onMoveNode) {
+          onMoveNode(nodeId, targetId);
+      }
+  };
+
   const renderFileTree = (nodes: FileNode[], depth = 0, isTrash = false) => {
     return nodes.map(node => (
       <div key={node.id}>
         <div 
-          className={`flex items-center justify-between px-4 py-1 cursor-pointer text-sm hover:bg-gray-800 transition-colors border-l-2 group relative
-            ${node.id === activeFileId ? 'bg-gray-800 text-white border-primary-500' : 'text-gray-400 border-transparent'}
+          className={`flex items-center justify-between px-4 py-1 cursor-pointer text-sm transition-colors border-l-2 group relative
+            ${node.id === activeFileId ? 'bg-gray-800 text-white border-primary-500' : 'text-gray-400 border-transparent hover:bg-gray-800'}
             ${isTrash ? 'opacity-75' : ''}
+            ${dragTargetId === node.id ? 'bg-primary-900/30 border-primary-500 ring-1 ring-inset ring-primary-500/50' : ''}
           `}
           style={{ paddingLeft: `${depth * 12 + 12}px` }}
-          onClick={() => !isTrash && node.type === 'file' && onFileClick(node.id)}
+          onClick={(e) => {
+              e.stopPropagation();
+              if (node.type === 'directory' && onToggleDirectory) {
+                  onToggleDirectory(node.id);
+              } else if (!isTrash && node.type === 'file') {
+                  onFileClick(node.id);
+              }
+          }}
           onContextMenu={(e) => onContextMenu(e, node.id, isTrash)}
           onMouseEnter={() => setHoveredFileId(node.id)}
           onMouseLeave={() => setHoveredFileId(null)}
+          draggable={!isTrash}
+          onDragStart={(e) => handleNodeDragStart(e, node.id)}
+          onDragOver={(e) => handleNodeDragOver(e, node.id, node.type)}
+          onDrop={(e) => handleNodeDrop(e, node.id, node.type)}
         >
-          <div className="flex items-center overflow-hidden">
+          <div className="flex items-center overflow-hidden flex-1">
               <span className="mr-2 opacity-70 flex-shrink-0 relative">
                 {node.type === 'directory' ? 
                     (node.isOpen ? <ChevronDown size={14} className="text-gray-300"/> : <ChevronRight size={14} className="text-gray-500"/>) 
@@ -93,6 +149,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 {!isTrash && node.gitStatus === 'added' && <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full"></div>}
               </span>
               <span className={`truncate ${!isTrash && node.gitStatus === 'modified' ? 'text-yellow-400' : !isTrash && node.gitStatus === 'added' ? 'text-green-400' : isTrash ? 'line-through text-gray-500' : ''}`}>{node.name}</span>
+              {node.isPinned && <Pin size={10} className="ml-2 text-primary-400 -rotate-45 fill-current" />}
           </div>
           {(hoveredFileId === node.id && node.id !== 'root' && node.id !== '1') && (
              <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, node.id, isTrash); }} className="text-gray-600 hover:text-white p-1"><MoreVertical size={12} /></button>
@@ -108,7 +165,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       setIsDragOver(true);
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
       setIsDragOver(false);
   };
 
@@ -136,7 +194,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         <input type="file" ref={folderInputRef} className="hidden" onChange={onUploadFolder} {...{ webkitdirectory: "" } as any} />
 
         {isDragOver && (
-            <div className="absolute inset-0 bg-primary-900/80 z-50 flex flex-col items-center justify-center text-white backdrop-blur-sm pointer-events-none">
+            <div className="absolute inset-0 bg-primary-900/80 z-50 flex flex-col items-center justify-center text-white backdrop-blur-sm pointer-events-none animate-in fade-in duration-200">
                 <UploadCloud size={48} className="mb-2 animate-bounce"/>
                 <span className="font-bold">Drop files to upload</span>
             </div>
@@ -158,9 +216,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 {remoteDirName && <span className="text-[10px] text-green-500 flex items-center gap-1"><Link size={10} /> {remoteDirName}</span>}
             </div>
         </div>
-        <div className="flex-1 overflow-y-auto py-2 font-mono text-sm">{renderFileTree(files)}</div>
+        <div className="flex-1 overflow-y-auto py-2 font-mono text-sm">
+            {/* Root Drop Target */}
+            <div 
+                onDragOver={(e) => handleNodeDragOver(e, 'root', 'directory')} 
+                onDrop={(e) => handleNodeDrop(e, 'root', 'directory')}
+                className={`min-h-[20px] ${dragTargetId === 'root' ? 'bg-primary-900/20' : ''}`}
+            >
+                {renderFileTree(files)}
+            </div>
+        </div>
         
-        {/* Trash Bin */}
         {deletedFiles.length > 0 && (
             <div className="border-t border-gray-800 bg-gray-900">
                 <div className="px-4 py-2 text-xs font-bold text-red-500/70 uppercase tracking-wider flex items-center justify-between cursor-pointer hover:text-red-400" onClick={() => setTrashOpen(!trashOpen)}>
@@ -178,7 +244,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
             </div>
         )}
 
-        {/* NPM Scripts */}
         <div className="border-t border-gray-800 bg-gray-900">
             <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between cursor-pointer hover:text-white" onClick={() => setScriptsOpen(!scriptsOpen)}>
                 <span>NPM Scripts</span> {scriptsOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
@@ -197,8 +262,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 </div>
             )}
         </div>
-
-        {/* Dependencies */}
+        
         <div className="border-t border-gray-800 bg-gray-900">
             <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between cursor-pointer hover:text-white" onClick={() => setDepsOpen(!depsOpen)}>
                 <span>Dependencies</span> {depsOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}

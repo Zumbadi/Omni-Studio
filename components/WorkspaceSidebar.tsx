@@ -3,7 +3,7 @@ import React, { memo } from 'react';
 import { Files, GitBranch, Search, Bug, Bot, Puzzle, LayoutTemplate, Scissors } from 'lucide-react';
 import { FileExplorer } from './FileExplorer';
 import { GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, AgentsPanel, SnippetsPanel } from './SidebarPanels';
-import { FileNode, Project, GitCommit, Extension, AgentTask, Snippet } from '../types';
+import { FileNode, Project, GitCommit, Extension, AgentTask, Snippet, AIAgent } from '../types';
 
 interface WorkspaceSidebarProps {
   layout: { showSidebar: boolean };
@@ -28,6 +28,8 @@ interface WorkspaceSidebarProps {
       onInstallPackage: () => void;
       onRunScript: (script: string, cmd: string) => void;
       onEmptyTrash?: () => void;
+      onMoveNode?: (nodeId: string, targetId: string) => void;
+      onToggleDirectory?: (id: string) => void;
   };
   // Git Props
   commits: GitCommit[];
@@ -39,6 +41,8 @@ interface WorkspaceSidebarProps {
   onSearch: (q: string) => void;
   searchResults: any[];
   onResultClick: (fileId: string, line: number) => void;
+  onReplace: (fileId: string, line: number, text: string, newText: string) => void;
+  onReplaceAll: (searchText: string, newText: string) => void;
   // Debug Props
   debugVariables: any[];
   breakpoints: number[];
@@ -48,10 +52,13 @@ interface WorkspaceSidebarProps {
   onToggleExtension: (id: string) => void;
   // Assets Props
   assets: any[];
+  onInsertAsset: (asset: any) => void;
   // Agents Props
   activeAgentTask: AgentTask | null;
-  onStartAgentTask: (type: any) => void;
+  agentHistory?: AgentTask[];
+  onStartAgentTask: (agent: any, type: any) => void;
   onCancelAgentTask: () => void;
+  activeAgent?: AIAgent | null;
   // Snippets Props
   snippets: Snippet[];
   onAddSnippet: () => void;
@@ -63,11 +70,11 @@ export const WorkspaceSidebar = memo(({
   layout, sidebarWidth, activeActivity, setActiveActivity, onToggleSidebar,
   files, activeFileId, project, remoteDirName, onFileClick, onContextMenu, onFileOps,
   commits, currentBranch, onCommit, onSwitchBranch,
-  searchQuery, onSearch, searchResults, onResultClick,
+  searchQuery, onSearch, searchResults, onResultClick, onReplace, onReplaceAll,
   debugVariables, breakpoints, onRemoveBreakpoint,
   extensions, onToggleExtension,
-  assets,
-  activeAgentTask, onStartAgentTask, onCancelAgentTask,
+  assets, onInsertAsset,
+  activeAgentTask, agentHistory, onStartAgentTask, onCancelAgentTask, activeAgent,
   deletedFiles,
   snippets, onAddSnippet, onDeleteSnippet, onInsertSnippet
 }: WorkspaceSidebarProps) => {
@@ -116,11 +123,11 @@ export const WorkspaceSidebar = memo(({
             />
           )}
           {activeActivity === 'GIT' && <GitPanel files={files} commits={commits} currentBranch={currentBranch} onCommit={onCommit} onSwitchBranch={onSwitchBranch} />}
-          {activeActivity === 'SEARCH' && <SearchPanel query={searchQuery} onSearch={onSearch} results={searchResults} onResultClick={onResultClick} />}
+          {activeActivity === 'SEARCH' && <SearchPanel query={searchQuery} onSearch={onSearch} results={searchResults} onResultClick={onResultClick} onReplace={onReplace} onReplaceAll={onReplaceAll} />}
           {activeActivity === 'DEBUG' && <DebugPanel variables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={onRemoveBreakpoint} />}
           {activeActivity === 'EXTENSIONS' && <ExtensionsPanel extensions={extensions} onToggle={onToggleExtension} />}
-          {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} />}
-          {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} />}
+          {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} onInsertAsset={onInsertAsset} />}
+          {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} history={agentHistory} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} activeAgent={activeAgent} />}
           {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
         </div>
       )}

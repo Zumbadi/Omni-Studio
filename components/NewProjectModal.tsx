@@ -1,11 +1,9 @@
-
 import React, { useState } from 'react';
 import { Rocket, X, Globe, Smartphone, Server, ShoppingBag, Activity, Tablet, Wand2, Code, Loader2 } from 'lucide-react';
 import { Button } from './Button';
-import { PROJECT_TEMPLATES } from '../constants';
+import { PROJECT_TEMPLATES, WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, IOS_FILE_TREE, ANDROID_FILE_TREE } from '../constants';
 import { ProjectType, FileNode } from '../types';
 import { generateProjectScaffold } from '../services/geminiService';
-import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE } from '../constants';
 
 interface NewProjectModalProps {
   onClose: () => void;
@@ -23,7 +21,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ onClose, onCre
     if (description) setIsGenerating(true);
     
     let initialFiles: FileNode[] = [];
-    const isNative = type === ProjectType.REACT_NATIVE || type === ProjectType.IOS_APP || type === ProjectType.ANDROID_APP;
+    
+    // Determine base template based on type
+    let baseTemplate = WEB_FILE_TREE;
+    if (type === ProjectType.REACT_NATIVE) baseTemplate = NATIVE_FILE_TREE;
+    else if (type === ProjectType.NODE_API) baseTemplate = NODE_FILE_TREE;
+    else if (type === ProjectType.IOS_APP) baseTemplate = IOS_FILE_TREE;
+    else if (type === ProjectType.ANDROID_APP) baseTemplate = ANDROID_FILE_TREE;
 
     if (description.trim()) {
       // AI Generation
@@ -34,17 +38,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ onClose, onCre
            return nodes.map(n => ({
               ...n,
               id: Math.random().toString(36).substr(2, 9),
-              gitStatus: 'added',
+              gitStatus: 'added' as const,
               children: n.children ? addIds(n.children) : undefined,
               isOpen: n.type === 'directory'
            }));
         };
         initialFiles = addIds(generatedNodes);
       } else {
-         initialFiles = isNative ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
+         initialFiles = baseTemplate;
       }
     } else {
-      initialFiles = isNative ? NATIVE_FILE_TREE : type === ProjectType.NODE_API ? NODE_FILE_TREE : WEB_FILE_TREE;
+      initialFiles = baseTemplate;
     }
 
     onCreate(name, type, description, initialFiles);

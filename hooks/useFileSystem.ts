@@ -1,26 +1,29 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { FileNode, Project, ProjectType } from '../types';
 import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE } from '../constants';
 import { findFileById, getAllFiles, upsertFileByPath } from '../utils/fileHelpers';
 
 export const useFileSystem = (project: Project | null) => {
   const [files, setFiles] = useState<FileNode[]>([]);
+  const filesRef = useRef<FileNode[]>([]);
+  
   const [deletedFiles, setDeletedFiles] = useState<FileNode[]>([]);
   const [activeFileId, setActiveFileId] = useState<string>('1');
   const [openFiles, setOpenFiles] = useState<string[]>(['1']);
   const [remoteDirName, setRemoteDirName] = useState<string | null>(null);
 
-  // Initialize File System
+  useEffect(() => {
+      filesRef.current = files;
+  }, [files]);
+
+  // Initialize
   useEffect(() => {
     if (!project) return;
-    
     const storageKey = `omni_files_${project.id}`;
     const savedFiles = localStorage.getItem(storageKey);
-    
     const trashKey = `omni_trash_${project.id}`;
     const savedTrash = localStorage.getItem(trashKey);
-
     const tabsKey = `omni_open_tabs_${project.id}`;
     const savedTabs = localStorage.getItem(tabsKey);
     
@@ -29,39 +32,30 @@ export const useFileSystem = (project: Project | null) => {
            const parsed = JSON.parse(savedTabs);
            setOpenFiles(parsed.openFiles || ['1']);
            setActiveFileId(parsed.activeFileId || '1');
-       } catch (e) { console.error("Failed to load tabs", e); }
+       } catch (e) {}
     }
     
     if (savedFiles) {
        try {
            setFiles(JSON.parse(savedFiles));
-       } catch (e) { console.error("Failed to load files", e); }
+       } catch (e) {}
     } else {
        const isNative = project.type === ProjectType.REACT_NATIVE || project.type === ProjectType.IOS_APP || project.type === ProjectType.ANDROID_APP;
        const isBackend = project.type === ProjectType.NODE_API;
-       
-       if (isNative) setFiles(NATIVE_FILE_TREE);
-       else if (isBackend) setFiles(NODE_FILE_TREE);
-       else setFiles(WEB_FILE_TREE);
+       setFiles(isNative ? NATIVE_FILE_TREE : isBackend ? NODE_FILE_TREE : WEB_FILE_TREE);
     }
 
     if (savedTrash) {
-        try {
-            setDeletedFiles(JSON.parse(savedTrash));
-        } catch (e) { console.error("Failed to load trash", e); }
+        try { setDeletedFiles(JSON.parse(savedTrash)); } catch (e) {}
     }
   }, [project?.id, project?.type]);
 
   // Persistence
   useEffect(() => {
     if (!project) return;
-    const storageKey = `omni_files_${project.id}`;
-    const trashKey = `omni_trash_${project.id}`;
-    const tabsKey = `omni_open_tabs_${project.id}`;
-    
-    localStorage.setItem(storageKey, JSON.stringify(files));
-    localStorage.setItem(trashKey, JSON.stringify(deletedFiles));
-    localStorage.setItem(tabsKey, JSON.stringify({ openFiles, activeFileId }));
+    localStorage.setItem(`omni_files_${project.id}`, JSON.stringify(files));
+    localStorage.setItem(`omni_trash_${project.id}`, JSON.stringify(deletedFiles));
+    localStorage.setItem(`omni_open_tabs_${project.id}`, JSON.stringify({ openFiles, activeFileId }));
   }, [files, deletedFiles, openFiles, activeFileId, project?.id]);
 
   const updateFileContent = useCallback((id: string, content: string) => {
@@ -75,8 +69,28 @@ export const useFileSystem = (project: Project | null) => {
       });
   }, []);
 
+  const replaceTextInProject = useCallback((search: string, replace: string) => {
+      if (!search) return 0;
+      let count = 0;
+      setFiles(prev => {
+          const update = (nodes: FileNode[]): FileNode[] => nodes.map(node => {
+              if (node.type === 'file' && node.content && node.content.includes(search)) {
+                  const newContent = node.content.split(search).join(replace);
+                  if (newContent !== node.content) {
+                      count++;
+                      return { ...node, content: newContent, gitStatus: 'modified' };
+                  }
+              }
+              if (node.children) return { ...node, children: update(node.children) };
+              return node;
+          });
+          return update(prev);
+      });
+      return count;
+  }, []);
+
   const addFile = useCallback((path: string, content: string) => {
-      const normalizedPath = path.replace(/^\//, ''); // Remove leading slash
+      const normalizedPath = path.replace(/^\//, '');
       const pathParts = normalizedPath.split('/');
       setFiles(prev => upsertFileByPath(prev, pathParts, content, false));
   }, []);
@@ -88,46 +102,27 @@ export const useFileSystem = (project: Project | null) => {
   }, []);
 
   const deleteFile = useCallback((id: string) => {
-      // Find node synchronously first
-      const nodeToDelete = findFileById(files, id);
-      
+      const nodeToDelete = findFileById(filesRef.current, id);
       if (nodeToDelete) {
-          // Move to trash
           setDeletedFiles(prev => [nodeToDelete, ...prev]);
-          
-          // Remove from tree
           setFiles(prev => {
               const removeClean = (nodes: FileNode[]): FileNode[] => {
-                  return nodes
-                    .filter(n => n.id !== id)
-                    .map(n => {
-                        if (n.children) {
-                            return { ...n, children: removeClean(n.children) };
-                        }
-                        return n;
-                    });
+                  return nodes.filter(n => n.id !== id).map(n => n.children ? { ...n, children: removeClean(n.children) } : n);
               };
               return removeClean(prev);
           });
-
-          // Close tab logic
           setOpenFiles(prev => {
               const newOpen = prev.filter(fid => fid !== id);
-              // If active file was deleted, switch to another
-              if (activeFileId === id && newOpen.length > 0) {
-                  setActiveFileId(newOpen[newOpen.length - 1]);
-              } else if (activeFileId === id) {
-                  setActiveFileId('');
-              }
+              if (activeFileId === id) setActiveFileId(newOpen[newOpen.length - 1] || '');
               return newOpen;
           });
       }
-  }, [files, activeFileId]);
+  }, [activeFileId]);
 
   const restoreFile = useCallback((id: string) => {
       const fileToRestore = deletedFiles.find(f => f.id === id);
       if (fileToRestore) {
-          setFiles(prev => [...prev, { ...fileToRestore, gitStatus: 'unmodified' }]); // Restore to root for simplicity
+          setFiles(prev => [...prev, { ...fileToRestore, gitStatus: 'unmodified' }]); 
           setDeletedFiles(prev => prev.filter(f => f.id !== id));
       }
   }, [deletedFiles]);
@@ -157,12 +152,7 @@ export const useFileSystem = (project: Project | null) => {
               let newNodes = [...nodes];
               for (const node of nodes) {
                   if (node.id === id) {
-                      const copy: FileNode = {
-                          ...node,
-                          id: Date.now().toString() + Math.random(),
-                          name: `${node.name}_copy`,
-                          gitStatus: 'added'
-                      };
+                      const copy: FileNode = { ...node, id: Date.now() + Math.random().toString(), name: `${node.name}_copy`, gitStatus: 'added' };
                       newNodes.push(copy);
                   }
                   if (node.children) {
@@ -179,36 +169,121 @@ export const useFileSystem = (project: Project | null) => {
       });
   }, []);
 
-  const addPackage = useCallback((name: string, isDev: boolean) => {
+  const moveNode = useCallback((nodeId: string, targetDirId: string) => {
+      if (nodeId === targetDirId) return;
+
       setFiles(prev => {
-          const updatePkg = (nodes: FileNode[]): FileNode[] => {
-              return nodes.map(node => {
-                  if (node.name === 'package.json' && node.type === 'file') {
-                      try {
-                          const json = JSON.parse(node.content || '{}');
-                          const key = isDev ? 'devDependencies' : 'dependencies';
-                          json[key] = { ...json[key], [name]: 'latest' };
-                          return { ...node, content: JSON.stringify(json, null, 2), gitStatus: 'modified' };
-                      } catch (e) { return node; }
+          let nodeToMove: FileNode | null = null;
+
+          // Check if moving into self or children (Circular check)
+          const isCircular = (parentId: string, nodes: FileNode[]): boolean => {
+             for(const node of nodes) {
+                 if(node.id === targetDirId) return true;
+                 if(node.children) {
+                     if(isCircular(parentId, node.children)) return true;
+                 }
+             }
+             return false;
+          };
+
+          // 1. Find the node and remove it from tree
+          const removeFromTree = (nodes: FileNode[]): FileNode[] => {
+              const filtered: FileNode[] = [];
+              for (const node of nodes) {
+                  if (node.id === nodeId) {
+                      nodeToMove = node;
+                      // Check circular before confirming move
+                      if(node.children && isCircular(node.id, node.children)) {
+                          console.warn("Cannot move folder into its own child");
+                          return nodes;
+                      }
+                      continue;
                   }
-                  if (node.children) return { ...node, children: updatePkg(node.children) };
+                  if (node.children) {
+                      const newChildren = removeFromTree(node.children);
+                      filtered.push({ ...node, children: newChildren });
+                  } else {
+                      filtered.push(node);
+                  }
+              }
+              return filtered;
+          };
+          
+          const treeWithoutNode = removeFromTree(prev);
+          
+          // If node wasn't found or move was aborted
+          if (!nodeToMove || treeWithoutNode === prev) return prev; 
+
+          // 2. Add to new location
+          const addToTree = (nodes: FileNode[]): FileNode[] => {
+              // If target is root (using 'root' string or empty)
+              if (targetDirId === 'root') {
+                 return [...nodes, nodeToMove!];
+              }
+              
+              return nodes.map(node => {
+                  if (node.id === targetDirId && node.type === 'directory') {
+                      return { ...node, children: [...(node.children || []), nodeToMove!], isOpen: true, gitStatus: 'modified' };
+                  }
+                  if (node.children) {
+                      return { ...node, children: addToTree(node.children) };
+                  }
                   return node;
               });
           };
+
+          return addToTree(treeWithoutNode);
+      });
+  }, []);
+
+  const toggleFilePin = useCallback((id: string) => {
+      setFiles(prev => {
+          const toggle = (nodes: FileNode[]): FileNode[] => nodes.map(node => {
+              if (node.id === id) return { ...node, isPinned: !node.isPinned };
+              if (node.children) return { ...node, children: toggle(node.children) };
+              return node;
+          });
+          return toggle(prev);
+      });
+  }, []);
+  
+  const toggleDirectory = useCallback((id: string) => {
+      setFiles(prev => {
+          const toggle = (nodes: FileNode[]): FileNode[] => nodes.map(node => {
+              if (node.id === id && node.type === 'directory') {
+                  return { ...node, isOpen: !node.isOpen };
+              }
+              if (node.children) return { ...node, children: toggle(node.children) };
+              return node;
+          });
+          return toggle(prev);
+      });
+  }, []);
+
+  const addPackage = useCallback((name: string, isDev: boolean) => {
+      setFiles(prev => {
+          const updatePkg = (nodes: FileNode[]): FileNode[] => nodes.map(node => {
+              if (node.name === 'package.json' && node.type === 'file') {
+                  try {
+                      const json = JSON.parse(node.content || '{}');
+                      const key = isDev ? 'devDependencies' : 'dependencies';
+                      json[key] = { ...json[key], [name]: 'latest' };
+                      return { ...node, content: JSON.stringify(json, null, 2), gitStatus: 'modified' };
+                  } catch (e) { return node; }
+              }
+              if (node.children) return { ...node, children: updatePkg(node.children) };
+              return node;
+          });
           return updatePkg(prev);
       });
   }, []);
 
   const findFileByIdWrapper = useCallback((nodes: FileNode[], id: string) => findFileById(nodes, id), []);
-  
   const getAllFilesWrapper = useCallback((nodes: FileNode[]) => getAllFiles(nodes), []);
 
   const handleFileClick = useCallback((id: string, isSplit: boolean, secondaryId: string | null, setSecondary: (id: string | null) => void) => {
-      if (isSplit && secondaryId === null) {
-          setSecondary(id);
-      } else {
-          setActiveFileId(id);
-      }
+      if (isSplit && secondaryId === null) setSecondary(id);
+      else setActiveFileId(id);
       if (!openFiles.includes(id)) setOpenFiles(prev => [...prev, id]);
   }, [openFiles]);
 
@@ -223,6 +298,7 @@ export const useFileSystem = (project: Project | null) => {
 
   return {
       files,
+      filesRef,
       setFiles,
       deletedFiles,
       activeFileId,
@@ -232,6 +308,7 @@ export const useFileSystem = (project: Project | null) => {
       remoteDirName,
       setRemoteDirName,
       updateFileContent,
+      replaceTextInProject,
       addFile,
       addDirectory,
       addPackage,
@@ -241,6 +318,9 @@ export const useFileSystem = (project: Project | null) => {
       emptyTrash,
       renameFile,
       duplicateFile,
+      moveNode,
+      toggleFilePin,
+      toggleDirectory,
       findFileById: findFileByIdWrapper,
       getAllFiles: getAllFilesWrapper,
       handleFileClick,

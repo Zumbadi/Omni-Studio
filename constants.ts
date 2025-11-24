@@ -348,6 +348,44 @@ const styles = StyleSheet.create({
   { id: 'pkgn', name: 'package.json', type: 'file', content: `{\n  "name": "omni-mobile",\n  "main": "expo-router/entry",\n  "dependencies": {\n    "expo": "~50.0.14",\n    "expo-router": "~3.4.8",\n    "react": "18.2.0",\n    "react-native": "0.73.6"\n  }\n}` }
 ];
 
+export const IOS_FILE_TREE: FileNode[] = [
+  {
+    id: 'root',
+    name: 'OmniApp',
+    type: 'directory',
+    isOpen: true,
+    children: [
+        { id: 'app', name: 'OmniApp.swift', type: 'file', content: `import SwiftUI\n\n@main\nstruct OmniApp: App {\n    var body: some Scene {\n        WindowGroup {\n            ContentView()\n        }\n    }\n}` },
+        { id: 'content', name: 'ContentView.swift', type: 'file', content: `import SwiftUI\n\nstruct ContentView: View {\n    var body: some View {\n        VStack {\n            Image(systemName: "globe")\n                .imageScale(.large)\n                .foregroundStyle(.tint)\n            Text("Hello, iOS World!")\n        }\n        .padding()\n    }\n}\n\n#Preview {\n    ContentView()\n}` },
+        { id: 'assets', name: 'Assets.xcassets', type: 'directory', children: [] }
+    ]
+  },
+  { id: 'proj', name: 'project.pbxproj', type: 'file', content: `// Simulated Xcode Project File` }
+];
+
+export const ANDROID_FILE_TREE: FileNode[] = [
+  {
+    id: 'root',
+    name: 'app',
+    type: 'directory',
+    isOpen: true,
+    children: [
+        { id: 'src', name: 'src', type: 'directory', isOpen: true, children: [
+            { id: 'main', name: 'main', type: 'directory', isOpen: true, children: [
+                { id: 'java', name: 'java', type: 'directory', children: [
+                    { id: 'pkg', name: 'com.omni.app', type: 'directory', isOpen: true, children: [
+                        { id: 'act', name: 'MainActivity.kt', type: 'file', content: `package com.omni.app\n\nimport android.os.Bundle\nimport androidx.activity.ComponentActivity\nimport androidx.activity.compose.setContent\nimport androidx.compose.material3.Text\nimport androidx.compose.runtime.Composable\n\nclass MainActivity : ComponentActivity() {\n    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n        setContent {\n            Greeting("Android")\n        }\n    }\n}\n\n@Composable\nfun Greeting(name: String) {\n    Text(text = "Hello $name!")\n}` }
+                    ]}
+                ]},
+                { id: 'res', name: 'res', type: 'directory', children: [] },
+                { id: 'man', name: 'AndroidManifest.xml', type: 'file', content: `<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <application>\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>` }
+            ]}
+        ]},
+        { id: 'build', name: 'build.gradle.kts', type: 'file', content: `plugins {\n    alias(libs.plugins.androidApplication)\n    alias(libs.plugins.kotlinAndroid)\n}` }
+    ]
+  }
+];
+
 export const NODE_FILE_TREE: FileNode[] = [
   {
     id: 'root',

@@ -32,6 +32,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
   onTranscribe, isTranscribing, onDeleteTrack, toggleMute, toggleSolo, handleVolumeChange, setTracks, audioRefs
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dragState, setDragState] = useState<{
     isDragging: boolean;
     trackId: string | null;
@@ -39,7 +40,6 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
     originalOffset: number;
   }>({ isDragging: false, trackId: null, startX: 0, originalOffset: 0 });
 
-  const [visualizerBars, setVisualizerBars] = useState<number[]>(new Array(50).fill(5));
   const rafRef = useRef<number>();
 
   const formatTime = (seconds: number) => {
@@ -49,27 +49,65 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
       return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Animation Loop
+  // Optimized Canvas Visualizer Loop
   useEffect(() => {
-      if (isPlaying) {
-          const animate = () => {
-              const time = Date.now() / 150;
-              setVisualizerBars(prev => prev.map((_, i) => {
-                  // Create organic wave movement using combined sine waves
-                  const wave1 = Math.sin(time + i * 0.2);
-                  const wave2 = Math.sin(time * 0.5 + i * 0.1);
-                  const noise = Math.random() * 20;
-                  
-                  const value = ((wave1 + wave2 + 2) / 4) * 60 + noise + 10;
-                  return Math.min(100, Math.max(5, value));
-              }));
-              rafRef.current = requestAnimationFrame(animate);
-          };
-          animate();
-      } else {
-          if (rafRef.current) cancelAnimationFrame(rafRef.current);
-          setVisualizerBars(new Array(50).fill(5));
-      }
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const renderFrame = () => {
+          if (!canvas) return;
+          // Resize if needed
+          if (canvas.width !== canvas.clientWidth) {
+             canvas.width = canvas.clientWidth;
+             canvas.height = canvas.clientHeight;
+          }
+
+          const width = canvas.width;
+          const height = canvas.height;
+          
+          ctx.clearRect(0, 0, width, height);
+          
+          const barWidth = 6;
+          const gap = 2;
+          const bars = Math.floor(width / (barWidth + gap));
+          
+          // Create gradient
+          const gradient = ctx.createLinearGradient(0, height, 0, 0);
+          gradient.addColorStop(0, '#4f46e5');
+          gradient.addColorStop(1, '#a855f7');
+          ctx.fillStyle = gradient;
+
+          const time = Date.now() / 150;
+
+          for (let i = 0; i < bars; i++) {
+              let barHeight = 5;
+              
+              if (isPlaying) {
+                  const wave1 = Math.sin(time + i * 0.1);
+                  const wave2 = Math.sin(time * 0.5 + i * 0.05);
+                  const noise = Math.random() * 0.2;
+                  const value = ((wave1 + wave2 + 2) / 4); // 0 to 1
+                  barHeight = value * (height * 0.8) + (noise * height * 0.1);
+              } else {
+                  barHeight = height * 0.1;
+              }
+
+              const x = i * (barWidth + gap);
+              const y = height - barHeight;
+              
+              // Rounded top bar
+              ctx.beginPath();
+              ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
+              ctx.fill();
+          }
+
+          rafRef.current = requestAnimationFrame(renderFrame);
+      };
+
+      renderFrame();
       return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [isPlaying]);
 
@@ -144,18 +182,10 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
             </div>
          </div>
 
-         {/* Visualizer */}
-         <div className="h-32 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-center relative overflow-hidden">
-            <div className="flex gap-1 h-16 items-end">
-               {visualizerBars.map((height, i) => (
-                  <div 
-                    key={i} 
-                    className={`w-1.5 bg-gradient-to-t from-primary-600 to-purple-500 rounded-t-sm transition-all duration-75 ease-out`}
-                    style={{ height: `${height}%` }}
-                  ></div>
-               ))}
-            </div>
-            <div className="absolute bottom-2 right-4 text-[10px] text-gray-500 font-mono">MASTER OUT L/R</div>
+         {/* Visualizer (Canvas) */}
+         <div className="h-32 bg-gray-900 border-b border-gray-800 relative overflow-hidden">
+            <canvas ref={canvasRef} className="w-full h-full absolute inset-0" />
+            <div className="absolute bottom-2 right-4 text-[10px] text-gray-500 font-mono bg-black/50 px-1 rounded z-10">MASTER OUT L/R</div>
          </div>
 
          {/* Track List */}

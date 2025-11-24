@@ -8,6 +8,7 @@ import { generateSpeech, transcribeAudio, analyzeMediaStyle } from '../services/
 import { AudioTimeline } from './AudioTimeline';
 import { AudioSidebar } from './AudioSidebar';
 import { AudioBeatMaker } from './AudioBeatMaker';
+import { bufferToWav } from '../utils/audioHelpers';
 
 export const AudioStudio: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'cloning' | 'mixer' | 'pro' | 'sequencer'>('mixer');
@@ -194,7 +195,10 @@ export const AudioStudio: React.FC = () => {
           const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
           const totalDuration = Math.max(...tracks.map(t => t.startOffset + t.duration)) || 10;
           const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 44100), 44100);
+          
           let outputNode: AudioNode = offlineCtx.destination;
+          
+          // Mastering Chain
           if (mastering.enabled) {
              const compressor = offlineCtx.createDynamicsCompressor();
              compressor.threshold.value = -20 - (mastering.punch / 10);
@@ -202,30 +206,45 @@ export const AudioStudio: React.FC = () => {
              compressor.connect(offlineCtx.destination);
              outputNode = compressor;
           }
+
           for (const track of tracks) {
               if (track.audioUrl && !track.muted) { 
                   try {
                       const response = await fetch(track.audioUrl);
                       const arrayBuffer = await response.arrayBuffer();
                       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                      
                       const source = offlineCtx.createBufferSource();
                       source.buffer = audioBuffer;
+                      
                       const gain = offlineCtx.createGain();
                       gain.gain.value = track.volume ?? 1.0;
+                      
                       source.connect(gain);
                       gain.connect(outputNode);
+                      
                       source.start(track.startOffset);
-                  } catch (e) {}
+                  } catch (e) {
+                      console.error("Failed to process track", track.id, e);
+                  }
               }
           }
+          
           const renderedBuffer = await offlineCtx.startRendering();
-          // Mock WAV conversion for brevity (reuse previous helper)
-          // const wavBlob = bufferToWav(renderedBuffer); 
-          setTimeout(() => {
-             alert("Mix exported successfully! (Simulated WAV download)");
-             setIsExporting(false);
-          }, 1500);
-      } catch (error) { console.error(error); setIsExporting(false); }
+          const wavBlob = bufferToWav(renderedBuffer);
+          
+          const url = URL.createObjectURL(wavBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'omni-mix.wav';
+          a.click();
+          
+          setIsExporting(false);
+      } catch (error) { 
+          console.error(error); 
+          alert("Export failed. Check console for details.");
+          setIsExporting(false); 
+      }
   };
 
   const formatTime = (seconds: number) => {

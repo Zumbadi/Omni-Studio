@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle, RotateCcw } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack, ActivityItem } from '../types';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
@@ -72,6 +72,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
     const formatTimeAgo = (dateString: any) => {
         return dateString || 'Recently';
     };
+
+    const handleResetDemo = () => {
+        if(confirm("Reset all demo projects and data?")) {
+            localStorage.clear();
+            window.location.reload();
+        }
+    }
 
     return (
       <div className="flex-1 bg-gray-950 overflow-y-auto p-4 md:p-8 w-full relative">
@@ -268,9 +275,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
           {/* Activity Feed Column */}
           <div className="w-full lg:w-80 shrink-0">
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 sticky top-6">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2">
-                      <Clock size={16}/> Activity Feed
-                  </h3>
+                  <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                          <Clock size={16}/> Activity Feed
+                      </h3>
+                      <button onClick={handleResetDemo} className="text-gray-500 hover:text-red-400" title="Reset Demo">
+                          <RotateCcw size={14}/>
+                      </button>
+                  </div>
                   
                   <div className="space-y-6 relative">
                       <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-gray-800"></div>

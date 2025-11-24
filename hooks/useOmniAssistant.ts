@@ -1,36 +1,48 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage, ProjectType, FileNode } from '../types';
-import { generateCodeResponse, critiqueCode } from '../services/geminiService';
+import { generateCodeResponse, critiqueCode, generateImage, generateSpeech, detectIntent, editImage } from '../services/geminiService';
 import { findRelevantContext } from '../utils/projectAnalysis';
 import { getAllFiles } from '../utils/fileHelpers';
 
 interface UseOmniAssistantProps {
+  projectId: string;
   projectType: ProjectType;
   files: FileNode[];
   activeFile: FileNode | undefined;
   activeModel: string;
   editorSelection: string;
   setEditorSelection: (sel: string) => void;
+  onStartAgentTask?: (taskDescription: string) => void;
 }
 
 export const useOmniAssistant = ({ 
-  projectType, files, activeFile, activeModel, editorSelection, setEditorSelection 
+  projectId, projectType, files, activeFile, activeModel, editorSelection, setEditorSelection, onStartAgentTask
 }: UseOmniAssistantProps) => {
   const [chatInput, setChatInput] = useState('');
   
-  // Initialize with greeting
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => [
-      {
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(() => {
+      const saved = localStorage.getItem(`omni_chat_${projectId}`);
+      if (saved) {
+          try {
+              return JSON.parse(saved);
+          } catch (e) { console.error("Failed to parse chat history"); }
+      }
+      return [{
           id: 'init-welcome',
           role: 'model',
-          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.`,
+          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/tts [text]\` for speech synthesis\n- \`/agent [task]\` to auto-assign task`,
           timestamp: Date.now()
+      }];
+  });
+
+  useEffect(() => {
+      if (projectId) {
+          localStorage.setItem(`omni_chat_${projectId}`, JSON.stringify(chatHistory));
       }
-  ]);
+  }, [chatHistory, projectId]);
 
   const [isGenerating, setIsGenerating] = useState(false);
-  // Default closed on mobile, open on desktop
   const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 1024);
   const [enableCritic, setEnableCritic] = useState(true);
   const [attachedImage, setAttachedImage] = useState<string | undefined>(undefined);
@@ -41,9 +53,14 @@ export const useOmniAssistant = ({
           setChatHistory(prev => [...prev, {
               id: `critic-${Date.now()}`,
               role: 'critic',
-              text: '', // Text is optional for critic role if critique object is present
+              text: '', 
               timestamp: Date.now(),
-              critique: criticRes
+              critique: {
+                  score: criticRes.score || 75,
+                  issues: criticRes.issues || [],
+                  suggestions: criticRes.suggestions || [],
+                  fixCode: criticRes.fixCode
+              }
           }]);
       }
   };
@@ -74,13 +91,114 @@ export const useOmniAssistant = ({
     setIsGenerating(false);
   };
 
-  const handleChatSubmit = async (e: React.FormEvent) => {
+  const submitQuery = async (text: string) => {
+    if (!text.trim()) return;
+    
+    setChatHistory(prev => [...prev, { id: Date.now().toString(), role: 'user' as const, text, timestamp: Date.now() }]);
+
+    // Slash Commands
+    if (text.startsWith('/')) {
+        const [command, ...args] = text.split(' ');
+        const argText = args.join(' ');
+
+        if (command === '/image') {
+            setIsGenerating(true);
+            addSystemMessage(`Generating image for: "${argText}"...`);
+            const imgUrl = await generateImage(argText);
+            if (imgUrl) {
+                setChatHistory(prev => [...prev, {
+                    id: `img-${Date.now()}`,
+                    role: 'model',
+                    text: `Generated Image: ${argText}\n\n[Attached: image.png]`,
+                    timestamp: Date.now(),
+                    attachments: [{ type: 'image', url: imgUrl, name: argText }]
+                }]);
+            } else {
+                addSystemMessage("Failed to generate image.");
+            }
+            setIsGenerating(false);
+            return;
+        }
+        
+        if (command === '/edit') {
+            if (!attachedImage) {
+                addSystemMessage("Please attach an image first to edit it.");
+                return;
+            }
+            setIsGenerating(true);
+            addSystemMessage(`Editing image with: "${argText}"...`);
+            const imgUrl = await editImage(attachedImage, argText);
+            if (imgUrl) {
+                setChatHistory(prev => [...prev, {
+                    id: `img-${Date.now()}`,
+                    role: 'model',
+                    text: `Edited Image: ${argText}\n\n[Attached: edited.png]`,
+                    timestamp: Date.now(),
+                    attachments: [{ type: 'image', url: imgUrl, name: 'edited.png' }]
+                }]);
+            } else {
+                addSystemMessage("Failed to edit image.");
+            }
+            setAttachedImage(undefined);
+            setIsGenerating(false);
+            return;
+        }
+
+        if (command === '/tts') {
+            setIsGenerating(true);
+            addSystemMessage(`Synthesizing speech...`);
+            const audioUrl = await generateSpeech(argText, { id: 'def', name: 'Default', gender: 'female', style: 'narrative', isCloned: false });
+            if (audioUrl) {
+                setChatHistory(prev => [...prev, {
+                    id: `tts-${Date.now()}`,
+                    role: 'model',
+                    text: `Speech Output: "${argText}"`,
+                    timestamp: Date.now(),
+                    attachments: [{ type: 'audio', url: audioUrl, name: 'speech.wav' }]
+                }]);
+            } else {
+                addSystemMessage("Failed to generate speech.");
+            }
+            setIsGenerating(false);
+            return;
+        }
+        
+        if (command === '/agent' || command === '/build') {
+             if (onStartAgentTask) onStartAgentTask(argText);
+             return;
+        }
+
+        if (command === '/clear') {
+            setChatHistory([]);
+            localStorage.removeItem(`omni_chat_${projectId}`);
+            return;
+        }
+        
+        if (command === '/help') {
+            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/edit [prompt]\` (requires attached image)\n- \`/tts [text]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
+            return;
+        }
+    }
+
+    // Smart Intent Detection
+    if (onStartAgentTask) {
+        setIsGenerating(true); // Temporary spinner while thinking
+        const intent = await detectIntent(text);
+        setIsGenerating(false);
+        
+        if (intent === 'task') {
+            onStartAgentTask(text);
+            return;
+        }
+    }
+
+    triggerGeneration(text);
+  };
+
+  const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
-    const newUserMsg = { id: Date.now().toString(), role: 'user' as const, text: chatInput, timestamp: Date.now() };
-    setChatHistory(prev => [...prev, newUserMsg]);
+    submitQuery(chatInput);
     setChatInput('');
-    triggerGeneration(newUserMsg.text);
   };
 
   const handleCodeAction = (action: string, selectedCode: string) => {
@@ -99,6 +217,15 @@ export const useOmniAssistant = ({
       triggerGeneration(prompt);
   };
 
+  const addSystemMessage = (text: string) => {
+      setChatHistory(prev => [...prev, {
+          id: `sys-${Date.now()}`,
+          role: 'model',
+          text: `**Update:** ${text}`,
+          timestamp: Date.now()
+      }]);
+  };
+
   return {
       chatInput, setChatInput,
       chatHistory, setChatHistory,
@@ -108,7 +235,9 @@ export const useOmniAssistant = ({
       attachedImage, setAttachedImage,
       triggerGeneration,
       handleChatSubmit,
+      submitQuery, // Exposed for Voice
       handleCodeAction,
-      handleAutoFix
+      handleAutoFix,
+      addSystemMessage
   };
 };

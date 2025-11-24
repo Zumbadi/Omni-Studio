@@ -1,15 +1,38 @@
 
 import React, { useState, useEffect } from 'react';
-import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle, Scissors, Copy, Code, Atom, Palette, Database, Braces } from 'lucide-react';
+import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle, Scissors, Copy, Code, Atom, Palette, Database, Braces, ImageIcon, Video, Volume2, Wand2, Clock, Workflow } from 'lucide-react';
 import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent, Snippet } from '../types';
 import { Button } from './Button';
 import { DEFAULT_AGENTS } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { generateCommitMessage } from '../services/geminiService';
+import { getAllFiles } from '../utils/fileHelpers';
 
+// ... (Keep GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, SnippetsPanel unchanged) ...
 // --- GIT PANEL ---
 interface GitPanelProps { files: FileNode[]; commits: GitCommitType[]; currentBranch: string; onCommit: (msg: string) => void; onSwitchBranch: () => void; }
 export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranch, onCommit, onSwitchBranch }) => {
   const [message, setMessage] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGenerateMessage = async () => {
+      setIsGenerating(true);
+      // Get modified files
+      const modified = getAllFiles(files)
+        .filter(f => f.node.gitStatus === 'modified' || f.node.gitStatus === 'added')
+        .map(f => f.node.name);
+      
+      if (modified.length === 0) {
+          alert("No changes to commit.");
+          setIsGenerating(false);
+          return;
+      }
+
+      const msg = await generateCommitMessage(modified);
+      setMessage(msg);
+      setIsGenerating(false);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-gray-800 bg-gray-900 sticky top-0 z-10">
@@ -35,7 +58,22 @@ export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranc
              </div>
          </div>
 
-         <textarea className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-gray-300 mb-2 h-16 focus:border-primary-500 outline-none transition-colors" placeholder="Commit message..." value={message} onChange={e => setMessage(e.target.value)} />
+         <div className="relative">
+             <textarea 
+                className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-gray-300 mb-2 h-16 focus:border-primary-500 outline-none transition-colors pr-8" 
+                placeholder="Commit message..." 
+                value={message} 
+                onChange={e => setMessage(e.target.value)} 
+             />
+             <button 
+                onClick={handleGenerateMessage} 
+                disabled={isGenerating}
+                className="absolute right-2 top-2 text-gray-500 hover:text-purple-400 transition-colors"
+                title="Generate Commit Message"
+             >
+                 {isGenerating ? <Loader2 size={14} className="animate-spin"/> : <Wand2 size={14}/>}
+             </button>
+         </div>
          <Button size="sm" className="w-full" onClick={() => { onCommit(message); setMessage(''); }} disabled={!message.trim()}>Commit Changes</Button>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -167,9 +205,56 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ extensions, on
 );
 
 // --- ASSETS PANEL ---
-interface AssetsPanelProps { assets: any[]; }
-export const AssetsPanel: React.FC<AssetsPanelProps> = ({ assets }) => (
-    <div className="flex flex-col h-full"><div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Assets</h2></div><div className="p-2 grid grid-cols-2 gap-2">{assets.map((a, i) => <div key={i} className="bg-gray-800 h-24 rounded border border-gray-700 flex flex-col items-center justify-center text-xs text-gray-500 p-2 text-center hover:border-primary-500 transition-colors cursor-pointer group relative overflow-hidden">{a.type === 'image' ? <div className="w-full h-full absolute inset-0"><img src={a.url} className="w-full h-full object-cover opacity-50 group-hover:opacity-80 transition-opacity"/></div> : <div className="bg-gray-700 w-10 h-10 rounded-full flex items-center justify-center mb-2"><Cloud size={16}/></div>}<span className="relative z-10 truncate w-full bg-black/50 px-1 rounded">{a.name}</span></div>)}</div></div>
+interface AssetsPanelProps { 
+    assets: {id: string, type: 'image' | 'video' | 'audio', url: string, name: string}[]; 
+    onInsertAsset?: (asset: {id: string, type: 'image' | 'video' | 'audio', url: string, name: string}) => void;
+}
+export const AssetsPanel: React.FC<AssetsPanelProps> = ({ assets, onInsertAsset }) => (
+    <div className="flex flex-col h-full bg-gray-900">
+        <div className="p-4 border-b border-gray-800"><h2 className="text-xs font-bold text-gray-500 uppercase">Generated Assets</h2></div>
+        <div className="flex-1 overflow-y-auto p-3">
+            {assets.length === 0 && <div className="text-xs text-gray-600 text-center py-10">No assets generated yet.</div>}
+            <div className="grid grid-cols-2 gap-3">
+                {assets.map((a, i) => (
+                    <div 
+                        key={i} 
+                        className="bg-gray-800 rounded-lg border border-gray-700 flex flex-col overflow-hidden group hover:border-primary-500 transition-all relative cursor-grab active:cursor-grabbing"
+                        draggable
+                        onDragStart={(e) => {
+                            e.dataTransfer.setData('application/omni-asset', JSON.stringify(a));
+                            e.dataTransfer.effectAllowed = 'copy';
+                        }}
+                    >
+                        <div className="aspect-square bg-black relative flex items-center justify-center">
+                            {a.type === 'image' ? (
+                                <img src={a.url} className="w-full h-full object-cover" alt={a.name} />
+                            ) : a.type === 'video' ? (
+                                <video src={a.url} className="w-full h-full object-cover" />
+                            ) : (
+                                <Volume2 size={24} className="text-gray-500" />
+                            )}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                {onInsertAsset && (
+                                    <button 
+                                        onClick={() => onInsertAsset(a)}
+                                        className="bg-primary-600 text-white text-[10px] px-2 py-1 rounded hover:bg-primary-500"
+                                    >
+                                        Insert Code
+                                    </button>
+                                )}
+                            </div>
+                            <div className="absolute top-1 right-1 bg-black/50 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-bold backdrop-blur-sm">
+                                {a.type === 'image' ? <ImageIcon size={10}/> : a.type === 'video' ? <Video size={10}/> : <Volume2 size={10}/>}
+                            </div>
+                        </div>
+                        <div className="p-2">
+                            <div className="text-[10px] font-medium text-gray-300 truncate" title={a.name}>{a.name}</div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    </div>
 );
 
 // --- SNIPPETS PANEL ---
@@ -266,24 +351,26 @@ export const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ snippets, onAddSni
 // --- AGENTS PANEL ---
 interface AgentsPanelProps {
   activeTask: AgentTask | null;
+  history?: AgentTask[];
   onStartTask: (agent: AIAgent, type: AgentTask['type']) => void;
   onCancelTask?: () => void;
+  activeAgent?: AIAgent | null;
 }
 
-export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTask, onCancelTask }) => {
+export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, history = [], onStartTask, onCancelTask, activeAgent }) => {
   const [team, setTeam] = useState<AIAgent[]>([]);
   const [stats, setStats] = useState<{time: string, velocity: number}[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(true);
 
   const loadAgentsAndStats = () => {
       const savedAgents = localStorage.getItem('omni_agents');
       setTeam(savedAgents ? JSON.parse(savedAgents) : DEFAULT_AGENTS);
       
       const savedStats = localStorage.getItem('omni_team_stats');
-      const history = savedStats ? JSON.parse(savedStats) : [];
+      const historyStats = savedStats ? JSON.parse(savedStats) : [];
       
-      // Format history for chart or use placeholder if empty
-      if (history.length > 0) {
-          setStats(history);
+      if (historyStats.length > 0) {
+          setStats(historyStats);
       } else {
           setStats([
               { time: '10:00', velocity: 10 },
@@ -304,8 +391,34 @@ export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTas
       }
   }, []);
 
+  const renderAgentNode = (role: string, label: string, icon: any) => {
+      const isActive = activeAgent?.role.includes(role) || (role === 'Manager' && activeAgent?.isManager);
+      return (
+          <div className={`flex flex-col items-center transition-all duration-300 ${isActive ? 'scale-110 opacity-100' : 'opacity-50 scale-95'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 shadow-lg transition-colors ${isActive ? 'bg-primary-500 text-white ring-2 ring-primary-300' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
+                  {icon}
+              </div>
+              <span className={`text-[9px] font-bold uppercase ${isActive ? 'text-white' : 'text-gray-600'}`}>{label}</span>
+          </div>
+      );
+  };
+
   return (
     <div className="flex flex-col h-full">
+        {/* Active Workflow Graph */}
+        {activeTask && activeTask.status === 'running' && (
+            <div className="p-4 bg-gray-900 border-b border-gray-800 flex items-center justify-between relative overflow-hidden">
+                {/* Connecting Lines */}
+                <div className="absolute top-8 left-10 right-10 h-0.5 bg-gray-800 -z-0"></div>
+                
+                {renderAgentNode('Manager', 'Plan', <Shield size={14}/>)}
+                {renderAgentNode('Frontend', 'Build', <Bot size={14}/>)}
+                {renderAgentNode('QA', 'Critique', <AlertCircle size={14}/>)}
+                
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-900/10 pointer-events-none"></div>
+            </div>
+        )}
+
         <div className="p-4 border-b border-gray-800">
             <div className="flex justify-between items-center mb-3">
                 <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Team Velocity</h2>
@@ -328,22 +441,11 @@ export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTas
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
-
-            <div className="grid grid-cols-2 gap-2 mb-2">
-                <div className="bg-gray-800 rounded p-2 border border-gray-700">
-                    <div className="text-[10px] text-gray-500">Active Agents</div>
-                    <div className="text-lg font-bold text-white">{team.length}</div>
-                </div>
-                <div className="bg-gray-800 rounded p-2 border border-gray-700">
-                    <div className="text-[10px] text-gray-500">Recent Velocity</div>
-                    <div className="text-lg font-bold text-white">{stats.length > 0 ? stats[stats.length-1].velocity : 0}</div>
-                </div>
-            </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
             {activeTask ? (
-                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 animate-in fade-in shadow-lg shadow-blue-900/10 flex flex-col h-full">
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 animate-in fade-in shadow-lg shadow-blue-900/10 flex flex-col h-full max-h-[300px]">
                     <div className="flex items-center justify-between mb-3 shrink-0">
                         <h3 className="text-sm font-bold text-white truncate max-w-[150px]">{activeTask.name}</h3>
                         {activeTask.status === 'completed' ? <Check size={16} className="text-green-500"/> : activeTask.status === 'cancelled' ? <AlertCircle size={16} className="text-red-500"/> : <RefreshCw size={14} className="text-blue-500 animate-spin"/>}
@@ -377,11 +479,6 @@ export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTas
                                 {file.status === 'error' && <AlertCircle size={10} className="text-red-500"/>}
                             </div>
                         ))}
-                    </div>
-                    
-                    <div className="bg-black rounded p-2 font-mono text-[10px] h-24 overflow-y-auto text-gray-400 border border-gray-800 shrink-0">
-                        {activeTask.logs.slice(-5).map((log, i) => <div key={i} className="break-words">{log}</div>)}
-                        {activeTask.status === 'running' && <div className="animate-pulse">_</div>}
                     </div>
                 </div>
             ) : (
@@ -425,6 +522,29 @@ export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, onStartTas
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+            
+            {history.length > 0 && (
+                <div className="pt-4 border-t border-gray-800">
+                    <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 cursor-pointer flex items-center justify-between" onClick={() => setHistoryOpen(!historyOpen)}>
+                        <span className="flex items-center gap-2"><Clock size={12}/> Recent Tasks</span>
+                        {historyOpen ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
+                    </div>
+                    
+                    {historyOpen && (
+                        <div className="space-y-2">
+                            {history.map((task, idx) => (
+                                <div key={idx} className="bg-gray-800/50 rounded-lg p-2 border border-gray-700/50 flex items-center justify-between">
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-medium text-gray-300 truncate">{task.name}</div>
+                                        <div className="text-[9px] text-gray-500">{task.processedFiles} files • {task.status}</div>
+                                    </div>
+                                    {task.status === 'completed' ? <Check size={14} className="text-green-500"/> : <AlertCircle size={14} className="text-red-500"/>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

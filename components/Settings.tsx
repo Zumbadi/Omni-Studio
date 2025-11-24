@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { Button } from './Button';
 
 interface ApiProvider {
@@ -14,6 +14,9 @@ interface ApiProvider {
 
 export const Settings: React.FC = () => {
   const [activeModel, setActiveModel] = useState(() => localStorage.getItem('omni_active_model') || 'Gemini 2.5 Flash (Fastest)');
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('omni_gemini_key') || '');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  
   const [temperature, setTemperature] = useState(0.7);
   const [systemPrompt, setSystemPrompt] = useState("You are an expert React developer.");
   const [customModels, setCustomModels] = useState<any[]>([]);
@@ -56,6 +59,7 @@ export const Settings: React.FC = () => {
 
   const handleSave = () => {
       localStorage.setItem('omni_active_model', activeModel);
+      localStorage.setItem('omni_gemini_key', geminiKey);
       
       // Save Editor Config
       const editorConfig = { fontSize, tabSize, vimMode };
@@ -125,6 +129,28 @@ export const Settings: React.FC = () => {
           </div>
           
           <div className="space-y-5">
+            {/* Gemini API Key */}
+            <div>
+               <label className="block text-sm font-medium text-gray-300 mb-2">Google Gemini API Key</label>
+               <div className="relative">
+                   <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"/>
+                   <input 
+                      type={showGeminiKey ? "text" : "password"} 
+                      value={geminiKey}
+                      onChange={(e) => setGeminiKey(e.target.value)}
+                      placeholder="sk-..."
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-10 py-2 text-white focus:border-primary-500 focus:outline-none font-mono"
+                   />
+                   <button 
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                   >
+                      {showGeminiKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+                   </button>
+               </div>
+               <p className="text-xs text-gray-500 mt-1">Leave blank to use default environment key if configured.</p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Active Model</label>
               <select 

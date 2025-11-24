@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Edit2, Trash2, Copy, FileText, Sparkles, RotateCcw, XCircle } from 'lucide-react';
+import { Edit2, Trash2, Copy, FileText, Sparkles, RotateCcw, XCircle, Pin, Download, FilePlus, FolderPlus } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -13,9 +13,22 @@ interface ContextMenuProps {
   isTrash?: boolean;
   onRestore?: () => void;
   onPermanentDelete?: () => void;
+  onTogglePin?: () => void;
+  onRefactor?: () => void;
+  onGenerateTests?: () => void;
+  onDownload?: () => void;
+  onNewFile?: () => void;
+  onNewFolder?: () => void;
+  isDirectory?: boolean;
 }
 
-export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onRename, onDelete, onDuplicate, onExplain, isTrash, onRestore, onPermanentDelete }) => {
+export const ContextMenu: React.FC<ContextMenuProps> = ({ 
+  x, y, onClose, 
+  onRename, onDelete, onDuplicate, onExplain, 
+  isTrash, onRestore, onPermanentDelete, 
+  onTogglePin, onRefactor, onGenerateTests, onDownload,
+  onNewFile, onNewFolder, isDirectory
+}) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,27 +44,60 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onRenam
   return (
     <div 
       ref={menuRef}
-      className="fixed z-[100] w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[100] w-52 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
       style={{ top: y, left: x }}
     >
       {!isTrash ? (
           <>
+            {isDirectory && (
+                <>
+                    <div className="p-1 space-y-0.5">
+                        <button onClick={onNewFile} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white rounded-md text-left">
+                            <FilePlus size={14} className="text-blue-400" /> New File
+                        </button>
+                        <button onClick={onNewFolder} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white rounded-md text-left">
+                            <FolderPlus size={14} className="text-yellow-400" /> New Folder
+                        </button>
+                    </div>
+                    <div className="h-px bg-gray-700 my-0.5"></div>
+                </>
+            )}
             <div className="p-1 space-y-0.5">
                 <button onClick={onRename} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white rounded-md text-left">
-                <Edit2 size={14} /> Rename
+                  <Edit2 size={14} /> Rename
                 </button>
                 <button onClick={onDuplicate} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white rounded-md text-left">
-                <Copy size={14} /> Duplicate
+                  <Copy size={14} /> Duplicate
                 </button>
+                {onTogglePin && (
+                    <button onClick={onTogglePin} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white rounded-md text-left">
+                        <Pin size={14} /> Toggle Pin
+                    </button>
+                )}
+                {onDownload && (
+                    <button onClick={onDownload} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white rounded-md text-left">
+                        <Download size={14} /> Download
+                    </button>
+                )}
                 <button onClick={onDelete} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-900/30 hover:text-red-300 rounded-md text-left">
-                <Trash2 size={14} /> Delete
+                  <Trash2 size={14} /> Delete
                 </button>
             </div>
             <div className="h-px bg-gray-700 my-0.5"></div>
-            <div className="p-1">
+            <div className="p-1 space-y-0.5">
                 <button onClick={onExplain} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-purple-400 hover:bg-purple-900/30 hover:text-purple-300 rounded-md text-left">
-                <Sparkles size={14} /> Explain with AI
+                  <Sparkles size={14} /> Explain
                 </button>
+                {onRefactor && (
+                  <button onClick={onRefactor} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-400 hover:bg-blue-900/30 hover:text-blue-300 rounded-md text-left">
+                    <FileText size={14} /> Refactor
+                  </button>
+                )}
+                {onGenerateTests && (
+                  <button onClick={onGenerateTests} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-green-400 hover:bg-green-900/30 hover:text-green-300 rounded-md text-left">
+                    <Sparkles size={14} /> Gen Tests
+                  </button>
+                )}
             </div>
           </>
       ) : (

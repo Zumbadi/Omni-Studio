@@ -1,8 +1,8 @@
 
 import React, { useState, useCallback } from 'react';
-import { FileNode, ProjectType, AIAgent } from '../types';
-import { generateTerminalCommand, runAgentFileTask } from '../services/geminiService';
-import { getAllFiles, findFileById } from '../utils/fileHelpers';
+import { FileNode, ProjectType } from '../types';
+import { generateTerminalCommand } from '../services/geminiService';
+import { getAllFiles } from '../utils/fileHelpers';
 
 interface UseTerminalProps {
   files: FileNode[];
@@ -10,11 +10,13 @@ interface UseTerminalProps {
   activeFileId: string;
   projectType: ProjectType;
   addFile: (path: string, content: string) => void;
+  addPackage?: (name: string, isDev: boolean) => void;
   onLog: (msg: string) => void;
+  onRequestFix?: (errorMsg: string) => void; // New delegate
 }
 
 export const useTerminal = ({ 
-  files, setFiles, activeFileId, projectType, addFile, onLog 
+  files, setFiles, activeFileId, projectType, addFile, addPackage, onLog, onRequestFix
 }: UseTerminalProps) => {
   const [cwd, setCwd] = useState<string>('/');
 
@@ -29,8 +31,7 @@ export const useTerminal = ({
         const translatedCmd = await generateTerminalCommand(query, projectType);
         if (translatedCmd && !translatedCmd.includes('Error')) {
             onLog(`> AI suggests: ${translatedCmd}`);
-            // Recursively call handleCommand with the suggestion? 
-            // For safety, we just put it in input or auto-run. Let's auto-run for "magic" feel.
+            // Auto-run
             handleCommand(translatedCmd);
         } else {
             onLog(`> AI Error: Could not translate command.`);
@@ -45,22 +46,12 @@ export const useTerminal = ({
 
     switch (command) {
         case 'help':
-            onLog('Available commands: ls, cd, cat, mkdir, touch, rm, npm, git, clear');
+            onLog('Available commands: ls, cd, cat, mkdir, touch, rm, npm, git, clear, ? (AI)');
             break;
         case 'clear':
-            // Handled by UI clearing logs usually, but we assume logs prop handles append.
-            // In this architecture, we can't clear parent logs easily without a clear callback.
             onLog('--- Terminal Cleared ---');
             break;
         case 'ls':
-            const currentDirFiles = cwd === '/' ? files : 
-                getAllFiles(files).filter(f => {
-                    const pathParts = f.path.split('/');
-                    // loose matching for demo
-                    return f.path.startsWith(cwd.substring(1)); 
-                }).map(f => f.node);
-            
-            // Simplified listing
             const list = getAllFiles(files).map(f => f.path).join('\n');
             onLog(list);
             break;
@@ -91,18 +82,25 @@ export const useTerminal = ({
             break;
         case 'npm':
             if (args[0] === 'install' || args[0] === 'i') {
-                onLog('> npm install');
-                await new Promise(r => setTimeout(r, 1000));
-                onLog('added 142 packages in 1s');
+                if (args[1] && addPackage) {
+                    const pkgName = args[1];
+                    const isDev = args.includes('-D') || args.includes('--save-dev');
+                    addPackage(pkgName, isDev);
+                    onLog(`> npm install ${pkgName}`);
+                    await new Promise(r => setTimeout(r, 1000));
+                    onLog(`added ${pkgName} in 1s`);
+                } else {
+                    onLog('> npm install');
+                    await new Promise(r => setTimeout(r, 1000));
+                    onLog('added 142 packages in 1s');
+                }
             } else if (args[0] === 'start') {
                 onLog('> npm start');
                 onLog('> Starting development server...');
                 onLog('> Ready on http://localhost:3000');
             } else if (args[0] === 'test') {
                 onLog('> npm test');
-                onLog('PASS src/App.test.tsx');
-                onLog('PASS src/utils/helpers.test.ts');
-                onLog('Test Suites: 2 passed, 2 total');
+                onLog('Running tests...');
             } else {
                 onLog(`npm: command not found: ${args[0]}`);
             }
@@ -123,39 +121,15 @@ export const useTerminal = ({
         default:
             onLog(`sh: command not found: ${command}`);
     }
-  }, [files, cwd, projectType, addFile, onLog]);
+  }, [files, cwd, projectType, addFile, addPackage, onLog]);
 
   const handleAiFix = useCallback(async (errorMsg: string) => {
-      onLog(`> Omni-Agent: Analyzing error "${errorMsg.substring(0, 30)}..."`);
-      
-      // Heuristic to find relevant file
-      const allFiles = getAllFiles(files);
-      let targetFile = allFiles.find(f => f.node.id === activeFileId)?.node;
-      
-      if (!targetFile) return;
-
-      onLog(`> Omni-Agent: Attempting fix on ${targetFile.name}...`);
-      
-      const fixerAgent: AIAgent = {
-          id: 'terminal-fixer',
-          name: 'Terminal Fixer',
-          role: 'Debugger',
-          description: 'Automated fixer for terminal errors',
-          model: 'gemini-2.5-flash',
-          systemPrompt: `You are an expert debugger. A user ran into this error: "${errorMsg}". Fix the code.`
-      };
-
-      const fixedCode = await runAgentFileTask(fixerAgent, targetFile.name, targetFile.content || '');
-      
-      if (fixedCode) {
-          const filenameMatch = fixedCode.match(/^\/\/ filename: (.*)/);
-          const targetPath = filenameMatch ? filenameMatch[1].trim() : targetFile.name;
-          addFile(targetPath, fixedCode);
-          onLog(`> Omni-Agent: Applied fix to ${targetPath}.`);
+      if (onRequestFix) {
+          onRequestFix(errorMsg);
       } else {
-          onLog(`> Omni-Agent: Could not generate a fix.`);
+          onLog("AI Agents unavailable for fix.");
       }
-  }, [files, activeFileId, addFile, onLog]);
+  }, [onRequestFix, onLog]);
 
   return {
       handleCommand,

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Download, Play, Terminal, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType } from '../types';
 
@@ -8,9 +8,10 @@ interface LivePreviewProps {
   project: Project;
   previewSrc: string;
   onRefresh: () => void;
+  onConsoleLog?: (log: string) => void;
 }
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, onRefresh }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, onRefresh, onConsoleLog }) => {
   const isNative = project.type === ProjectType.REACT_NATIVE;
   const isIOS = project.type === ProjectType.IOS_APP;
   const isAndroid = project.type === ProjectType.ANDROID_APP;
@@ -20,6 +21,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const [showQrCode, setShowQrCode] = useState(false);
   const [deviceFrame, setDeviceFrame] = useState<'iphone14' | 'pixel7' | 'ipad'>('iphone14');
   const [isBuilding, setIsBuilding] = useState(false);
+  const [buildStep, setBuildStep] = useState('');
 
   // Console Logs
   const [logs, setLogs] = useState<{level: string, message: string, time: string}[]>([]);
@@ -41,7 +43,11 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                   time: new Date().toLocaleTimeString().split(' ')[0]
               };
               setLogs(prev => [...prev, newLog].slice(-100)); // Keep last 100 logs
-              // Auto-scroll
+              
+              if (onConsoleLog) {
+                  onConsoleLog(`[Browser Console] ${newLog.level.toUpperCase()}: ${newLog.message}`);
+              }
+
               if (consoleRef.current) {
                   consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
               }
@@ -49,9 +55,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
       };
       window.addEventListener('message', handleMessage);
       return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [onConsoleLog]);
 
-  // Clear logs on refresh
   useEffect(() => {
       setLogs([]);
   }, [previewSrc]);
@@ -60,7 +65,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
       setApiResponse('Sending request...');
       setApiStatus(null);
       setTimeout(() => {
-          // Mock Response based on path
           if (apiPath === '/users' && apiMethod === 'GET') { setApiStatus(200); setApiResponse(JSON.stringify({ count: 2, data: [{id: 1, name: 'Alice'}, {id: 2, name: 'Bob'}] }, null, 2)); }
           else if (apiPath === '/' && apiMethod === 'GET') { setApiStatus(200); setApiResponse(JSON.stringify({ message: 'Welcome to Omni API v1' }, null, 2)); }
           else if (apiMethod === 'POST') { setApiStatus(201); setApiResponse(JSON.stringify({ id: 3, status: 'created', timestamp: new Date().toISOString() }, null, 2)); }
@@ -70,10 +74,26 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
 
   const handleSimulatedBuild = () => {
       setIsBuilding(true);
-      setTimeout(() => {
-          setIsBuilding(false);
-          alert(`Build Complete! ${isIOS ? 'Simulator launched.' : 'APK ready.'}`);
-      }, 2000);
+      const steps = ['Resolving dependencies...', 'Compiling Source...', 'Linking Native Modules...', 'Signing Binary...', 'Launching Simulator...'];
+      let stepIdx = 0;
+      setBuildStep(steps[0]);
+      
+      const interval = setInterval(() => {
+          stepIdx++;
+          if (stepIdx < steps.length) {
+              setBuildStep(steps[stepIdx]);
+          } else {
+              clearInterval(interval);
+              setIsBuilding(false);
+              setBuildStep('');
+          }
+      }, 800);
+  };
+
+  const handleOpenNewTab = () => {
+      const blob = new Blob([previewSrc], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
   };
 
   if (isBackend) {
@@ -124,23 +144,28 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                 </div>
             </div>
             
-            {(isNative || isIOS || isAndroid) ? (
-                <div className="flex items-center gap-2">
-                    {(isIOS || isAndroid) && (
-                        <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>
-                            {isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}
-                            {isBuilding ? 'Building...' : 'Run Build'}
-                        </Button>
-                    )}
-                    <div className="flex bg-gray-700/50 rounded p-0.5 gap-0.5">
-                        <button onClick={() => setPreviewMode('mobile')} className={`p-1.5 rounded transition-all ${previewMode === 'mobile' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Mobile Simulator"><Smartphone size={14}/></button>
-                        <button onClick={() => setPreviewMode('web')} className={`p-1.5 rounded transition-all ${previewMode === 'web' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Web Fallback" disabled={isIOS || isAndroid}><Globe size={14}/></button>
-                        <button onClick={() => setShowQrCode(!showQrCode)} className={`p-1.5 rounded transition-all ${showQrCode ? 'text-green-400 bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Scan Expo QR" disabled={isIOS || isAndroid}><QrCode size={14}/></button>
-                    </div>
-                </div>
-            ) : (
-                <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh Preview"><RefreshCw size={14}/></Button>
-            )}
+            <div className="flex items-center gap-2">
+                 {(isNative || isIOS || isAndroid) ? (
+                    <>
+                        {(isIOS || isAndroid) && (
+                            <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>
+                                {isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}
+                                {isBuilding ? 'Building...' : 'Run Build'}
+                            </Button>
+                        )}
+                        <div className="flex bg-gray-700/50 rounded p-0.5 gap-0.5">
+                            <button onClick={() => setPreviewMode('mobile')} className={`p-1.5 rounded transition-all ${previewMode === 'mobile' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Mobile Simulator"><Smartphone size={14}/></button>
+                            <button onClick={() => setPreviewMode('web')} className={`p-1.5 rounded transition-all ${previewMode === 'web' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Web Fallback" disabled={isIOS || isAndroid}><Globe size={14}/></button>
+                            <button onClick={() => setShowQrCode(!showQrCode)} className={`p-1.5 rounded transition-all ${showQrCode ? 'text-green-400 bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Scan Expo QR" disabled={isIOS || isAndroid}><QrCode size={14}/></button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <Button size="sm" variant="ghost" onClick={handleOpenNewTab} title="Open in New Tab"><ExternalLink size={14}/></Button>
+                        <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh Preview"><RefreshCw size={14}/></Button>
+                    </>
+                )}
+            </div>
         </div>
 
         {/* Canvas */}
@@ -169,6 +194,22 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                                 <h3 className="text-white font-bold mb-1 text-lg">Scan with Expo Go</h3>
                                 <p className="text-gray-400 text-xs mb-6">Open the camera on your iOS/Android device to preview live.</p>
                                 <Button size="sm" variant="secondary" onClick={() => setShowQrCode(false)}>Close</Button>
+                            </div>
+                        )}
+
+                        {/* Build Progress Overlay */}
+                        {isBuilding && (
+                            <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
+                                <div className="relative mb-6">
+                                    <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-primary-500 animate-spin"></div>
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <Smartphone size={24} className="text-primary-500 animate-pulse" />
+                                    </div>
+                                </div>
+                                <h3 className="text-white font-bold text-lg mb-2">Compiling Native App</h3>
+                                <div className="text-sm text-primary-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800">
+                                    {buildStep}
+                                </div>
                             </div>
                         )}
                     </div>

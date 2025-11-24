@@ -1,10 +1,12 @@
 
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Sparkles, MessageSquare, Zap, Hammer, Loader2 } from 'lucide-react';
+import { Sparkles, MessageSquare, Zap, Wrench, Loader2 } from 'lucide-react';
+import { highlightCode } from '../utils/syntaxHighlight';
 
 export interface CodeEditorHandle {
   scrollToLine: (line: number) => void;
   focus: () => void;
+  insertAtCursor: (text: string) => void;
 }
 
 interface CodeEditorProps {
@@ -25,6 +27,8 @@ interface CodeEditorProps {
   onGhostTextRequest?: (prefix: string, suffix: string) => Promise<string>;
   onSave?: () => void;
   onCursorChange?: (line: number, col: number) => void;
+  onDrop?: (e: React.DragEvent, cursorPos: number) => void;
+  readOnly?: boolean;
 }
 
 const KEYWORDS = [
@@ -40,7 +44,7 @@ const KEYWORDS = [
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
   code, onChange, fileName, config, onCodeAction, onSelectionChange, 
-  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange
+  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange, onDrop, readOnly = false
 }, ref) => {
   const lines = code.split('\n');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -82,6 +86,20 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
     },
     focus: () => {
       textareaRef.current?.focus();
+    },
+    insertAtCursor: (text: string) => {
+        if (textareaRef.current) {
+            const start = textareaRef.current.selectionStart;
+            const end = textareaRef.current.selectionEnd;
+            const newValue = code.substring(0, start) + text + code.substring(end);
+            onChange(newValue);
+            setTimeout(() => {
+                if(textareaRef.current) {
+                    textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + text.length;
+                    textareaRef.current.focus();
+                }
+            }, 0);
+        }
     }
   }));
 
@@ -93,30 +111,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const fontSize = config?.fontSize || '14px';
   const isVim = config?.vimMode || false;
   const tabSizeVal = config?.tabSize === '4 Spaces' ? 4 : config?.tabSize === 'Tabs' ? 4 : 2;
-
-  // Simple Regex Syntax Highlighter
-  const highlightCode = (input: string) => {
-    if (!input) return '';
-    
-    // Escaping HTML entities
-    let text = input
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-
-    // Syntax Rules (Order matters)
-    return text.split(/([a-zA-Z0-9_$]+|['"`].*?['"`]|\/\/.*|\s+|[{}()[\]<>=!+\-*/.,:;])/g).map((token, i) => {
-        if (!token) return null;
-        if (token.startsWith('//')) return <span key={i} className="text-gray-500">{token}</span>;
-        if (token.match(/^['"`]/)) return <span key={i} className="text-green-400">{token}</span>;
-        if (token.match(/^\d+$/)) return <span key={i} className="text-orange-400">{token}</span>;
-        if (['import','export','const','let','var','function','return','if','else','for','while','switch','case','default','break','continue','true','false','null','undefined','new','this','class','extends','interface','type','from','default'].includes(token)) return <span key={i} className="text-purple-400 italic">{token}</span>;
-        if (['React','useState','useEffect','useRef','useMemo','useCallback','console','window','document','localStorage','JSON','Math','Date'].includes(token)) return <span key={i} className="text-yellow-200">{token}</span>;
-        if (token.match(/^[A-Z][a-zA-Z0-9]*$/)) return <span key={i} className="text-blue-300">{token}</span>; // Component-like
-        if (['{','}','(',')','[',']'].includes(token)) return <span key={i} className="text-yellow-600">{token}</span>;
-        return token;
-    });
-  };
 
   const handleScroll = () => {
     if (textareaRef.current) {
@@ -256,8 +250,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
           setShowSuggestions(false);
       }
 
-      // Ghost Text Logic
-      if (onGhostTextRequest && !showSuggestions) {
+      // Ghost Text Logic - Disable if readonly or no handler
+      if (onGhostTextRequest && !showSuggestions && !readOnly) {
           clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = setTimeout(async () => {
               const prefix = val.substring(0, selectionStart);
@@ -276,6 +270,15 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
       }
   };
 
+  const handleTextAreaDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
+      if (onDrop && !readOnly) {
+          e.preventDefault();
+          const textarea = e.currentTarget;
+          const { selectionStart } = textarea;
+          onDrop(e, selectionStart);
+      }
+  };
+
   // Smart Typing Logic
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget;
@@ -286,6 +289,46 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
         e.preventDefault();
         e.stopPropagation(); // Prevent global save conflict
         onSave?.();
+        return;
+    }
+    
+    // Move Line Up (Alt + ArrowUp)
+    if (e.altKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        const currentLineIndex = value.substring(0, selectionStart).split('\n').length - 1;
+        if (currentLineIndex > 0) {
+            const lines = value.split('\n');
+            const temp = lines[currentLineIndex];
+            lines[currentLineIndex] = lines[currentLineIndex - 1];
+            lines[currentLineIndex - 1] = temp;
+            const newValue = lines.join('\n');
+            onChange(newValue);
+            // Calculate new cursor pos
+            const newPos = lines.slice(0, currentLineIndex - 1).join('\n').length + 1 + (selectionStart - value.lastIndexOf('\n', selectionStart - 1));
+            setTimeout(() => {
+                textarea.selectionStart = textarea.selectionEnd = newPos;
+            }, 0);
+        }
+        return;
+    }
+
+    // Move Line Down (Alt + ArrowDown)
+    if (e.altKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        const lines = value.split('\n');
+        const currentLineIndex = value.substring(0, selectionStart).split('\n').length - 1;
+        if (currentLineIndex < lines.length - 1) {
+            const temp = lines[currentLineIndex];
+            lines[currentLineIndex] = lines[currentLineIndex + 1];
+            lines[currentLineIndex + 1] = temp;
+            const newValue = lines.join('\n');
+            onChange(newValue);
+             // Calculate new cursor pos
+            const newPos = lines.slice(0, currentLineIndex + 1).join('\n').length + 1 + (selectionStart - value.lastIndexOf('\n', selectionStart - 1));
+            setTimeout(() => {
+                textarea.selectionStart = textarea.selectionEnd = newPos;
+            }, 0);
+        }
         return;
     }
 
@@ -402,6 +445,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
            <div className={`text-xs font-bold uppercase tracking-wider ${langColor}`}>{ext}</div>
            <div className="h-4 w-px bg-gray-700"></div>
            <span className="text-sm font-medium text-gray-200 tracking-tight">{fileName}</span>
+           {readOnly && <span className="text-[10px] bg-red-900/30 text-red-400 px-2 py-0.5 rounded border border-red-900">READ ONLY</span>}
         </div>
         <div className="flex items-center gap-2">
           {isLoadingGhost && <div className="flex items-center gap-1 text-[10px] text-primary-400 animate-pulse"><Sparkles size={10}/> AI Completing...</div>}
@@ -420,7 +464,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
 
       {/* Editor Body */}
       <div className="flex flex-1 overflow-hidden relative group">
-        {/* Line Numbers with Git Gutter & Breakpoints */}
+        {/* Line Numbers */}
         <div 
           ref={lineNumsRef}
           className="w-12 flex-shrink-0 bg-gray-900 border-r border-gray-800 text-right pr-3 pt-4 text-gray-600 select-none overflow-hidden font-mono text-xs opacity-60 relative cursor-default"
@@ -434,11 +478,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 className={`leading-6 relative hover:text-white cursor-pointer ${highlightedLine === lineNum ? 'text-yellow-400 font-bold bg-yellow-900/20' : ''}`}
                 onClick={() => onToggleBreakpoint?.(lineNum)}
               >
-                 {/* Breakpoint Indicator */}
                  {hasBreakpoint && <div className="absolute left-2 top-1.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-red-500/50 shadow-lg z-20"></div>}
                  <span className={hasBreakpoint ? 'invisible' : ''}>{lineNum}</span>
-                 
-                 {/* Simulated Git Diff Indicator */}
                  {i % 12 === 0 && i > 0 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div> : null}
                  {i === 3 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div> : null}
               </div>
@@ -448,7 +489,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
 
         {/* Editor Container */}
         <div className="flex-1 relative overflow-hidden bg-gray-900/50">
-             {/* Highlight Line Background */}
              {highlightedLine && (
                <div 
                  className="absolute left-0 right-0 bg-yellow-500/10 pointer-events-none z-0 transition-opacity duration-500"
@@ -464,10 +504,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 style={{ fontSize, tabSize: tabSizeVal }}
              >
                 {highlightCode(code)}
-                <br /> {/* Ensure last line visible */}
+                <br />
              </pre>
 
-            {/* Ghost Text Overlay */}
+            {/* Ghost Text */}
             {ghostText && (
                 <div 
                     className="absolute z-20 pointer-events-none text-gray-500 font-mono leading-6 italic whitespace-pre"
@@ -485,20 +525,22 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
             {/* Input Area */}
             <textarea
               ref={textareaRef}
-              className={`absolute inset-0 w-full h-full bg-transparent text-transparent caret-white p-4 pt-4 leading-6 outline-none resize-none whitespace-pre font-mono ${isVim ? 'cursor-block' : ''} z-10`}
+              readOnly={readOnly}
+              className={`absolute inset-0 w-full h-full bg-transparent text-transparent caret-white p-4 pt-4 leading-6 outline-none resize-none whitespace-pre font-mono ${isVim ? 'cursor-block' : ''} z-10 ${readOnly ? 'cursor-not-allowed opacity-50' : ''}`}
               style={{ fontSize, tabSize: tabSizeVal }}
               value={code}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onScroll={handleScroll}
               onSelect={handleSelect}
+              onDrop={handleTextAreaDrop}
               spellCheck={false}
               autoCapitalize="off"
               autoComplete="off"
             />
 
-            {/* Code Actions Widget */}
-            {showCodeActions && (
+            {/* Code Actions */}
+            {showCodeActions && !readOnly && (
               <div 
                  className="absolute z-50 animate-in zoom-in duration-200"
                  style={{ top: selectionCoords.top, left: selectionCoords.left }}
@@ -516,7 +558,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
                       className="p-1.5 hover:bg-purple-600 text-gray-300 hover:text-white rounded transition-colors"
                       title="Refactor"
                    >
-                     <Hammer size={14} />
+                     <Wrench size={14} />
                    </button>
                    <button 
                       onClick={() => { onCodeAction?.('Fix', selectedText); setShowCodeActions(false); }}
@@ -533,8 +575,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
               </div>
             )}
 
-            {/* Autocomplete Dropdown */}
-            {showSuggestions && (
+            {/* Autocomplete */}
+            {showSuggestions && !readOnly && (
                 <div 
                    className="absolute z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden w-48 max-h-40 overflow-y-auto"
                    style={{ top: cursorPos.top, left: cursorPos.left }}
@@ -553,7 +595,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
             )}
         </div>
         
-        {/* Minimap Visualizer */}
+        {/* Minimap */}
         {showMinimap && (
             <div 
               ref={minimapRef}
@@ -563,7 +605,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 <div className="w-full text-[2px] leading-[4px] text-gray-500 p-1 opacity-50 whitespace-pre break-all pointer-events-none">
                     {code}
                 </div>
-                {/* Scroll Highlight Indicator (Simulated) */}
                 <div className="absolute inset-x-0 bg-white/5 pointer-events-none h-16 top-0"></div>
             </div>
         )}
