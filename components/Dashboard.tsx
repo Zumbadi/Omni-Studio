@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle, RotateCcw } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle, RotateCcw, Activity } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack, ActivityItem } from '../types';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
@@ -26,6 +26,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
     
     const [analyticsProject, setAnalyticsProject] = useState<Project | null>(null);
 
+    // System Status
+    const [systemStatus, setSystemStatus] = useState({ status: 'Operational', latency: 45 });
+
     useEffect(() => {
        const savedMedia = localStorage.getItem('omni_social_posts');
        if (savedMedia) setRecentMedia(JSON.parse(savedMedia));
@@ -42,6 +45,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
        loadActivities();
        window.addEventListener('omniActivityUpdated', loadActivities);
        return () => window.removeEventListener('omniActivityUpdated', loadActivities);
+    }, []);
+    
+    // Simulate System Health
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const lat = Math.floor(Math.random() * 20) + 30;
+            setSystemStatus({ status: 'Operational', latency: lat });
+        }, 3000);
+        return () => clearInterval(interval);
     }, []);
 
     // Filter Data
@@ -90,7 +102,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
           <div className="flex-1">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Welcome back, Creator</h1>
+                <div className="flex items-center gap-3 mb-1">
+                    <h1 className="text-2xl md:text-3xl font-bold text-white">Welcome back, Creator</h1>
+                    <div className="hidden md:flex items-center gap-2 bg-gray-900 border border-gray-800 px-2 py-1 rounded text-[10px] font-mono text-gray-400">
+                        <Activity size={10} className="text-green-500" />
+                        <span>{systemStatus.status}</span>
+                        <span className="text-gray-600">|</span>
+                        <span>{systemStatus.latency}ms</span>
+                    </div>
+                </div>
                 <p className="text-sm md:text-base text-gray-400">Unified control center for your Code, Media, and Audio projects.</p>
               </div>
               <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto items-stretch md:items-center">

@@ -1,17 +1,20 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink, Send, Download } from 'lucide-react';
 import { Button } from './Button';
-import { Project, ProjectType } from '../types';
+import { Project, ProjectType, FileNode } from '../types';
+import { getAllFiles } from '../utils/fileHelpers';
+import JSZip from 'jszip';
 
 interface LivePreviewProps {
   project: Project;
   previewSrc: string;
   onRefresh: () => void;
   onConsoleLog?: (log: string) => void;
+  files?: FileNode[];
 }
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, onRefresh, onConsoleLog }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, onRefresh, onConsoleLog, files = [] }) => {
   const isNative = project.type === ProjectType.REACT_NATIVE;
   const isIOS = project.type === ProjectType.IOS_APP;
   const isAndroid = project.type === ProjectType.ANDROID_APP;
@@ -26,6 +29,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   // Console Logs
   const [logs, setLogs] = useState<{level: string, message: string, time: string}[]>([]);
   const [showConsole, setShowConsole] = useState(false);
+  const [consoleInput, setConsoleInput] = useState('');
   const consoleRef = useRef<HTMLDivElement>(null);
 
   // API Console State
@@ -33,6 +37,24 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const [apiPath, setApiPath] = useState('/users');
   const [apiResponse, setApiResponse] = useState<string>('// Click Send to test endpoint');
   const [apiStatus, setApiStatus] = useState<number | null>(null);
+  const [availableRoutes, setAvailableRoutes] = useState<string[]>(['/']);
+
+  useEffect(() => {
+      if (!isBackend || !files) return;
+      const allFiles = getAllFiles(files);
+      const routes: Set<string> = new Set(['/']);
+      
+      allFiles.forEach(({ node }) => {
+          if (!node.content) return;
+          const routeRegex = /\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/gi;
+          let match;
+          while ((match = routeRegex.exec(node.content)) !== null) {
+              routes.add(match[2]);
+          }
+      });
+      
+      setAvailableRoutes(Array.from(routes));
+  }, [files, isBackend]);
 
   useEffect(() => {
       const handleMessage = (event: MessageEvent) => {
@@ -42,7 +64,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                   message: event.data.message,
                   time: new Date().toLocaleTimeString().split(' ')[0]
               };
-              setLogs(prev => [...prev, newLog].slice(-100)); // Keep last 100 logs
+              setLogs(prev => [...prev, newLog].slice(-100)); 
               
               if (onConsoleLog) {
                   onConsoleLog(`[Browser Console] ${newLog.level.toUpperCase()}: ${newLog.message}`);
@@ -64,11 +86,40 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const handleApiSend = () => {
       setApiResponse('Sending request...');
       setApiStatus(null);
+      
       setTimeout(() => {
-          if (apiPath === '/users' && apiMethod === 'GET') { setApiStatus(200); setApiResponse(JSON.stringify({ count: 2, data: [{id: 1, name: 'Alice'}, {id: 2, name: 'Bob'}] }, null, 2)); }
-          else if (apiPath === '/' && apiMethod === 'GET') { setApiStatus(200); setApiResponse(JSON.stringify({ message: 'Welcome to Omni API v1' }, null, 2)); }
-          else if (apiMethod === 'POST') { setApiStatus(201); setApiResponse(JSON.stringify({ id: 3, status: 'created', timestamp: new Date().toISOString() }, null, 2)); }
-          else { setApiStatus(404); setApiResponse(JSON.stringify({ error: 'Route not found' }, null, 2)); }
+          const isKnownRoute = availableRoutes.some(r => {
+              if (r === apiPath) return true;
+              const routeParts = r.split('/');
+              const pathParts = apiPath.split('/');
+              if (routeParts.length !== pathParts.length) return false;
+              return routeParts.every((part, i) => part.startsWith(':') || part === pathParts[i]);
+          });
+
+          if (isKnownRoute) {
+              if (apiMethod === 'GET') {
+                  setApiStatus(200);
+                  setApiResponse(JSON.stringify({ 
+                      success: true, 
+                      message: `Response from ${apiPath}`,
+                      data: [{ id: 1, name: 'Simulated User' }, { id: 2, name: 'Test Data' }] 
+                  }, null, 2));
+              } else if (apiMethod === 'POST' || apiMethod === 'PUT') {
+                  setApiStatus(201);
+                  setApiResponse(JSON.stringify({ 
+                      success: true, 
+                      id: Math.floor(Math.random() * 1000), 
+                      timestamp: new Date().toISOString(),
+                      status: 'Resource created/updated'
+                  }, null, 2));
+              } else if (apiMethod === 'DELETE') {
+                  setApiStatus(200);
+                  setApiResponse(JSON.stringify({ success: true, message: 'Resource deleted' }, null, 2));
+              }
+          } else {
+              setApiStatus(404);
+              setApiResponse(JSON.stringify({ error: 'Route not found in project files', availableRoutes }, null, 2));
+          }
       }, 600);
   };
 
@@ -90,10 +141,43 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
       }, 800);
   };
 
+  const handleDownloadSource = async () => {
+      const zip = new JSZip();
+      const folderName = isIOS ? 'OmniApp_iOS' : isAndroid ? 'OmniApp_Android' : 'OmniApp_Native';
+      
+      const addToZip = (nodes: any[], path = '') => { 
+          nodes.forEach(n => { 
+              if (n.type === 'file') zip.file(path + n.name, n.content); 
+              if (n.children) addToZip(n.children, path + n.name + '/'); 
+          }); 
+      };
+      
+      addToZip(files, `${folderName}/`);
+      
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); 
+      a.href = url; 
+      a.download = `${folderName}.zip`; 
+      a.click();
+  };
+
   const handleOpenNewTab = () => {
       const blob = new Blob([previewSrc], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
+  };
+
+  const handleConsoleSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!consoleInput.trim()) return;
+      
+      const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
+      if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'eval', code: consoleInput }, '*');
+          setLogs(prev => [...prev, { level: 'input', message: `> ${consoleInput}`, time: new Date().toLocaleTimeString().split(' ')[0] }]);
+      }
+      setConsoleInput('');
   };
 
   if (isBackend) {
@@ -101,13 +185,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
         <div className="flex-1 flex flex-col bg-gray-900/50 overflow-hidden relative">
             <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
                 <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                    <Network size={14} className="text-green-500"/> API Console (Postman Mode)
+                    <Network size={14} className="text-green-500"/> API Console (Simulator)
                 </div>
                 <Button size="sm" variant="ghost" onClick={onRefresh} title="Restart Server"><RefreshCw size={14}/></Button>
             </div>
             <div className="flex-1 p-4 overflow-y-auto flex justify-center">
                 <div className="w-full max-w-lg bg-gray-800 rounded-xl border border-gray-700 flex flex-col shadow-xl overflow-hidden h-fit">
                     <div className="p-4 space-y-4">
+                        <div className="bg-black/30 p-2 rounded border border-gray-700/50 text-[10px] text-gray-400 flex flex-wrap gap-2">
+                            <span className="font-bold">Detected Routes:</span>
+                            {availableRoutes.length > 0 ? availableRoutes.map(r => (
+                                <span key={r} className="bg-gray-700 px-1.5 rounded cursor-pointer hover:text-white" onClick={() => setApiPath(r)}>{r}</span>
+                            )) : <span className="italic">No routes found in code.</span>}
+                        </div>
+
                         <div className="flex gap-2">
                             <select value={apiMethod} onChange={e => setApiMethod(e.target.value)} className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs font-bold text-blue-400 focus:outline-none cursor-pointer hover:bg-gray-750 transition-colors">
                                 <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
@@ -147,6 +238,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
             <div className="flex items-center gap-2">
                  {(isNative || isIOS || isAndroid) ? (
                     <>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={handleDownloadSource} title="Download Source for IDE">
+                            <Download size={10} className="mr-1"/> Source
+                        </Button>
                         {(isIOS || isAndroid) && (
                             <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>
                                 {isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}
@@ -242,19 +336,32 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
             </div>
             
             {showConsole && (
-                <div ref={consoleRef} className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1">
-                    {logs.length === 0 && <div className="text-gray-600 italic px-2">No logs captured yet...</div>}
-                    {logs.map((log, i) => (
-                        <div key={i} className="flex gap-2 hover:bg-white/5 px-2 rounded py-0.5">
-                            <span className="text-gray-600 min-w-[50px]">{log.time}</span>
-                            <span className={`flex-1 break-all whitespace-pre-wrap ${
-                                log.level === 'error' ? 'text-red-400' : 
-                                log.level === 'warn' ? 'text-yellow-400' : 'text-green-400'
-                            }`}>
-                                {log.message}
-                            </span>
-                        </div>
-                    ))}
+                <div className="flex-1 flex flex-col">
+                    <div ref={consoleRef} className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin scrollbar-thumb-gray-700">
+                        {logs.length === 0 && <div className="text-gray-600 italic px-2">No logs captured yet...</div>}
+                        {logs.map((log, i) => (
+                            <div key={i} className="flex gap-2 hover:bg-white/5 px-2 rounded py-0.5 group">
+                                <span className="text-gray-600 min-w-[50px]">{log.time}</span>
+                                <span className={`flex-1 break-all whitespace-pre-wrap ${
+                                    log.level === 'error' ? 'text-red-400' : 
+                                    log.level === 'warn' ? 'text-yellow-400' : 
+                                    log.level === 'input' ? 'text-blue-400' : 'text-green-400'
+                                }`}>
+                                    {log.message}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <form onSubmit={handleConsoleSubmit} className="p-2 border-t border-gray-800 flex gap-2 bg-black/20">
+                        <span className="text-blue-500 font-mono text-xs">{'>'}</span>
+                        <input 
+                            type="text" 
+                            value={consoleInput}
+                            onChange={e => setConsoleInput(e.target.value)}
+                            className="flex-1 bg-transparent border-none outline-none text-xs font-mono text-white"
+                            placeholder="Execute JS..."
+                        />
+                    </form>
                 </div>
             )}
         </div>

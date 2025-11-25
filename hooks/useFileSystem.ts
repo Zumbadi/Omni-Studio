@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FileNode, Project, ProjectType } from '../types';
-import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE } from '../constants';
+import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, IOS_FILE_TREE, ANDROID_FILE_TREE } from '../constants';
 import { findFileById, getAllFiles, upsertFileByPath } from '../utils/fileHelpers';
 
 export const useFileSystem = (project: Project | null) => {
@@ -40,9 +40,14 @@ export const useFileSystem = (project: Project | null) => {
            setFiles(JSON.parse(savedFiles));
        } catch (e) {}
     } else {
-       const isNative = project.type === ProjectType.REACT_NATIVE || project.type === ProjectType.IOS_APP || project.type === ProjectType.ANDROID_APP;
-       const isBackend = project.type === ProjectType.NODE_API;
-       setFiles(isNative ? NATIVE_FILE_TREE : isBackend ? NODE_FILE_TREE : WEB_FILE_TREE);
+       // Select template based on project type
+       let template = WEB_FILE_TREE;
+       if (project.type === ProjectType.REACT_NATIVE) template = NATIVE_FILE_TREE;
+       else if (project.type === ProjectType.NODE_API) template = NODE_FILE_TREE;
+       else if (project.type === ProjectType.IOS_APP) template = IOS_FILE_TREE;
+       else if (project.type === ProjectType.ANDROID_APP) template = ANDROID_FILE_TREE;
+       
+       setFiles(template);
     }
 
     if (savedTrash) {
@@ -175,7 +180,7 @@ export const useFileSystem = (project: Project | null) => {
       setFiles(prev => {
           let nodeToMove: FileNode | null = null;
 
-          // Check if moving into self or children (Circular check)
+          // Check circular
           const isCircular = (parentId: string, nodes: FileNode[]): boolean => {
              for(const node of nodes) {
                  if(node.id === targetDirId) return true;
@@ -186,13 +191,12 @@ export const useFileSystem = (project: Project | null) => {
              return false;
           };
 
-          // 1. Find the node and remove it from tree
+          // 1. Find and remove
           const removeFromTree = (nodes: FileNode[]): FileNode[] => {
               const filtered: FileNode[] = [];
               for (const node of nodes) {
                   if (node.id === nodeId) {
                       nodeToMove = node;
-                      // Check circular before confirming move
                       if(node.children && isCircular(node.id, node.children)) {
                           console.warn("Cannot move folder into its own child");
                           return nodes;
@@ -210,13 +214,10 @@ export const useFileSystem = (project: Project | null) => {
           };
           
           const treeWithoutNode = removeFromTree(prev);
-          
-          // If node wasn't found or move was aborted
           if (!nodeToMove || treeWithoutNode === prev) return prev; 
 
           // 2. Add to new location
           const addToTree = (nodes: FileNode[]): FileNode[] => {
-              // If target is root (using 'root' string or empty)
               if (targetDirId === 'root') {
                  return [...nodes, nodeToMove!];
               }
@@ -278,6 +279,16 @@ export const useFileSystem = (project: Project | null) => {
       });
   }, []);
 
+  // Tab Management
+  const reorderOpenFiles = useCallback((newOrder: string[]) => {
+      setOpenFiles(newOrder);
+  }, []);
+
+  const closeOtherTabs = useCallback((keepId: string) => {
+      setOpenFiles([keepId]);
+      setActiveFileId(keepId);
+  }, []);
+
   const findFileByIdWrapper = useCallback((nodes: FileNode[], id: string) => findFileById(nodes, id), []);
   const getAllFilesWrapper = useCallback((nodes: FileNode[]) => getAllFiles(nodes), []);
 
@@ -321,6 +332,8 @@ export const useFileSystem = (project: Project | null) => {
       moveNode,
       toggleFilePin,
       toggleDirectory,
+      reorderOpenFiles,
+      closeOtherTabs,
       findFileById: findFileByIdWrapper,
       getAllFiles: getAllFilesWrapper,
       handleFileClick,

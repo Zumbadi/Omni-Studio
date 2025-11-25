@@ -357,7 +357,8 @@ export const IOS_FILE_TREE: FileNode[] = [
     children: [
         { id: 'app', name: 'OmniApp.swift', type: 'file', content: `import SwiftUI\n\n@main\nstruct OmniApp: App {\n    var body: some Scene {\n        WindowGroup {\n            ContentView()\n        }\n    }\n}` },
         { id: 'content', name: 'ContentView.swift', type: 'file', content: `import SwiftUI\n\nstruct ContentView: View {\n    var body: some View {\n        VStack {\n            Image(systemName: "globe")\n                .imageScale(.large)\n                .foregroundStyle(.tint)\n            Text("Hello, iOS World!")\n        }\n        .padding()\n    }\n}\n\n#Preview {\n    ContentView()\n}` },
-        { id: 'assets', name: 'Assets.xcassets', type: 'directory', children: [] }
+        { id: 'assets', name: 'Assets.xcassets', type: 'directory', children: [] },
+        { id: 'info', name: 'Info.plist', type: 'file', content: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>CFBundleDisplayName</key>\n    <string>OmniApp</string>\n</dict>\n</plist>` }
     ]
   },
   { id: 'proj', name: 'project.pbxproj', type: 'file', content: `// Simulated Xcode Project File` }
@@ -383,7 +384,8 @@ export const ANDROID_FILE_TREE: FileNode[] = [
         ]},
         { id: 'build', name: 'build.gradle.kts', type: 'file', content: `plugins {\n    alias(libs.plugins.androidApplication)\n    alias(libs.plugins.kotlinAndroid)\n}` }
     ]
-  }
+  },
+  { id: 'settings', name: 'settings.gradle.kts', type: 'file', content: `rootProject.name = "OmniApp"\ninclude(":app")` }
 ];
 
 export const NODE_FILE_TREE: FileNode[] = [

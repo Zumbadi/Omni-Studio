@@ -37,7 +37,6 @@ const cleanJson = (text: string): string => {
 const extractCode = (rawText: string): string => {
     if (!rawText) return "";
     
-    // Check for deletion flag first
     if (rawText.includes('DELETE_FILE')) return 'DELETE_FILE';
 
     const codeBlockRegex = /```(?:typescript|javascript|tsx|jsx|css|json|html|swift|kotlin|xml|bash|sh)?\n([\s\S]*?)```/g;
@@ -54,32 +53,42 @@ const getFrameworkInstructions = (type: ProjectType) => {
     switch (type) {
         case ProjectType.REACT_NATIVE:
             return `FRAMEWORK: React Native (Expo)
-            - UI Components: Use <View>, <Text>, <TouchableOpacity>, <Image>, <ScrollView>, <FlatList> from 'react-native'.
-            - Styling: Use StyleSheet.create({}). DO NOT use Tailwind classes or HTML tags like <div>.
-            - Navigation: Assume Expo Router (app directory).
-            - Icons: Use @expo/vector-icons.`;
+            - UI: Use 'react-native' imports (View, Text, Image, ScrollView, FlatList, StyleSheet).
+            - NO HTML: Never use <div>, <span>, <p>.
+            - ROUTING: Use 'expo-router' (Stack, Tabs, Link).
+            - ICONS: Use '@expo/vector-icons'.
+            - STYLING: Use StyleSheet.create({}) or inline styles. Tailwind is valid ONLY if NativeWind is configured (but prefer StyleSheet for this env).`;
+            
         case ProjectType.IOS_APP:
             return `FRAMEWORK: Native iOS (SwiftUI)
-            - Language: Swift 5.9+
-            - UI: Use SwiftUI structs (VStack, HStack, ZStack, Text, Button, Image).
-            - Architecture: MVVM pattern.
-            - Imports: import SwiftUI, import Foundation.`;
+            - LANGUAGE: Swift 5.9+
+            - UI: SwiftUI (struct View). Use VStack, HStack, ZStack, List, ScrollView.
+            - ENTRY: @main struct OmniApp: App.
+            - PREVIEW: #Preview { ... }.
+            - DATA: @State, @Binding, @Observable (Macro).
+            - ASSETS: Image("name"), Color("name").`;
+            
         case ProjectType.ANDROID_APP:
-            return `FRAMEWORK: Native Android (Kotlin Jetpack Compose)
-            - Language: Kotlin
-            - UI: Use Jetpack Compose (Column, Row, Box, Text, Button).
-            - Architecture: MVVM with ViewModel.
-            - Imports: androidx.compose.*`;
+            return `FRAMEWORK: Native Android (Kotlin + Jetpack Compose)
+            - LANGUAGE: Kotlin
+            - UI: Jetpack Compose (Material3). Column, Row, Box, LazyColumn, Scaffold.
+            - ENTRY: MainActivity : ComponentActivity() with setContent { ... }.
+            - STATE: remember { mutableStateOf() }.
+            - PREVIEW: @Preview(showBackground = true) @Composable fun Preview().`;
+            
         case ProjectType.NODE_API:
-            return `FRAMEWORK: Node.js API
-            - Runtime: Node.js with Express or similar.
-            - DB: Mongoose/MongoDB patterns implied by file structure.
-            - Style: CommonJS (require/module.exports) or ES Modules based on package.json.`;
+            return `FRAMEWORK: Node.js API (Express)
+            - RUNTIME: Node.js
+            - SERVER: Express.js
+            - DB: Mongoose schemas in 'src/models'.
+            - MODULES: CommonJS (require/module.exports).`;
+            
         default:
             return `FRAMEWORK: React Web
-            - UI: Standard HTML tags (div, span, button).
-            - Styling: Tailwind CSS classes (className="...").
-            - Icons: lucide-react.`;
+            - UI: HTML5 tags (div, span, button).
+            - STYLING: Tailwind CSS (className="...").
+            - ICONS: lucide-react.
+            - STATE: React Hooks (useState, useEffect).`;
     }
 };
 
@@ -193,6 +202,7 @@ export const executeBuildTask = async (
     const model = agent.model || 'gemini-2.5-flash';
     const frameworkRules = getFrameworkInstructions(projectType);
     const projectRules = context?.projectRules ? `\nPROJECT SPECIFIC RULES (MUST FOLLOW):\n${context.projectRules}\n` : '';
+    const mcpContext = context?.mcpContext ? `\nEXTERNAL KNOWLEDGE (MCP):\n${context.mcpContext}\n` : '';
 
     const envContext = context ? `
     ENVIRONMENT:
@@ -222,6 +232,7 @@ export const executeBuildTask = async (
         IDENTITY: You are ${agent.name}, a specialized Build Agent (${agent.role}).
         ${taskDesc}
         ${frameworkRules}
+        ${mcpContext}
         ${projectRules}
         ${envContext}
         ${relatedCodeContext}
@@ -320,6 +331,23 @@ export const reviewBuildTask = async (
     } catch (e) {
         return { approved: true, feedback: "Critic check failed, auto-approving.", issues: [] };
     }
+};
+
+export const queryMCPServer = async (query: string): Promise<string> => {
+    // Simulation of MCP query
+    // In a real app, this would fetch from the user's configured MCP servers
+    // For now, we return mock up-to-date info based on the query
+    
+    if (query.includes('swift') || query.includes('ios')) {
+        return "MCP CONTEXT [iOS Docs]: Use @Observable for data models in SwiftUI (iOS 17+). Use #Preview for previews. NavigationStack is preferred over NavigationView.";
+    }
+    if (query.includes('kotlin') || query.includes('android')) {
+        return "MCP CONTEXT [Android Docs]: Use Material3 components. Use Modifier for layout. Remember to add INTERNET permission in Manifest for network calls.";
+    }
+    if (query.includes('react native') || query.includes('expo')) {
+        return "MCP CONTEXT [Expo Docs]: Use expo-router v3. File-based routing in app/ directory. Use <Stack /> and <Tabs /> from expo-router.";
+    }
+    return "MCP CONTEXT: Follow general clean code principles (SOLID, DRY).";
 };
 
 export const generateChangelog = async (changedFiles: string[], taskDescription: string): Promise<string> => {

@@ -81,7 +81,7 @@ export const PreviewPanel = memo(({
       {/* Panel Content */}
       <div className="flex-1 overflow-hidden flex flex-col relative">
           <Suspense fallback={<LoadingFallback />}>
-            {activeTab === 'preview' && <LivePreview project={project} previewSrc={previewSrc} onRefresh={onRefreshPreview} onConsoleLog={onConsoleLog} />}
+            {activeTab === 'preview' && <LivePreview project={project} previewSrc={previewSrc} onRefresh={onRefreshPreview} onConsoleLog={onConsoleLog} files={files} />}
             {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} />}
             {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} />}
             {activeTab === 'deploy' && <DeploymentConsole project={project} onLog={onLog} onDeploymentComplete={onDeploymentComplete} />}

@@ -1,4 +1,5 @@
 
+
 export enum AppView {
   DASHBOARD = 'DASHBOARD',
   WORKSPACE = 'WORKSPACE',
@@ -272,6 +273,7 @@ export interface AgentContext {
   debugVariables?: {name: string, value: string}[];
   projectRules?: string; // Custom project-level instructions
   relatedCode?: string; // Code from imported files or dependencies
+  mcpContext?: string; // Context from Model Context Protocol
 }
 
 export interface TestResult {

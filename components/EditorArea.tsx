@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal } from 'lucide-react';
 import { CodeEditor, CodeEditorHandle } from './CodeEditor';
 import { DiffEditor } from './DiffEditor';
 import { Terminal } from './Terminal';
@@ -16,6 +16,8 @@ interface EditorAreaProps {
   setActiveFileId: (id: string) => void;
   openFiles: string[];
   onCloseTab: (id: string, secId: string | null, setSec: (id: string | null) => void) => void;
+  onReorderTabs?: (newOrder: string[]) => void;
+  onCloseOtherTabs?: (id: string) => void;
   
   isSplitView: boolean;
   setIsSplitView: React.Dispatch<React.SetStateAction<boolean>>;
@@ -58,7 +60,7 @@ interface EditorAreaProps {
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
-  files, activeFileId, setActiveFileId, openFiles, onCloseTab,
+  files, activeFileId, setActiveFileId, openFiles, onCloseTab, onReorderTabs, onCloseOtherTabs,
   isSplitView, setIsSplitView, splitRatio, secondaryFileId, setSecondaryFileId,
   diffFileId, setDiffFileId, previewDiff, setPreviewDiff,
   activeFile, secondaryFile, diffFile,
@@ -69,6 +71,8 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
 }) => {
   
   const [activeBottomTab, setActiveBottomTab] = useState<'terminal' | 'problems' | 'tests'>('terminal');
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
 
   const getFile = (id: string, nodes: FileNode[]): FileNode | undefined => {
       for (const node of nodes) {
@@ -83,10 +87,6 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
 
   const handleOpenFile = (id: string, line?: number) => {
       setActiveFileId(id);
-      if (!openFiles.includes(id)) {
-          // Note: Adding to openFiles is handled by workspace callback usually, but here we are just setting active
-          // Ideally workspace should expose a robust 'openFile' method
-      }
       if(line && editorRef.current) {
           setTimeout(() => editorRef.current?.scrollToLine(line), 100);
       }
@@ -95,6 +95,31 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   const handleReloadFile = () => {
       if (!activeFile) return;
       addToast('info', 'Reloaded file from memory');
+  };
+  
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+      setDraggedTabId(id);
+      e.dataTransfer.effectAllowed = 'move';
+  };
+  
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+      e.preventDefault();
+      if (!draggedTabId || draggedTabId === id || !onReorderTabs) return;
+      
+      const sourceIndex = openFiles.indexOf(draggedTabId);
+      const targetIndex = openFiles.indexOf(id);
+      
+      if (sourceIndex !== -1 && targetIndex !== -1) {
+          const newOrder = [...openFiles];
+          newOrder.splice(sourceIndex, 1);
+          newOrder.splice(targetIndex, 0, draggedTabId);
+          onReorderTabs(newOrder);
+      }
+  };
+
+  const handleTabContextMenu = (e: React.MouseEvent, id: string) => {
+      e.preventDefault();
+      setTabContextMenu({ x: e.clientX, y: e.clientY, id });
   };
 
   // Start Screen Component
@@ -169,6 +194,19 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-gray-900 h-full" id="editor-container">
+        {/* Tab Context Menu */}
+        {tabContextMenu && (
+            <div 
+                className="fixed z-[100] bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1 w-40" 
+                style={{ top: tabContextMenu.y, left: tabContextMenu.x }}
+                onMouseLeave={() => setTabContextMenu(null)}
+            >
+                <button onClick={() => { onCloseTab(tabContextMenu.id, secondaryFileId, setSecondaryFileId); setTabContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 rounded">Close</button>
+                {onCloseOtherTabs && <button onClick={() => { onCloseOtherTabs(tabContextMenu.id); setTabContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 rounded">Close Others</button>}
+                <button onClick={() => { setTabContextMenu(null); }} className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 rounded">Close to Right</button>
+            </div>
+        )}
+
         {/* Tab Bar */}
         <div className="flex bg-gray-900 border-b border-gray-800 overflow-x-auto scrollbar-none shrink-0">
             {openFiles.map(fileId => {
@@ -178,7 +216,11 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                     <div 
                         key={file.id} 
                         onClick={() => setActiveFileId(file.id)} 
-                        className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-r border-gray-800 cursor-pointer min-w-[120px] max-w-[200px] group select-none ${activeFileId === file.id ? 'bg-gray-800 text-primary-400 border-t-2 border-t-primary-500' : 'text-gray-500 hover:bg-gray-800 hover:text-gray-200 border-t-2 border-t-transparent'}`}
+                        onContextMenu={(e) => handleTabContextMenu(e, file.id)}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, file.id)}
+                        onDragOver={(e) => handleDragOver(e, file.id)}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-r border-gray-800 cursor-pointer min-w-[120px] max-w-[200px] group select-none transition-colors ${activeFileId === file.id ? 'bg-gray-800 text-primary-400 border-t-2 border-t-primary-500' : 'text-gray-500 hover:bg-gray-800 hover:text-gray-200 border-t-2 border-t-transparent'}`}
                     >
                         <span className={`truncate ${file.gitStatus === 'modified' ? 'text-yellow-500' : ''}`}>{file.name}</span>
                         <button 
