@@ -22,6 +22,7 @@ interface UseAgentOrchestratorProps {
   projectDescription: string;
   projectType: ProjectType;
   projectRules?: string;
+  mcpContext?: string; 
   addToast: (type: 'success' | 'error' | 'info', msg: string) => void;
   setChatInput: (val: string) => void;
   setIsChatOpen: (val: boolean) => void;
@@ -47,6 +48,7 @@ export const useAgentOrchestrator = ({
   projectDescription,
   projectType,
   projectRules,
+  mcpContext,
   addToast,
   setChatInput,
   setIsChatOpen,
@@ -61,6 +63,7 @@ export const useAgentOrchestrator = ({
   const [taskHistory, setTaskHistory] = useState<AgentTask[]>([]);
   const abortAgentRef = useRef(false);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [isAutoPilot, setIsAutoPilot] = useState(false);
   
   const modifiedFilesRef = useRef<Record<string, string>>({});
   const preRunSnapshot = useRef<FileNode[] | null>(null);
@@ -74,6 +77,67 @@ export const useAgentOrchestrator = ({
       } else {
           addToast("error", "No snapshot available to revert.");
       }
+  };
+
+  // --- AUTO-PILOT LOOP ---
+  useEffect(() => {
+      if (isAutoPilot && !activeAgentTask && roadmap.length > 0) {
+          // Find next pending task/phase
+          const activePhase = roadmap.find(p => p.status === 'active' || p.status === 'pending');
+          
+          if (activePhase) {
+              // If phase pending, mark active
+              if (activePhase.status === 'pending') {
+                   setRoadmap(prev => prev.map(p => p.id === activePhase.id ? { ...p, status: 'active' } : p));
+              }
+
+              const nextTask = activePhase.tasks.find(t => !t.done);
+              
+              if (nextTask) {
+                  // Small delay to make the transition noticeable
+                  setTimeout(() => {
+                      if (!isAutoPilot) return; // check again
+                      const manager = DEFAULT_AGENTS.find(a => a.isManager) || DEFAULT_AGENTS[0];
+                      addSystemMessage(`🚀 **Auto-Pilot:** Starting next task: "${nextTask.text}"`);
+                      
+                      setActiveAgentTask({
+                          id: `auto-${Date.now()}`,
+                          type: 'custom',
+                          name: nextTask.text,
+                          status: 'running',
+                          totalFiles: 0,
+                          processedFiles: 0,
+                          logs: [`Auto-Pilot engaged for: ${nextTask.text}`],
+                          fileList: []
+                      });
+                      setActiveAgent(manager);
+                  }, 3000);
+              } else {
+                  // Phase tasks done, mark phase completed
+                  addSystemMessage(`✅ **Auto-Pilot:** Phase "${activePhase.title}" complete.`);
+                  setRoadmap(prev => prev.map(p => p.id === activePhase.id ? { ...p, status: 'completed' } : p));
+                  // Loop will pick up next phase on next effect run
+              }
+          } else {
+              // All phases done
+              if (isAutoPilot) {
+                  setIsAutoPilot(false);
+                  addSystemMessage(`🎉 **Auto-Pilot:** All roadmap phases completed! Disengaging.`);
+                  addToast('success', 'Project Roadmap Completed');
+              }
+          }
+      }
+  }, [isAutoPilot, activeAgentTask, roadmap, setRoadmap]);
+
+  const handleToggleAutoPilot = () => {
+      setIsAutoPilot(prev => {
+          const next = !prev;
+          addToast('info', next ? 'Auto-Pilot Enabled 🚀' : 'Auto-Pilot Disabled ⏸️');
+          if (next && !activeAgentTask) {
+              addSystemMessage('**Auto-Pilot Engaged:** Scanning roadmap for next task...');
+          }
+          return next;
+      });
   };
 
   // --- AUTONOMOUS AGENT ORCHESTRATION (Manager -> Builder -> Tester -> Critic) ---
@@ -93,6 +157,8 @@ export const useAgentOrchestrator = ({
           const manager = agents.find(a => a.isManager) || DEFAULT_AGENTS[0];
           const critic = agents.find(a => a.role.includes('QA') || a.name.includes('Critic')) || DEFAULT_AGENTS[3];
           let builder = activeAgent || agents.find(a => a.role.includes('Frontend')) || DEFAULT_AGENTS[1];
+          
+          if (!activeAgent) setActiveAgent(manager);
 
           // --- PLANNING PHASE ---
           if (!activeAgentTask.fileList || activeAgentTask.fileList.length === 0) {
@@ -134,6 +200,7 @@ export const useAgentOrchestrator = ({
                const completedTask = { ...currentTaskState, status: 'completed', logs: [...(currentTaskState?.logs || []), "No files targeted."] };
                setActiveAgentTask(null);
                setTaskHistory(prev => [completedTask, ...prev]);
+               setActiveAgent(null);
                return;
           }
 
@@ -152,6 +219,7 @@ export const useAgentOrchestrator = ({
               liveLogs: liveConsoleLogs.slice(-20),
               debugVariables,
               projectRules,
+              mcpContext,
               relatedCode: pkgContent !== '{}' ? `Dependency Config:\n${pkgContent}` : undefined
           };
 
@@ -165,6 +233,7 @@ export const useAgentOrchestrator = ({
                       if (prev) setTaskHistory(h => [{ ...prev, status: 'cancelled' }, ...h]);
                       return null;
                   });
+                  setActiveAgent(null);
                   return;
               }
 
@@ -183,7 +252,6 @@ export const useAgentOrchestrator = ({
                   continue;
               }
 
-              // USE ROBUST FINDER
               let fileNode: FileNode | undefined;
               if (targetFileObj.path) {
                   fileNode = findNodeByPath(filesRef.current, targetFileObj.path);
@@ -221,6 +289,8 @@ export const useAgentOrchestrator = ({
               let feedback = "";
               let success = false;
 
+              // Assign to Builder
+              setActiveAgent(builder);
               setTerminalLogs(prev => [...prev, `[${manager.name}] Assigned ${fileNode.name} to ${builder.name}`]);
 
               while (attempts < MAX_RETRIES && !success) {
@@ -232,27 +302,20 @@ export const useAgentOrchestrator = ({
                   
                   // 0. PRE-CHECK / SCAN (Get Context)
                   if (attempts === 1) {
-                      setTerminalLogs(prev => [...prev, `[${builder.name}] 🔍 Scanning ${fileNode.name} for issues...`]);
+                      setTerminalLogs(prev => [...prev, `[${builder.name}] 🔍 Scanning ${fileNode.name}...`]);
                       
-                      // ANALYZE BEFORE ACTING
                       const analysis = await analyzeFile(builder, fileNode.name, currentContent, instructions, context);
                       setTerminalLogs(prev => [...prev, `[${builder.name}] 💡 Findings: ${analysis.replace(/\n/g, '; ')}`]);
                       feedback = `Analysis findings: ${analysis}`;
 
                       const latestFiles = getAllFiles(filesRef.current);
                       const relatedCode = getRelatedFileContent(currentContent, latestFiles);
-                      if (relatedCode.length > 50) {
-                          const imports = relatedCode.match(/\[Context from (.*?)\]/g);
-                          if (imports) {
-                              setTerminalLogs(prev => [...prev, `[System] Found context in: ${imports.map(s => s.replace('[Context from ', '').replace(']', '')).join(', ')}`]);
-                          }
-                      }
                       context.relatedCode = relatedCode;
                       await new Promise(r => setTimeout(r, 600)); 
                   }
 
                   // 1. BUILD
-                  setTerminalLogs(prev => [...prev, `[${builder.name}] ${attempts > 1 ? `Applying Fixes (Attempt ${attempts})...` : `Generating optimizations...`}`]);
+                  setTerminalLogs(prev => [...prev, `[${builder.name}] ${attempts > 1 ? `Applying Fixes (Attempt ${attempts})...` : `Generating code...`}`]);
                   
                   const enrichedContext = { ...context };
 
@@ -272,7 +335,7 @@ export const useAgentOrchestrator = ({
                       success = true;
                       processedCount++;
                       setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' } : f) } : null);
-                      break; // Exit retry loop
+                      break; 
                   }
 
                   // --- ANTI-LAZY CHECK ---
@@ -282,7 +345,7 @@ export const useAgentOrchestrator = ({
                   
                   if (hasPlaceholders || isSuspiciouslyShort) {
                       setTerminalLogs(prev => [...prev, `[System] ⚠️ Lazy code detected. Rejecting...`]);
-                      feedback = "REJECTED: You returned incomplete code with placeholders (// ...). You MUST return the FULL file content. Do NOT be lazy.";
+                      feedback = "REJECTED: You returned incomplete code with placeholders (// ...). You MUST return the FULL file content.";
                       continue; 
                   }
 
@@ -295,6 +358,7 @@ export const useAgentOrchestrator = ({
                   }
                   
                   // 2. CRITIQUE
+                  setActiveAgent(critic);
                   setTerminalLogs(prev => [...prev, `[${critic.name}] Verifying changes...`]);
                   const review = await reviewBuildTask(fileNode.name, currentContent, buildResult.code, instructions, enrichedContext, projectType);
 
@@ -327,31 +391,6 @@ export const useAgentOrchestrator = ({
                           setTerminalLogs(prev => [...prev, `[System] ✔️ ${fileNode.name} updated successfully.`]);
                           success = true;
                           modifiedFileNames.push(fileNode.name);
-
-                          if (!isNewFile) {
-                              const latestFiles = getAllFiles(filesRef.current);
-                              const dependents = findDependents(fileNode.name, latestFiles);
-                              if (dependents.length > 0) {
-                                  setTerminalLogs(prev => [...prev, `[Manager] 🔄 Sync: Checking ${dependents.length} dependent files...`]);
-                                  
-                                  setActiveAgentTask(prev => {
-                                      if (!prev || !prev.fileList) return prev;
-                                      const existingNames = new Set(prev.fileList.map(f => f.name));
-                                      const newFiles = dependents
-                                          .filter(d => !existingNames.has(d.node.name))
-                                          .map(d => ({ name: d.node.name, path: d.path, status: 'pending' as const }));
-                                      
-                                      if (newFiles.length > 0) {
-                                          return {
-                                              ...prev,
-                                              totalFiles: prev.totalFiles + newFiles.length,
-                                              fileList: [...prev.fileList, ...newFiles]
-                                          };
-                                      }
-                                      return prev;
-                                  });
-                              }
-                          }
                       }
 
                   } else if (review.fixCode) {
@@ -377,7 +416,7 @@ export const useAgentOrchestrator = ({
                       setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' } : f) } : null);
                   }
                   
-                  await new Promise(r => setTimeout(r, 1000));
+                  await new Promise(r => setTimeout(r, 2000));
               }
 
               if (!success) {
@@ -395,6 +434,21 @@ export const useAgentOrchestrator = ({
               logs: [...activeAgentTask.logs, `Done. Processed ${processedCount} files.`],
               processedFiles: processedCount
           };
+          
+          // Update Roadmap if task completed successfully
+          if (activeAgentTask.name && roadmap.length > 0) {
+               setRoadmap(prev => prev.map(phase => ({
+                   ...phase,
+                   tasks: phase.tasks.map(t => {
+                       // Loose match for task name in roadmap
+                       if (activeAgentTask.name.includes(t.text) || t.text.includes(activeAgentTask.name)) {
+                           return { ...t, done: true };
+                       }
+                       return t;
+                   })
+               })));
+          }
+
           setActiveAgentTask(null);
           setTaskHistory(prev => [finalStatus, ...prev]);
           setActiveAgent(null);
@@ -404,7 +458,6 @@ export const useAgentOrchestrator = ({
               const changelog = await generateChangelog(modifiedFileNames, activeAgentTask.name);
               addSystemMessage(`**Workflow Summary:**\n\n${changelog}\n\n[Revert Changes]`);
               
-              // AUTO-UPDATE README
               const readmeNode = getAllFiles(filesRef.current).find(f => f.node.name.toLowerCase() === 'readme.md')?.node;
               if (readmeNode && readmeNode.content) {
                   setTerminalLogs(prev => [...prev, `[System] Updating README.md...`]);
@@ -492,7 +545,10 @@ export const useAgentOrchestrator = ({
       handleGeneratePlan,
       handleExecutePhase,
       setActiveAgentTask,
+      setActiveAgent,
       revertLastAgentRun,
-      isWorking: activeAgentTask?.status === 'running'
+      isWorking: activeAgentTask?.status === 'running',
+      isAutoPilot,
+      handleToggleAutoPilot
   };
 };

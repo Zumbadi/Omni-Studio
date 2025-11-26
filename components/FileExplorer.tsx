@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, memo } from 'react';
 import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud, Trash2, FileCode, FileJson, Image as ImageIcon, FileType, Pin } from 'lucide-react';
 import { FileNode, Project } from '../types';
 
@@ -23,11 +23,11 @@ interface FileExplorerProps {
   onToggleDirectory?: (id: string) => void;
 }
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({
+export const FileExplorer = memo(({
   files, activeFileId, project, remoteDirName, deletedFiles = [],
   onFileClick, onContextMenu, onConnectRemote,
   onUploadFile, onUploadFolder, onAddFile, onAddFolder, onInstallPackage, onRunScript, onEmptyTrash, onMoveNode, onToggleDirectory
-}) => {
+}: FileExplorerProps) => {
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [scriptsOpen, setScriptsOpen] = useState(true);
   const [depsOpen, setDepsOpen] = useState(true);
@@ -279,4 +279,5 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         </div>
     </div>
   );
-};
+});
+FileExplorer.displayName = 'FileExplorer';

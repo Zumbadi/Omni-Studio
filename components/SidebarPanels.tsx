@@ -1,14 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle, Scissors, Copy, Code, Atom, Palette, Database, Braces, ImageIcon, Video, Volume2, Wand2, Clock, Workflow } from 'lucide-react';
-import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent, Snippet } from '../types';
+import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent, Snippet, KnowledgeDoc } from '../types';
 import { Button } from './Button';
 import { DEFAULT_AGENTS } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { generateCommitMessage } from '../services/geminiService';
 import { getAllFiles } from '../utils/fileHelpers';
+import { KnowledgePanel } from './KnowledgePanel'; // Import
 
-// ... (Keep GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, SnippetsPanel unchanged) ...
+// ... (Keep GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, SnippetsPanel, AgentsPanel unchanged) ...
+
+// Re-export KnowledgePanel for use in WorkspaceSidebar
+export { KnowledgePanel }; 
+
 // --- GIT PANEL ---
 interface GitPanelProps { files: FileNode[]; commits: GitCommitType[]; currentBranch: string; onCommit: (msg: string) => void; onSwitchBranch: () => void; }
 export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranch, onCommit, onSwitchBranch }) => {

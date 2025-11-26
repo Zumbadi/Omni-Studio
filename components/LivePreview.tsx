@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink, Send, Download } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink, Send, Download, Shield } from 'lucide-react';
 import { Button } from './Button';
-import { Project, ProjectType, FileNode } from '../types';
+import { Project, ProjectType, FileNode, BuildSettings } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
 import JSZip from 'jszip';
+import { BuildSettingsModal } from './BuildSettingsModal';
 
 interface LivePreviewProps {
   project: Project;
@@ -31,6 +32,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const [showConsole, setShowConsole] = useState(false);
   const [consoleInput, setConsoleInput] = useState('');
   const consoleRef = useRef<HTMLDivElement>(null);
+
+  // Build Config
+  const [showBuildModal, setShowBuildModal] = useState(false);
 
   // API Console State
   const [apiMethod, setApiMethod] = useState('GET');
@@ -123,9 +127,43 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
       }, 600);
   };
 
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  useEffect(() => {
+      setIsInitialLoading(true);
+      const t = setTimeout(() => setIsInitialLoading(false), 2500); // Extended for visual effect
+      return () => clearTimeout(t);
+  }, [previewSrc]);
+
+  // Enhanced Gemini-Style Splash Screen
+  const SplashScreen = () => (
+      <div className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards" style={{ animationDelay: '2s' }}>
+          <div className="relative w-48 h-48 mb-12 flex items-center justify-center">
+              {/* Orb Core */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-full opacity-20 blur-3xl animate-pulse"></div>
+              
+              {/* Rotating Rings */}
+              <div className="absolute w-32 h-32 border-[1px] border-blue-500/30 rounded-full animate-spin-slow" style={{ animationDuration: '8s' }}></div>
+              <div className="absolute w-40 h-40 border-[1px] border-purple-500/20 rounded-full animate-spin-reverse-slow" style={{ animationDuration: '12s' }}></div>
+              
+              {/* Center Logo */}
+              <div className="relative w-16 h-16 bg-gradient-to-tr from-white to-gray-300 rounded-xl rotate-45 shadow-[0_0_30px_rgba(255,255,255,0.3)] flex items-center justify-center overflow-hidden animate-float">
+                  <div className="absolute inset-0 bg-white/20 skew-x-12 animate-shimmer"></div>
+              </div>
+          </div>
+          
+          <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-100 to-gray-400 mb-3 tracking-tight animate-in slide-in-from-bottom-4 fade-in duration-1000">Omni Runtime</h2>
+          
+          <div className="flex gap-3 items-center text-xs text-blue-300/80 font-mono bg-blue-900/10 px-4 py-1.5 rounded-full border border-blue-500/20 animate-in slide-in-from-bottom-4 fade-in duration-1000 delay-200">
+              <Loader2 size={12} className="animate-spin"/> 
+              <span>Initializing Virtual Environment...</span>
+          </div>
+      </div>
+  );
+
   const handleSimulatedBuild = () => {
       setIsBuilding(true);
-      const steps = ['Resolving dependencies...', 'Compiling Source...', 'Linking Native Modules...', 'Signing Binary...', 'Launching Simulator...'];
+      const steps = ['Validating Project Structure...', 'Resolving Dependencies...', 'Compiling Source...', 'Linking Native Modules...', 'Signing Binary...', 'Launching Simulator...'];
       let stepIdx = 0;
       setBuildStep(steps[0]);
       
@@ -141,13 +179,25 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
       }, 800);
   };
 
-  const handleDownloadSource = async () => {
+  const handleExportWithSettings = async (settings: BuildSettings) => {
       const zip = new JSZip();
       const folderName = isIOS ? 'OmniApp_iOS' : isAndroid ? 'OmniApp_Android' : 'OmniApp_Native';
       
       const addToZip = (nodes: any[], path = '') => { 
           nodes.forEach(n => { 
-              if (n.type === 'file') zip.file(path + n.name, n.content); 
+              let content = n.content;
+              
+              // Inject Configs based on settings
+              if (n.name === 'Info.plist' && isIOS) {
+                  content = content.replace(/<string>OmniApp<\/string>/, `<string>${settings.appName}</string>`);
+                  content = content.replace('</dict>', `    <key>CFBundleIdentifier</key>\n    <string>${settings.bundleId}</string>\n    <key>CFBundleShortVersionString</key>\n    <string>${settings.version}</string>\n</dict>`);
+              }
+              
+              if (n.name === 'build.gradle.kts' && isAndroid) {
+                   content += `\nandroid {\n    defaultConfig {\n        applicationId = "${settings.bundleId}"\n        versionName = "${settings.version}"\n    }\n}`;
+              }
+
+              if (n.type === 'file') zip.file(path + n.name, content); 
               if (n.children) addToZip(n.children, path + n.name + '/'); 
           }); 
       };
@@ -160,6 +210,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
       a.href = url; 
       a.download = `${folderName}.zip`; 
       a.click();
+      setShowBuildModal(false);
+  };
+
+  const handleDownloadSource = () => {
+      if (isIOS || isAndroid) {
+          setShowBuildModal(true);
+      } else {
+          handleExportWithSettings({ appName: 'App', bundleId: 'com.example', version: '1.0', buildNumber: '1', permissions: { camera: false, location: false, notifications: false, internet: true }});
+      }
   };
 
   const handleOpenNewTab = () => {
@@ -222,7 +281,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
 
   return (
     <div className="flex-1 flex flex-col bg-gray-900 relative overflow-hidden">
-        {/* Toolbar */}
+        {showBuildModal && (
+            <BuildSettingsModal 
+                isOpen={showBuildModal} 
+                onClose={() => setShowBuildModal(false)} 
+                onExport={handleExportWithSettings}
+                projectType={project.type}
+            />
+        )}
+
         <div className="h-10 bg-gray-800 flex items-center px-3 gap-2 border-b border-gray-700 shrink-0 justify-between">
             <div className="flex items-center gap-2 flex-1 min-w-0">
                 <div className="flex gap-1.5">
@@ -262,8 +329,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
             </div>
         </div>
 
-        {/* Canvas */}
         <div className="flex-1 flex items-center justify-center p-4 bg-[radial-gradient(#333_1px,transparent_1px)] bg-[size:20px_20px] overflow-auto relative">
+            {isInitialLoading && <SplashScreen />}
+            
             {(previewMode === 'mobile') ? (
                 <div className="relative transition-all duration-500 animate-in zoom-in-95 max-w-full max-h-full">
                     <div 
@@ -272,14 +340,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                         `}
                         style={{ maxHeight: '85vh' }}
                     >
-                        {/* Notch */}
                         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-1/3 h-[4%] bg-gray-800 rounded-b-xl z-20 flex items-center justify-center">
                             <div className="w-1/3 h-1 bg-gray-700 rounded-full"></div>
                         </div>
                         
                         <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-black" sandbox="allow-scripts" />
                         
-                        {/* QR Overlay */}
                         {showQrCode && (
                             <div className="absolute inset-0 bg-gray-900/95 z-30 flex flex-col items-center justify-center text-center p-6 animate-in fade-in backdrop-blur-sm">
                                 <div className="bg-white p-3 rounded-xl mb-4 shadow-lg">
@@ -291,7 +357,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                             </div>
                         )}
 
-                        {/* Build Progress Overlay */}
                         {isBuilding && (
                             <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
                                 <div className="relative mb-6">
@@ -308,7 +373,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                         )}
                     </div>
 
-                    {/* Device Controls */}
                     <div className="absolute -right-12 top-4 flex flex-col gap-2 bg-gray-800 p-1.5 rounded-xl border border-gray-700 shadow-lg hidden md:flex">
                         <button onClick={() => setDeviceFrame('iphone14')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'iphone14' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="iPhone 14"><Smartphone size={18}/></button>
                         <button onClick={() => setDeviceFrame('pixel7')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'pixel7' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="Pixel 7"><Smartphone size={18} className="rotate-90"/></button>
@@ -322,7 +386,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
             )}
         </div>
 
-        {/* Live Console Drawer */}
         <div className={`absolute bottom-0 left-0 right-0 bg-gray-900/95 border-t border-gray-700 transition-all duration-300 flex flex-col ${showConsole ? 'h-48' : 'h-8'}`}>
             <div 
                 className="h-8 flex items-center justify-between px-3 cursor-pointer hover:bg-gray-800 border-b border-gray-800"

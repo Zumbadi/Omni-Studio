@@ -1,5 +1,4 @@
 
-
 export enum AppView {
   DASHBOARD = 'DASHBOARD',
   WORKSPACE = 'WORKSPACE',
@@ -266,14 +265,45 @@ export interface ActivityItem {
   projectId?: string;
 }
 
+export interface MCPServer {
+    id: string;
+    name: string;
+    url: string;
+    status: 'connected' | 'disconnected' | 'error';
+    capabilities: string[]; 
+}
+
+export interface KnowledgeDoc {
+    id: string;
+    title: string;
+    content: string;
+    category: 'framework' | 'business' | 'style' | 'other';
+    isActive: boolean;
+}
+
+export interface BuildSettings {
+    appName: string;
+    bundleId: string;
+    version: string;
+    buildNumber: string;
+    permissions: {
+        camera: boolean;
+        location: boolean;
+        notifications: boolean;
+        internet: boolean;
+    };
+}
+
 export interface AgentContext {
   roadmap?: ProjectPhase[];
   terminalLogs?: string[];
   liveLogs?: string[];
   debugVariables?: {name: string, value: string}[];
-  projectRules?: string; // Custom project-level instructions
-  relatedCode?: string; // Code from imported files or dependencies
-  mcpContext?: string; // Context from Model Context Protocol
+  projectRules?: string; 
+  relatedCode?: string; 
+  mcpContext?: string; // Context from Knowledge Base / MCP
+  runTests?: (files?: string[]) => Promise<any>;
+  handleCommand?: (cmd: string) => void;
 }
 
 export interface TestResult {

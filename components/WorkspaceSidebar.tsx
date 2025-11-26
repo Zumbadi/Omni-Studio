@@ -1,15 +1,15 @@
 
 import React, { memo } from 'react';
-import { Files, GitBranch, Search, Bug, Bot, Puzzle, LayoutTemplate, Scissors } from 'lucide-react';
+import { Files, GitBranch, Search, Bug, Bot, Puzzle, LayoutTemplate, Scissors, BrainCircuit, Save } from 'lucide-react';
 import { FileExplorer } from './FileExplorer';
-import { GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, AgentsPanel, SnippetsPanel } from './SidebarPanels';
-import { FileNode, Project, GitCommit, Extension, AgentTask, Snippet, AIAgent } from '../types';
+import { GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, AgentsPanel, SnippetsPanel, KnowledgePanel } from './SidebarPanels';
+import { FileNode, Project, GitCommit, Extension, AgentTask, Snippet, AIAgent, KnowledgeDoc } from '../types';
 
 interface WorkspaceSidebarProps {
   layout: { showSidebar: boolean };
   sidebarWidth: number;
-  activeActivity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS' | 'SNIPPETS';
-  setActiveActivity: (activity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS' | 'SNIPPETS') => void;
+  activeActivity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS' | 'SNIPPETS' | 'KNOWLEDGE';
+  setActiveActivity: (activity: 'EXPLORER' | 'GIT' | 'SEARCH' | 'ASSETS' | 'EXTENSIONS' | 'DEBUG' | 'AGENTS' | 'SNIPPETS' | 'KNOWLEDGE') => void;
   onToggleSidebar: () => void;
   // Explorer Props
   files: FileNode[];
@@ -64,6 +64,11 @@ interface WorkspaceSidebarProps {
   onAddSnippet: () => void;
   onDeleteSnippet: (id: string) => void;
   onInsertSnippet: (code: string) => void;
+  // Knowledge Props
+  knowledgeDocs: KnowledgeDoc[];
+  onAddKnowledgeDoc: (doc: KnowledgeDoc) => void;
+  onUpdateKnowledgeDoc: (doc: KnowledgeDoc) => void;
+  onDeleteKnowledgeDoc: (id: string) => void;
 }
 
 export const WorkspaceSidebar = memo(({
@@ -76,7 +81,8 @@ export const WorkspaceSidebar = memo(({
   assets, onInsertAsset,
   activeAgentTask, agentHistory, onStartAgentTask, onCancelAgentTask, activeAgent,
   deletedFiles,
-  snippets, onAddSnippet, onDeleteSnippet, onInsertSnippet
+  snippets, onAddSnippet, onDeleteSnippet, onInsertSnippet,
+  knowledgeDocs, onAddKnowledgeDoc, onUpdateKnowledgeDoc, onDeleteKnowledgeDoc
 }: WorkspaceSidebarProps) => {
 
   const handleActivityClick = (activity: typeof activeActivity) => {
@@ -88,21 +94,24 @@ export const WorkspaceSidebar = memo(({
     <>
       {/* Activity Bar */}
       <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0 md:flex">
-          {['EXPLORER', 'SEARCH', 'GIT', 'DEBUG', 'AGENTS', 'SNIPPETS', 'EXTENSIONS', 'ASSETS'].map(activity => (
+          {[
+             { id: 'EXPLORER', icon: Files },
+             { id: 'SEARCH', icon: Search },
+             { id: 'GIT', icon: GitBranch },
+             { id: 'DEBUG', icon: Bug },
+             { id: 'AGENTS', icon: Bot },
+             { id: 'SNIPPETS', icon: Scissors },
+             { id: 'EXTENSIONS', icon: Puzzle },
+             { id: 'ASSETS', icon: LayoutTemplate },
+             { id: 'KNOWLEDGE', icon: BrainCircuit },
+          ].map(item => (
               <button 
-                key={activity} 
-                onClick={() => handleActivityClick(activity as any)} 
-                className={`p-2 rounded-lg transition-colors relative ${activeActivity === activity && layout.showSidebar ? 'text-white border-l-2 border-primary-500' : 'text-gray-500 hover:text-gray-300'}`} 
-                title={activity.charAt(0) + activity.slice(1).toLowerCase()}
+                key={item.id} 
+                onClick={() => handleActivityClick(item.id as any)} 
+                className={`p-2 rounded-lg transition-colors relative ${activeActivity === item.id && layout.showSidebar ? 'text-white border-l-2 border-primary-500' : 'text-gray-500 hover:text-gray-300'}`} 
+                title={item.id.charAt(0) + item.id.slice(1).toLowerCase()}
               >
-                  {activity === 'EXPLORER' && <Files size={24} strokeWidth={1.5} />}
-                  {activity === 'GIT' && <GitBranch size={24} strokeWidth={1.5} />}
-                  {activity === 'SEARCH' && <Search size={24} strokeWidth={1.5} />}
-                  {activity === 'DEBUG' && <Bug size={24} strokeWidth={1.5} />}
-                  {activity === 'AGENTS' && <Bot size={24} strokeWidth={1.5} />}
-                  {activity === 'EXTENSIONS' && <Puzzle size={24} strokeWidth={1.5} />}
-                  {activity === 'ASSETS' && <LayoutTemplate size={24} strokeWidth={1.5} />}
-                  {activity === 'SNIPPETS' && <Scissors size={24} strokeWidth={1.5} />}
+                  <item.icon size={24} strokeWidth={1.5} />
               </button>
           ))}
       </div>
@@ -111,16 +120,27 @@ export const WorkspaceSidebar = memo(({
       {layout.showSidebar && (
         <div className="bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 absolute md:static h-full z-30 shadow-2xl md:shadow-none" style={{ width: sidebarWidth }}>
           {activeActivity === 'EXPLORER' && (
-            <FileExplorer 
-                files={files} 
-                activeFileId={activeFileId} 
-                project={project} 
-                remoteDirName={remoteDirName} 
-                deletedFiles={deletedFiles}
-                onFileClick={onFileClick} 
-                onContextMenu={onContextMenu}
-                {...onFileOps}
-            />
+              <div className="flex flex-col h-full">
+                   {/* Explicit Save Button */}
+                   <div className="px-4 pt-3 pb-1">
+                       <button 
+                           onClick={() => onFileOps.onRunScript('save', 'save')} 
+                           className="w-full bg-primary-600 hover:bg-primary-500 text-white py-2 rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-2 mb-2 border border-primary-500/50"
+                       >
+                           <Save size={14} /> Save Project
+                       </button>
+                   </div>
+                   <FileExplorer 
+                        files={files} 
+                        activeFileId={activeFileId} 
+                        project={project} 
+                        remoteDirName={remoteDirName} 
+                        deletedFiles={deletedFiles}
+                        onFileClick={onFileClick} 
+                        onContextMenu={onContextMenu}
+                        {...onFileOps}
+                    />
+              </div>
           )}
           {activeActivity === 'GIT' && <GitPanel files={files} commits={commits} currentBranch={currentBranch} onCommit={onCommit} onSwitchBranch={onSwitchBranch} />}
           {activeActivity === 'SEARCH' && <SearchPanel query={searchQuery} onSearch={onSearch} results={searchResults} onResultClick={onResultClick} onReplace={onReplace} onReplaceAll={onReplaceAll} />}
@@ -129,6 +149,7 @@ export const WorkspaceSidebar = memo(({
           {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} onInsertAsset={onInsertAsset} />}
           {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} history={agentHistory} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} activeAgent={activeAgent} />}
           {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
+          {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddDoc={onAddKnowledgeDoc} onUpdateDoc={onUpdateKnowledgeDoc} onDeleteDoc={onDeleteKnowledgeDoc} />}
         </div>
       )}
     </>

@@ -3,6 +3,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Trash2, Volume2 } from 'lucide-react';
 import { Button } from './Button';
 import { AudioTrack } from '../types';
+import { bufferToWav } from '../utils/audioHelpers';
 
 interface AudioTimelineProps {
   tracks: AudioTrack[];
@@ -12,7 +13,7 @@ interface AudioTimelineProps {
   isExporting: boolean;
   onShowAssets: () => void;
   activeTab: string;
-  setActiveTab: (tab: 'mixer' | 'cloning' | 'pro') => void;
+  setActiveTab: (tab: 'mixer' | 'cloning' | 'pro' | 'sequencer') => void;
   isRecording: boolean;
   startRecording: () => void;
   stopRecording: () => void;
@@ -108,7 +109,9 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
       };
 
       renderFrame();
-      return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+      return () => { 
+          if (rafRef.current) cancelAnimationFrame(rafRef.current); 
+      };
   }, [isPlaying]);
 
   // Dragging Listeners
@@ -154,6 +157,57 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
     });
   };
 
+  const handleExportMixLocal = async () => {
+      if (tracks.length === 0) return;
+      if (onExportMix) {
+          onExportMix();
+          return;
+      }
+
+      try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const totalDuration = Math.max(...tracks.map(t => t.startOffset + t.duration)) || 10;
+          const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 44100), 44100);
+          
+          let outputNode: AudioNode = offlineCtx.destination;
+
+          for (const track of tracks) {
+              if (track.audioUrl && !track.muted) { 
+                  try {
+                      const response = await fetch(track.audioUrl);
+                      const arrayBuffer = await response.arrayBuffer();
+                      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                      
+                      const source = offlineCtx.createBufferSource();
+                      source.buffer = audioBuffer;
+                      
+                      const gain = offlineCtx.createGain();
+                      gain.gain.value = track.volume ?? 1.0;
+                      
+                      source.connect(gain);
+                      gain.connect(outputNode);
+                      
+                      source.start(track.startOffset);
+                  } catch (e) {
+                      console.error("Failed to process track", track.id, e);
+                  }
+              }
+          }
+          
+          const renderedBuffer = await offlineCtx.startRendering();
+          const wavBlob = bufferToWav(renderedBuffer);
+          
+          const url = URL.createObjectURL(wavBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'omni-mix.wav';
+          a.click();
+      } catch (error) { 
+          console.error(error); 
+          alert("Export failed. Check console for details.");
+      }
+  };
+
   return (
       <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
          {/* Top Control Bar */}
@@ -173,7 +227,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                <Button variant="ghost" size="sm" onClick={onShowAssets}><LayoutTemplate size={14} className="mr-2"/> Assets</Button>
                <Button 
                   size="sm" 
-                  onClick={onExportMix}
+                  onClick={handleExportMixLocal}
                   disabled={isExporting || tracks.length === 0}
                >
                   {isExporting ? <Loader2 size={14} className="animate-spin mr-2"/> : <Download size={14} className="mr-2"/>}

@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, memo } from 'react';
 import { Terminal as TerminalIcon, ChevronRight, Zap, Sparkles, Plus, X } from 'lucide-react';
 
 interface TerminalProps {
@@ -8,7 +8,7 @@ interface TerminalProps {
   onAiFix?: (errorMessage: string) => void;
 }
 
-export const Terminal: React.FC<TerminalProps> = ({ logs, onCommand, onAiFix }) => {
+export const Terminal: React.FC<TerminalProps> = memo(({ logs, onCommand, onAiFix }) => {
   const [tabs, setTabs] = useState<{id: string, name: string, logs: string[]}[]>([
       { id: 't1', name: 'Local', logs: logs }
   ]);
@@ -29,7 +29,7 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, onCommand, onAiFix }) 
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [tabs, activeTabId]);
+  }, [tabs, activeTabId, logs.length]);
 
   const handleAddTab = () => {
       const id = `t${Date.now()}`;
@@ -102,7 +102,7 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, onCommand, onAiFix }) 
       className="h-full flex flex-col bg-black font-mono text-xs border-t border-gray-700"
       onClick={() => inputRef.current?.focus()}
     >
-      <div className="flex items-center bg-gray-900 border-b border-gray-700 select-none overflow-x-auto scrollbar-none">
+      <div className="flex items-center bg-gray-900 border-b border-gray-700 select-none overflow-x-auto scrollbar-none shrink-0">
         {tabs.map(tab => (
             <div 
                 key={tab.id} 
@@ -121,11 +121,11 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, onCommand, onAiFix }) 
         </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-2 space-y-1 cursor-text">
+      <div className="flex-1 overflow-y-auto p-2 space-y-1 cursor-text scrollbar-thin scrollbar-thumb-gray-700">
         {activeLogs.map((log, idx) => (
           <div key={idx} className="break-all whitespace-pre-wrap flex items-start group">
             {!log.startsWith('>') && !log.startsWith('  ') && <span className="text-blue-400 mr-2 shrink-0">➜</span>}
-            <span className={`flex-1 ${log.startsWith('>') ? 'text-gray-400' : log.includes('Error') || log.includes('Failed') ? 'text-red-400' : log.startsWith('AI:') ? 'text-purple-400 italic' : 'text-green-400'}`}>
+            <span className={`flex-1 ${log.startsWith('>') ? 'text-gray-400' : log.includes('Error') || log.includes('Failed') ? 'text-red-400' : log.startsWith('AI:') ? 'text-purple-400 italic' : log.startsWith('[') ? 'text-yellow-300' : 'text-green-400'}`}>
               {log}
             </span>
             {(log.includes('Error') || log.includes('Failed')) && onAiFix && activeTabId === 't1' && (
@@ -160,4 +160,5 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, onCommand, onAiFix }) 
       </div>
     </div>
   );
-};
+});
+Terminal.displayName = 'Terminal';
