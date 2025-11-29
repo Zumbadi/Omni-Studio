@@ -64,6 +64,13 @@ const retryOperation = async <T>(operation: () => Promise<T>, retries = 3, delay
 };
 
 const getFrameworkInstructions = (type: ProjectType) => {
+    const commonInstructions = `
+        - DEPENDENCIES: Only use standard libraries or those specified.
+        - STYLE: Write clean, modular, and strongly-typed code.
+        - ICONS: Use 'lucide-react' for React/Web projects.
+        - FORMAT: Provide FULL file content. No placeholders like "// ... rest of code".
+    `;
+
     switch (type) {
         case ProjectType.REACT_NATIVE:
             return `FRAMEWORK: React Native (Expo) [MCP Active]
@@ -77,7 +84,8 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - ASSETS: Use local require('./assets/...') or remote URIs.
             - STATE MANAGEMENT: Use React Context or Zustand (simple).
             - FORBIDDEN: Do NOT use HTML tags (div, span, h1, ul, li). Do NOT use 'framer-motion' (use 'react-native-reanimated' if needed).
-            - PREVIEW: Code must be runnable in Expo Go simulation.`;
+            - PREVIEW: Code must be runnable in Expo Go simulation.
+            ${commonInstructions}`;
             
         case ProjectType.IOS_APP:
             return `FRAMEWORK: Native iOS (SwiftUI) [MCP Active]
@@ -90,7 +98,8 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - MODIFIERS: Use .padding(), .background(), .cornerRadius(), .foregroundStyle().
             - STATE: Use @State, @Binding, @EnvironmentObject, @Observable.
             - ASSETS: Use Image(systemName: "star.fill") for SF Symbols.
-            - PREVIEW: Include #Preview { ContentView() } at the bottom.`;
+            - PREVIEW: Include #Preview { ContentView() } at the bottom.
+            ${commonInstructions}`;
             
         case ProjectType.ANDROID_APP:
             return `FRAMEWORK: Native Android (Kotlin + Jetpack Compose) [MCP Active]
@@ -102,7 +111,8 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - COMPOSABLES: Column, Row, Box, LazyColumn, Scaffold, Text, Button.
             - MODIFIERS: Modifier.padding().fillMaxSize().background().
             - STATE: val count = remember { mutableStateOf(0) }.
-            - ASSETS: Use standard Android resources or coil-compose for images.`;
+            - ASSETS: Use standard Android resources or coil-compose for images.
+            ${commonInstructions}`;
             
         case ProjectType.NODE_API:
             return `FRAMEWORK: Node.js API (Express) [MCP Active]
@@ -116,8 +126,10 @@ const getFrameworkInstructions = (type: ProjectType) => {
               * src/middleware/ (Auth, Error handling)
             - AUTH: Use jsonwebtoken (JWT) and bcryptjs.
             - LOGGING: Use console.log or winston.
+            - UTILS: Use 'express-async-handler' for routes.
             - FORMAT: CommonJS (require/module.exports).
-            - DEPENDENCIES: express, mongoose, dotenv, cors, jsonwebtoken.`;
+            - DEPENDENCIES: express, mongoose, dotenv, cors, jsonwebtoken.
+            ${commonInstructions}`;
             
         default:
             return `FRAMEWORK: React Web (Vite + Tailwind) [MCP Active]
@@ -125,10 +137,13 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - STYLING: Tailwind CSS (className="flex p-4 bg-gray-900 text-white").
             - ICONS: lucide-react (import { Home } from 'lucide-react').
             - ANIMATION: framer-motion (import { motion } from 'framer-motion').
+            - UTILS: Use 'clsx' or 'tailwind-merge' for class names. Use 'date-fns' for dates.
             - STATE: React Hooks (useState, useEffect, useContext).
             - ROUTING: React Router or simple conditional rendering.
             - PATTERNS: Mobile-first responsive design.
-            - FORBIDDEN: Class components, jQuery, direct DOM manipulation.`;
+            - FORBIDDEN: Class components, jQuery, direct DOM manipulation.
+            - IMPORTANT: Always import React from 'react'.
+            ${commonInstructions}`;
     }
 };
 

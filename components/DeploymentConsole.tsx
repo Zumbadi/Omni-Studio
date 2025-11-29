@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Rocket, Package, Zap, UploadCloud, Check, ExternalLink, History, Activity, Globe, Terminal, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react';
+import { Rocket, Package, Zap, UploadCloud, Check, ExternalLink, History, Activity, Globe, Terminal, RotateCcw, AlertTriangle, Loader2, Container, Server } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType } from '../types';
 import { MOCK_DEPLOYMENTS } from '../constants';
@@ -14,7 +14,7 @@ interface DeploymentConsoleProps {
 }
 
 export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, onLog, onDeploymentComplete }) => {
-  const [deploymentState, setDeploymentState] = useState<'idle' | 'building' | 'optimizing' | 'uploading' | 'deployed' | 'rolling_back'>('idle');
+  const [deploymentState, setDeploymentState] = useState<'idle' | 'building' | 'containerizing' | 'pushing' | 'deploying' | 'deployed' | 'rolling_back'>('idle');
   const [deployUrl, setDeployUrl] = useState(project.deploymentUrl || '');
   const [serverLogs, setServerLogs] = useState<string[]>([]);
   const [metricsData, setMetricsData] = useState<{time: string, reqs: number, latency: number}[]>([]);
@@ -51,12 +51,15 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
 
   const handleDeploy = () => {
     setDeploymentState('building');
+    
     const sequence = [
-      { state: 'building', log: '> Building production bundle...', delay: 2000 },
-      { state: 'optimizing', log: '> Optimizing assets & images...', delay: 1500 },
-      { state: 'uploading', log: '> Uploading to Edge Network...', delay: 1500 },
-      { state: 'deployed', log: '> Deployed successfully!', delay: 500 }
+      { state: 'building', log: '> Compiling source code...', delay: 2000 },
+      { state: 'containerizing', log: '> Building Docker image (omni/app:latest)...', delay: 2500 },
+      { state: 'pushing', log: '> Pushing image to Container Registry...', delay: 2000 },
+      { state: 'deploying', log: '> Deploying Containers to Kubernetes Cluster...', delay: 2000 },
+      { state: 'deployed', log: '> Deployment Successful! Pods are healthy.', delay: 1000 }
     ];
+
     let currentDelay = 0;
     sequence.forEach(({ state, log, delay }) => {
       currentDelay += delay;
@@ -64,7 +67,7 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
         setDeploymentState(state as any);
         onLog(log);
         if (state === 'deployed') {
-            const url = `https://${project?.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app`;
+            const url = `https://${project?.name.toLowerCase().replace(/\s+/g, '-')}.omni.app`;
             setDeployUrl(url);
             logActivity('deploy', 'Deployment Success', `Deployed ${project.name} to production`, project.id);
             if (onDeploymentComplete) onDeploymentComplete(url);
@@ -79,8 +82,8 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
           setDeploymentState('rolling_back');
           
           setTimeout(() => {
-              onLog(`> Version ${hash} checked out.`);
-              setDeploymentState('uploading');
+              onLog(`> Version ${hash} image pulled from registry.`);
+              setDeploymentState('deploying');
               setTimeout(() => {
                   setDeploymentState('deployed');
                   onLog(`> Rollback complete. Live version is now ${hash}.`);
@@ -149,8 +152,9 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
                   <div className="w-20 h-20 mx-auto bg-gray-800 rounded-full flex items-center justify-center border-4 border-gray-700 mb-4 z-10 relative">
                       {deploymentState === 'idle' && <Rocket size={32} className="text-gray-500" />}
                       {deploymentState === 'building' && <Package size={32} className="text-blue-500 animate-bounce" />}
-                      {deploymentState === 'optimizing' && <Zap size={32} className="text-yellow-500 animate-pulse" />}
-                      {deploymentState === 'uploading' && <UploadCloud size={32} className="text-purple-500 animate-pulse" />}
+                      {deploymentState === 'containerizing' && <Container size={32} className="text-orange-500 animate-pulse" />}
+                      {deploymentState === 'pushing' && <UploadCloud size={32} className="text-purple-500 animate-pulse" />}
+                      {deploymentState === 'deploying' && <Server size={32} className="text-green-500 animate-pulse" />}
                       {deploymentState === 'rolling_back' && <RotateCcw size={32} className="text-red-500 animate-spin" />}
                   </div>
                   {deploymentState !== 'idle' && (<div className="absolute inset-0 bg-primary-500/20 rounded-full blur-xl animate-pulse"></div>)}
@@ -159,16 +163,19 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
                   <h2 className="text-2xl font-bold text-white mb-2">
                       {deploymentState === 'idle' ? 'Ready to Deploy' : 
                        deploymentState === 'rolling_back' ? 'Rolling Back Version...' : 
-                       'Deploying to Production...'}
+                       deploymentState === 'containerizing' ? 'Building Docker Image...' :
+                       deploymentState === 'pushing' ? 'Pushing to Registry...' :
+                       deploymentState === 'deploying' ? 'Deploying to Cluster...' : 
+                       'Deploying...'}
                   </h2>
                   <p className="text-gray-400">
-                      {deploymentState === 'idle' ? `Deploy ${project?.name} to our global edge network.` : 
+                      {deploymentState === 'idle' ? `Pipeline: Source -> Docker -> Registry -> Cluster.` : 
                        deploymentState === 'rolling_back' ? 'Restoring previous stable state.' : 
-                       'Optimizing assets and configuring SSL...'}
+                       'Optimizing container assets and configuring K8s pods...'}
                   </p>
               </div>
               
-              {deploymentState === 'idle' && (<Button size="lg" className="w-full" onClick={handleDeploy}><Rocket size={18} className="mr-2" /> Deploy Now</Button>)}
+              {deploymentState === 'idle' && (<Button size="lg" className="w-full" onClick={handleDeploy}><Rocket size={18} className="mr-2" /> Start Pipeline</Button>)}
               
               <div className="border-t border-gray-800 pt-6 mt-8 text-left">
                   <h3 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2"><History size={12}/> Past Deployments</h3>

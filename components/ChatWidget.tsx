@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal } from 'lucide-react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal, Container } from 'lucide-react';
 import { Button } from './Button';
 import { ChatMessage, AgentTask } from '../types';
 import { MessageRenderer } from './MessageRenderer';
@@ -33,6 +33,7 @@ const SLASH_COMMANDS = [
     { cmd: '/image', desc: 'Generate visual assets', Icon: ImageIcon, color: 'text-pink-400' },
     { cmd: '/test', desc: 'Run project test suite', Icon: Play, color: 'text-green-400' },
     { cmd: '/deploy', desc: 'Deploy to production', Icon: Rocket, color: 'text-orange-400' },
+    { cmd: '/docker', desc: 'Containerize project', Icon: Container, color: 'text-cyan-400' },
     { cmd: '/tts', desc: 'Generate speech/audio', Icon: Volume2, color: 'text-yellow-400' },
     { cmd: '/refactor', desc: 'Refactor current code', Icon: Code, color: 'text-blue-400' },
     { cmd: '/fix', desc: 'Analyze and fix bugs', Icon: Bug, color: 'text-red-400' },
@@ -202,7 +203,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                         <p>Start a conversation or run a command.</p>
                         <div className="flex gap-2 mt-2">
                              <button onClick={() => setInput('/agent build login ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-primary-500 transition-colors">/agent build login</button>
-                             <button onClick={() => setInput('/search ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-primary-500 transition-colors">/search react hooks</button>
+                             <button onClick={() => setInput('/search react hooks ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-primary-500 transition-colors">/search react hooks</button>
                         </div>
                     </div>
                 )}
@@ -260,7 +261,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             {/* Input */}
             <div className="p-4 border-t border-gray-700 bg-gray-850 shrink-0 relative">
                 {showCommands && filteredCommands.length > 0 && (
-                    <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 zoom-in-95 z-50 max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600" ref={menuRef}>
+                    <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 zoom-in-95 z-50 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600" ref={menuRef}>
                         <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2 sticky top-0 backdrop-blur-md z-10">
                             <Command size={10} /> Available Commands
                         </div>

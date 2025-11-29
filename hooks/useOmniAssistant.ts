@@ -196,6 +196,37 @@ export const useOmniAssistant = ({
              return;
         }
         
+        if (command === '/docker') {
+             setIsGenerating(true);
+             addSystemMessage("Generating Docker configuration for dev branch...");
+             
+             let dockerfileContent = "";
+             let composeContent = "";
+             
+             if (projectType === ProjectType.NODE_API) {
+                 dockerfileContent = `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD ["npm", "start"]`;
+                 composeContent = `version: '3.8'\nservices:\n  api:\n    build: .\n    ports:\n      - "3000:3000"\n    environment:\n      - NODE_ENV=development\n    volumes:\n      - .:/app\n      - /app/node_modules`;
+             } else {
+                 dockerfileContent = `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nRUN npm run build\nEXPOSE 3000\nCMD ["npm", "start"]`;
+                 composeContent = `version: '3.8'\nservices:\n  web:\n    build: .\n    ports:\n      - "3000:3000"\n    volumes:\n      - .:/app\n      - /app/node_modules`;
+             }
+
+             const response = `Here are the configuration files to dockerize your ${projectType} project.\n\n` +
+                `\`\`\`dockerfile\n// filename: Dockerfile\n${dockerfileContent}\n\`\`\`\n\n` +
+                `\`\`\`yaml\n// filename: docker-compose.yml\n${composeContent}\n\`\`\``;
+             
+             setTimeout(() => {
+                 setChatHistory(prev => [...prev, {
+                     id: `docker-${Date.now()}`,
+                     role: 'model',
+                     text: response,
+                     timestamp: Date.now()
+                 }]);
+                 setIsGenerating(false);
+             }, 1000);
+             return;
+        }
+        
         if (command === '/refactor') {
              const instructions = argText || "Refactor this code to be cleaner and more efficient.";
              triggerGeneration(instructions);
@@ -226,7 +257,7 @@ export const useOmniAssistant = ({
         }
         
         if (command === '/help') {
-            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/tts [text]\`\n- \`/test\`\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
+            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/tts [text]\`\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
             return;
         }
     }
