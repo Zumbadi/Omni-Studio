@@ -14,10 +14,11 @@ interface UseOmniAssistantProps {
   editorSelection: string;
   setEditorSelection: (sel: string) => void;
   onStartAgentTask?: (taskDescription: string) => void;
+  runTests?: (files?: string[]) => Promise<any>;
 }
 
 export const useOmniAssistant = ({ 
-  projectId, projectType, files, activeFile, activeModel, editorSelection, setEditorSelection, onStartAgentTask
+  projectId, projectType, files, activeFile, activeModel, editorSelection, setEditorSelection, onStartAgentTask, runTests
 }: UseOmniAssistantProps) => {
   const [chatInput, setChatInput] = useState('');
   
@@ -31,7 +32,7 @@ export const useOmniAssistant = ({
       return [{
           id: 'init-welcome',
           role: 'model',
-          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/tts [text]\` for speech synthesis\n- \`/agent [task]\` to auto-assign task`,
+          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/agent [task]\` to auto-assign task`,
           timestamp: Date.now()
       }];
   });
@@ -65,7 +66,7 @@ export const useOmniAssistant = ({
       }
   };
 
-  const triggerGeneration = async (prompt: string) => {
+  const triggerGeneration = async (prompt: string, useSearch = false) => {
     setIsGenerating(true);
     const currentCode = activeFile?.content || '';
     const fileStructure = getAllFiles(files).map(f => f.path).join('\n');
@@ -82,10 +83,11 @@ export const useOmniAssistant = ({
     await generateCodeResponse(
       finalPrompt, currentCode, projectType, fileStructure, activeModel, 
       (chunk) => { responseText += chunk; setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, text: responseText } : msg)); },
-      attachedImage, chatHistory
+      (metadata) => { if(metadata) setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, groundingMetadata: metadata } : msg)); },
+      attachedImage, chatHistory, useSearch
     );
     
-    if (enableCritic) runCritique(responseText, finalPrompt);
+    if (enableCritic && !useSearch) runCritique(responseText, finalPrompt);
     setAttachedImage(undefined);
     setEditorSelection('');
     setIsGenerating(false);
@@ -118,6 +120,13 @@ export const useOmniAssistant = ({
             }
             setIsGenerating(false);
             return;
+        }
+        
+        if (command === '/search') {
+             setIsGenerating(true);
+             addSystemMessage(`Searching web for: "${argText}"...`);
+             triggerGeneration(argText, true); // useSearch = true
+             return;
         }
         
         if (command === '/edit') {
@@ -163,6 +172,48 @@ export const useOmniAssistant = ({
             return;
         }
         
+        if (command === '/test') {
+             if (!runTests) {
+                 addSystemMessage("Test runner not available.");
+                 return;
+             }
+             setIsGenerating(true);
+             addSystemMessage("Running test suite...");
+             try {
+                 const results = await runTests();
+                 const passed = Object.values(results).filter((r: any) => r.status === 'pass').length;
+                 const failed = Object.values(results).filter((r: any) => r.status === 'fail').length;
+                 setChatHistory(prev => [...prev, {
+                     id: `test-${Date.now()}`,
+                     role: 'model',
+                     text: `**Test Results:**\n- Passed: ${passed}\n- Failed: ${failed}\n\n${failed > 0 ? 'Check the Test Runner tab for details.' : 'All systems go!'}`,
+                     timestamp: Date.now()
+                 }]);
+             } catch (e) {
+                 addSystemMessage("Failed to run tests.");
+             }
+             setIsGenerating(false);
+             return;
+        }
+        
+        if (command === '/refactor') {
+             const instructions = argText || "Refactor this code to be cleaner and more efficient.";
+             triggerGeneration(instructions);
+             return;
+        }
+
+        if (command === '/fix') {
+             const instructions = argText || "Analyze this code for bugs and fix them.";
+             triggerGeneration(instructions);
+             return;
+        }
+
+        if (command === '/explain') {
+             const instructions = argText || "Explain what this code does in simple terms.";
+             triggerGeneration(instructions);
+             return;
+        }
+        
         if (command === '/agent' || command === '/build') {
              if (onStartAgentTask) onStartAgentTask(argText);
              return;
@@ -175,7 +226,7 @@ export const useOmniAssistant = ({
         }
         
         if (command === '/help') {
-            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/edit [prompt]\` (requires attached image)\n- \`/tts [text]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
+            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/tts [text]\`\n- \`/test\`\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
             return;
         }
     }

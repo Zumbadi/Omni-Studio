@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download } from 'lucide-react';
+import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download, Globe, ExternalLink } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface MessageRendererProps {
@@ -67,6 +67,35 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                       )}
                   </div>
               ))}
+          </div>
+      );
+  };
+
+  const renderSources = () => {
+      if (!message.groundingMetadata || !message.groundingMetadata.groundingChunks || message.groundingMetadata.groundingChunks.length === 0) return null;
+      
+      return (
+          <div className="mt-3 pt-3 border-t border-gray-700/50">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                  <Globe size={10} /> Sources
+              </div>
+              <div className="flex flex-wrap gap-2">
+                  {message.groundingMetadata.groundingChunks.map((chunk: any, i: number) => {
+                      if (!chunk.web) return null;
+                      return (
+                          <a 
+                              key={i} 
+                              href={chunk.web.uri} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 bg-blue-900/20 hover:bg-blue-900/40 text-blue-300 border border-blue-800/50 rounded-full px-3 py-1 text-xs transition-colors max-w-full truncate"
+                          >
+                              <span className="truncate max-w-[150px]">{chunk.web.title || chunk.web.uri}</span>
+                              <ExternalLink size={10} className="opacity-50 flex-shrink-0" />
+                          </a>
+                      );
+                  })}
+              </div>
           </div>
       );
   };
@@ -239,6 +268,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
       <div className={`max-w-[98%] rounded-2xl rounded-tl-none p-2 overflow-hidden border ${isSystemUpdate ? 'bg-gray-900 border-gray-700 border-l-4 border-l-purple-500' : 'bg-gray-800 border-gray-700'} text-gray-200 text-sm w-full shadow-md relative group`}>
          {renderTextContent(message.text)}
          {renderAttachments()}
+         {renderSources()}
       </div>
     </div>
   );

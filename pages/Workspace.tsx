@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { PanelBottom, Columns, Mic, GitBranch, HelpCircle, Layout } from 'lucide-react';
+import { PanelBottom, Columns, Mic, GitBranch, HelpCircle, Layout, Loader2, Sparkles, Command } from 'lucide-react';
 import { MOCK_COMMITS, MOCK_EXTENSIONS, MOCK_SNIPPETS, DEFAULT_AGENTS } from '../constants';
 import { Project, ProjectType, Extension, GitCommit as GitCommitType, Snippet, KnowledgeDoc } from '../types';
 import { CodeEditorHandle } from '../components/CodeEditor';
@@ -35,7 +35,86 @@ interface WorkspaceProps {
   onUpdateProject?: (p: Project) => void;
 }
 
+const WorkspaceBootScreen = ({ onComplete }: { onComplete: () => void }) => {
+  const [step, setStep] = useState(0);
+  const steps = [
+    "Initializing Omni-Kernel...",
+    "Mounting Virtual File System...",
+    "Connecting to Neural Engine...",
+    "Syncing Development Environment...",
+    "Ready"
+  ];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStep(prev => {
+        if (prev >= steps.length - 1) {
+          clearInterval(interval);
+          setTimeout(onComplete, 500);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 500); // 500ms per step
+    return () => clearInterval(interval);
+  }, [onComplete, steps.length]);
+
+  return (
+    <div className="absolute inset-0 z-[1000] bg-gray-950 flex flex-col items-center justify-center font-mono overflow-hidden">
+      <style>{`
+        @keyframes spin-slow { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin-reverse-slow { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+        @keyframes pulse-glow { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.1); } }
+        .animate-spin-slow { animation: spin-slow 8s linear infinite; }
+        .animate-spin-reverse-slow { animation: spin-reverse-slow 12s linear infinite; }
+        .animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+      `}</style>
+      
+      {/* Ambient Background */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900 via-gray-950 to-black opacity-80"></div>
+      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay"></div>
+
+      <div className="relative mb-16 scale-110">
+         {/* Animated Core */}
+         <div className="w-32 h-32 rounded-full flex items-center justify-center relative">
+            <div className="absolute inset-0 bg-primary-500/20 blur-3xl rounded-full animate-pulse-glow"></div>
+            <div className="relative z-10 bg-gray-900 p-6 rounded-2xl border border-gray-700 shadow-2xl">
+                <Command size={48} className="text-primary-400 animate-pulse" style={{ animationDuration: '3s' }}/>
+            </div>
+         </div>
+         {/* Orbiting Particles */}
+         <div className="absolute inset-[-40px] border border-primary-500/30 rounded-full w-52 h-52 animate-spin-slow border-t-transparent border-l-transparent opacity-70"></div>
+         <div className="absolute inset-[-60px] border border-purple-500/20 rounded-full w-64 h-64 animate-spin-reverse-slow border-b-transparent border-r-transparent opacity-50"></div>
+      </div>
+
+      <div className="w-80 space-y-4 z-10">
+         <div className="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden border border-gray-700/50">
+            <div 
+              className="h-full bg-gradient-to-r from-primary-500 via-purple-500 to-primary-500 transition-all duration-300 ease-out relative" 
+              style={{ width: `${((step + 1) / steps.length) * 100}%` }}
+            >
+                <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
+            </div>
+         </div>
+         <div className="flex justify-between items-center text-xs font-mono">
+            <span className="text-primary-300 transition-all duration-300 animate-in fade-in slide-in-from-bottom-1">
+                {steps[step]}
+            </span>
+            <span className="text-gray-600">{Math.min(100, Math.round(((step + 1) / steps.length) * 100))}%</span>
+         </div>
+      </div>
+      
+      <div className="absolute bottom-8 text-[10px] text-gray-600 font-mono tracking-widest uppercase">
+          Omni-Studio v1.0 • Neural Engine Active
+      </div>
+    </div>
+  );
+};
+
 export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, onUpdateProject }) => {
+  // Boot Sequence State
+  const [isBooting, setIsBooting] = useState(true);
+
   // --- FILE SYSTEM HOOK ---
   const { 
       files, filesRef, setFiles, deletedFiles, activeFileId, setActiveFileId, openFiles, setOpenFiles, 
@@ -151,6 +230,14 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       return knowledgeDocs.filter(d => d.isActive).map(d => `[${d.title}]: ${d.content}`).join('\n\n');
   }, [knowledgeDocs]);
 
+  // Define runTests first to pass to Orchestrator and Assistant
+  const { 
+      testResults, isRunningTests, runTests 
+  } = useTesting({ 
+      files, 
+      onLog: (msg) => setTerminalLogs(prev => [...prev, msg]) 
+  });
+
   const {
       activeAgentTask,
       handleStartAgentTask,
@@ -220,14 +307,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       projectId: project?.id || 'default',
       projectType: project?.type || ProjectType.REACT_WEB, 
       files, activeFile, activeModel, editorSelection, setEditorSelection,
-      onStartAgentTask: handleAgentSlashCommand
-  });
-
-  const { 
-      testResults, isRunningTests, runTests 
-  } = useTesting({ 
-      files, 
-      onLog: (msg) => setTerminalLogs(prev => [...prev, msg]) 
+      onStartAgentTask: handleAgentSlashCommand,
+      runTests // Pass runTests here
   });
 
   const { handleCommand: baseHandleCommand, handleAiFix } = useTerminal({
@@ -540,6 +621,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
 
   return (
     <div className="flex flex-col h-full bg-gray-950 overflow-hidden w-full relative">
+      {isBooting && <WorkspaceBootScreen onComplete={() => setIsBooting(false)} />}
+      
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       
       {/* Modals */}

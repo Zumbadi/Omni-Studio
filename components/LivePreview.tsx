@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink, Send, Download, Shield } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink, Send, Download, Shield, Layers } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, FileNode, BuildSettings } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
@@ -26,6 +26,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const [deviceFrame, setDeviceFrame] = useState<'iphone14' | 'pixel7' | 'ipad'>('iphone14');
   const [isBuilding, setIsBuilding] = useState(false);
   const [buildStep, setBuildStep] = useState('');
+  
+  // Ecosystem Generation State
+  const [isGeneratingEcosystem, setIsGeneratingEcosystem] = useState(false);
+  const [ecosystemStep, setEcosystemStep] = useState('');
 
   // Console Logs
   const [logs, setLogs] = useState<{level: string, message: string, time: string}[]>([]);
@@ -178,6 +182,32 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
           }
       }, 800);
   };
+  
+  const handleGenerateEcosystem = () => {
+      setIsGeneratingEcosystem(true);
+      const steps = [
+          "Analyzing mobile codebase...",
+          "Generating React Web Dashboard...",
+          "Scaffolding Node.js API Backend...",
+          "Compiling iOS & Android binaries...",
+          "Ecosystem synchronized!"
+      ];
+      
+      let stepIdx = 0;
+      setEcosystemStep(steps[0]);
+      
+      const interval = setInterval(() => {
+          stepIdx++;
+          if (stepIdx < steps.length) {
+              setEcosystemStep(steps[stepIdx]);
+          } else {
+              clearInterval(interval);
+              setIsGeneratingEcosystem(false);
+              setEcosystemStep('');
+              alert("Ecosystem Generated: Web Dashboard, Backend API, and Native Binaries are ready.");
+          }
+      }, 1500);
+  };
 
   const handleExportWithSettings = async (settings: BuildSettings) => {
       const zip = new JSZip();
@@ -298,7 +328,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                     <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/50"></div>
                 </div>
                 <div className="flex-1 max-w-xs bg-gray-900/50 rounded text-[10px] text-gray-500 px-3 py-1 text-center font-mono truncate border border-gray-700/50 flex items-center justify-center gap-1">
-                    {isIOS || isAndroid ? (isIOS ? ' iOS Simulator' : '🤖 Android Emulator') : <><Globe size={10}/> localhost:3000</>}
+                    {isGeneratingEcosystem ? (
+                        <span className="text-blue-400 animate-pulse flex items-center gap-2"><Loader2 size={10} className="animate-spin"/> {ecosystemStep}</span>
+                    ) : isIOS || isAndroid ? (isIOS ? ' iOS Simulator' : '🤖 Android Emulator') : <><Globe size={10}/> localhost:3000</>}
                 </div>
             </div>
             
@@ -307,6 +339,17 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                     <>
                         <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={handleDownloadSource} title="Download Source for IDE">
                             <Download size={10} className="mr-1"/> Source
+                        </Button>
+                        <Button 
+                            size="sm" 
+                            variant={isGeneratingEcosystem ? 'secondary' : 'primary'}
+                            className={`h-6 px-3 text-[10px] font-bold shadow-lg ${isGeneratingEcosystem ? 'text-blue-400 bg-blue-900/20 border border-blue-800' : 'bg-primary-600 hover:bg-primary-500 text-white'}`}
+                            onClick={handleGenerateEcosystem} 
+                            disabled={isGeneratingEcosystem}
+                            title="Auto-Generate Web, Backend, iOS & Android Apps"
+                        >
+                            {isGeneratingEcosystem ? <Loader2 size={10} className="animate-spin mr-1"/> : <Layers size={12} className="mr-1"/>}
+                            {isGeneratingEcosystem ? 'Syncing Ecosystem...' : 'Generate Ecosystem'}
                         </Button>
                         {(isIOS || isAndroid) && (
                             <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>
@@ -368,6 +411,21 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                                 <h3 className="text-white font-bold text-lg mb-2">Compiling Native App</h3>
                                 <div className="text-sm text-primary-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800">
                                     {buildStep}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {isGeneratingEcosystem && (
+                            <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
+                                <div className="relative mb-6">
+                                    <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-blue-500 animate-spin"></div>
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <Layers size={24} className="text-blue-500 animate-pulse" />
+                                    </div>
+                                </div>
+                                <h3 className="text-white font-bold text-lg mb-2">Generating Ecosystem</h3>
+                                <div className="text-sm text-blue-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800 text-center max-w-[250px]">
+                                    {ecosystemStep}
                                 </div>
                             </div>
                         )}

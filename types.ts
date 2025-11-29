@@ -60,6 +60,16 @@ export interface ChatMessage {
     suggestions: string[];
     fixCode?: string; // The Critic's suggested fix
   };
+  groundingMetadata?: {
+    groundingChunks?: {
+      web?: {
+        uri: string;
+        title: string;
+      }
+    }[];
+    groundingSupports?: any[];
+    webSearchQueries?: string[];
+  };
 }
 
 export interface Dataset {

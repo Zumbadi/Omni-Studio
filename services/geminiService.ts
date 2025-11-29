@@ -66,37 +66,69 @@ const retryOperation = async <T>(operation: () => Promise<T>, retries = 3, delay
 const getFrameworkInstructions = (type: ProjectType) => {
     switch (type) {
         case ProjectType.REACT_NATIVE:
-            return `FRAMEWORK: React Native (Expo)
-            - UI: Use 'react-native' imports (View, Text, Image, ScrollView, FlatList, StyleSheet).
-            - NO HTML: Never use <div>, <span>, <p>.
-            - ROUTING: Use 'expo-router' (Stack, Tabs, Link).
-            - ICONS: Use '@expo/vector-icons'.
-            - STYLING: Use StyleSheet.create({}) or inline styles.`;
+            return `FRAMEWORK: React Native (Expo) [MCP Active]
+            - CORE UI: Use 'react-native' components (View, Text, Image, ScrollView, FlatList, TouchableOpacity).
+            - STYLE SYSTEM: Use StyleSheet.create({ container: { ... } }). AVOID inline styles for performance.
+            - NAVIGATION: Use 'expo-router' file-based routing.
+              * app/index.tsx -> Home
+              * app/(tabs)/_layout.tsx -> Tabs
+              * Use <Link href="/details"> from expo-router.
+            - ICONS: Use '@expo/vector-icons' (e.g. FontAwesome, Ionicons).
+            - ASSETS: Use local require('./assets/...') or remote URIs.
+            - STATE MANAGEMENT: Use React Context or Zustand (simple).
+            - FORBIDDEN: Do NOT use HTML tags (div, span, h1, ul, li). Do NOT use 'framer-motion' (use 'react-native-reanimated' if needed).
+            - PREVIEW: Code must be runnable in Expo Go simulation.`;
+            
         case ProjectType.IOS_APP:
-            return `FRAMEWORK: Native iOS (SwiftUI)
+            return `FRAMEWORK: Native iOS (SwiftUI) [MCP Active]
             - LANGUAGE: Swift 5.9+
-            - UI: SwiftUI (struct View). Use VStack, HStack, ZStack, List, ScrollView.
-            - ENTRY: @main struct OmniApp: App.
-            - PREVIEW: #Preview { ... }.
-            - DATA: @State, @Binding, @Observable (Macro).`;
+            - UI FRAMEWORK: SwiftUI.
+            - STRUCTURE:
+              * @main struct OmniApp: App
+              * struct ContentView: View
+            - LAYOUTS: VStack, HStack, ZStack, List, ScrollView, Grid.
+            - MODIFIERS: Use .padding(), .background(), .cornerRadius(), .foregroundStyle().
+            - STATE: Use @State, @Binding, @EnvironmentObject, @Observable.
+            - ASSETS: Use Image(systemName: "star.fill") for SF Symbols.
+            - PREVIEW: Include #Preview { ContentView() } at the bottom.`;
+            
         case ProjectType.ANDROID_APP:
-            return `FRAMEWORK: Native Android (Kotlin + Jetpack Compose)
+            return `FRAMEWORK: Native Android (Kotlin + Jetpack Compose) [MCP Active]
             - LANGUAGE: Kotlin
-            - UI: Jetpack Compose (Material3). Column, Row, Box, LazyColumn, Scaffold.
-            - ENTRY: MainActivity : ComponentActivity() with setContent { ... }.
-            - STATE: remember { mutableStateOf() }.`;
+            - UI FRAMEWORK: Jetpack Compose (Material3).
+            - STRUCTURE:
+              * MainActivity : ComponentActivity()
+              * setContent { MaterialTheme { Surface { ... } } }
+            - COMPOSABLES: Column, Row, Box, LazyColumn, Scaffold, Text, Button.
+            - MODIFIERS: Modifier.padding().fillMaxSize().background().
+            - STATE: val count = remember { mutableStateOf(0) }.
+            - ASSETS: Use standard Android resources or coil-compose for images.`;
+            
         case ProjectType.NODE_API:
-            return `FRAMEWORK: Node.js API (Express)
-            - RUNTIME: Node.js
-            - SERVER: Express.js
-            - DB: Mongoose schemas in 'src/models'.
-            - MODULES: CommonJS (require/module.exports).`;
+            return `FRAMEWORK: Node.js API (Express) [MCP Active]
+            - RUNTIME: Node.js (LTS).
+            - SERVER: Express.js.
+            - DATABASE: Mongoose (MongoDB) schema definitions in 'src/models'.
+            - STRUCTURE:
+              * src/app.js (Main entry)
+              * src/routes/ (Route definitions)
+              * src/controllers/ (Logic)
+              * src/middleware/ (Auth, Error handling)
+            - AUTH: Use jsonwebtoken (JWT) and bcryptjs.
+            - LOGGING: Use console.log or winston.
+            - FORMAT: CommonJS (require/module.exports).
+            - DEPENDENCIES: express, mongoose, dotenv, cors, jsonwebtoken.`;
+            
         default:
-            return `FRAMEWORK: React Web
-            - UI: HTML5 tags (div, span, button).
-            - STYLING: Tailwind CSS (className="...").
-            - ICONS: lucide-react.
-            - STATE: React Hooks (useState, useEffect).`;
+            return `FRAMEWORK: React Web (Vite + Tailwind) [MCP Active]
+            - CORE UI: React 18+ Functional Components.
+            - STYLING: Tailwind CSS (className="flex p-4 bg-gray-900 text-white").
+            - ICONS: lucide-react (import { Home } from 'lucide-react').
+            - ANIMATION: framer-motion (import { motion } from 'framer-motion').
+            - STATE: React Hooks (useState, useEffect, useContext).
+            - ROUTING: React Router or simple conditional rendering.
+            - PATTERNS: Mobile-first responsive design.
+            - FORBIDDEN: Class components, jQuery, direct DOM manipulation.`;
     }
 };
 
@@ -202,21 +234,50 @@ export const reviewBuildTask = async (
     } catch { return { approved: true, feedback: "Critic check failed.", issues: [] }; }
 };
 
-export const generateCodeResponse = async (prompt: string, currentFileContent: string, projectType: ProjectType, fileStructure: string, modelName: string, onStream: (chunk: string) => void, imageData?: string, chatHistory: ChatMessage[] = []) => {
+export const generateCodeResponse = async (
+    prompt: string, 
+    currentFileContent: string, 
+    projectType: ProjectType, 
+    fileStructure: string, 
+    modelName: string, 
+    onStream: (chunk: string) => void, 
+    onComplete?: (metadata?: any) => void,
+    imageData?: string, 
+    chatHistory: ChatMessage[] = [],
+    useSearch: boolean = false
+) => {
     if (!getApiKey()) { onStream("Error: No API Key found."); return; }
     const ai = getAiClient();
     const frameworkInstruction = getFrameworkInstructions(projectType);
     try {
         const systemInstruction = `Omni Coding Assistant. ${frameworkInstruction}. Files:\n${fileStructure}. Current File:\n\`\`\`\n${currentFileContent}\n\`\`\``;
         const history = chatHistory.filter(msg => msg.role === 'user' || msg.role === 'model').map(msg => ({ role: msg.role === 'model' ? 'model' : 'user', parts: [{ text: msg.text }] }));
-        const chat = ai.chats.create({ model: 'gemini-2.5-flash', config: { systemInstruction }, history: history as any });
+        
+        const tools = useSearch ? [{ googleSearch: {} }] : undefined;
+        
+        const chat = ai.chats.create({ 
+            model: 'gemini-2.5-flash',
+            config: { systemInstruction, tools }, 
+            history: history as any 
+        });
+        
         const parts: any[] = [{ text: prompt }];
         if (imageData) { const [meta, data] = imageData.split(','); parts.unshift({ inlineData: { mimeType: meta.match(/:(.*?);/)?.[1] || 'image/png', data } }); }
+        
         const result = await retryOperation(() => chat.sendMessageStream({ message: { role: 'user', parts } })) as any;
+        
+        let aggregatedMetadata: any = undefined;
+
         for await (const chunk of result) {
             const c = chunk as GenerateContentResponse;
             if (c.text) onStream(c.text);
+            if (c.candidates?.[0]?.groundingMetadata) {
+                aggregatedMetadata = c.candidates[0].groundingMetadata;
+            }
         }
+        
+        if (onComplete) onComplete(aggregatedMetadata);
+
     } catch (error: any) { onStream(`Error: ${error.message}`); }
 };
 

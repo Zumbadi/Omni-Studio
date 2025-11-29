@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp } from 'lucide-react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal } from 'lucide-react';
 import { Button } from './Button';
 import { ChatMessage, AgentTask } from '../types';
 import { MessageRenderer } from './MessageRenderer';
@@ -26,6 +26,24 @@ interface ChatWidgetProps {
   onToggleAutoPilot?: () => void;
 }
 
+// Explicitly ordered list for prioritization
+const SLASH_COMMANDS = [
+    { cmd: '/search', desc: 'Google Search for real-time info', Icon: Globe, color: 'text-blue-400' },
+    { cmd: '/agent', desc: 'Delegate task to AI Agents', Icon: Bot, color: 'text-purple-400' },
+    { cmd: '/image', desc: 'Generate visual assets', Icon: ImageIcon, color: 'text-pink-400' },
+    { cmd: '/test', desc: 'Run project test suite', Icon: Play, color: 'text-green-400' },
+    { cmd: '/deploy', desc: 'Deploy to production', Icon: Rocket, color: 'text-orange-400' },
+    { cmd: '/tts', desc: 'Generate speech/audio', Icon: Volume2, color: 'text-yellow-400' },
+    { cmd: '/refactor', desc: 'Refactor current code', Icon: Code, color: 'text-blue-400' },
+    { cmd: '/fix', desc: 'Analyze and fix bugs', Icon: Bug, color: 'text-red-400' },
+    { cmd: '/explain', desc: 'Explain functionality', Icon: MessageSquare, color: 'text-green-400' },
+    { cmd: '/architect', desc: 'Generate system architecture', Icon: Layers, color: 'text-indigo-400' },
+    { cmd: '/docs', desc: 'Generate documentation', Icon: Book, color: 'text-teal-400' },
+    { cmd: '/edit', desc: 'Edit attached image', Icon: Wand2, color: 'text-cyan-400' },
+    { cmd: '/terminal', desc: 'Execute terminal command', Icon: Terminal, color: 'text-gray-400' },
+    { cmd: '/clear', desc: 'Clear chat history', Icon: Eraser, color: 'text-gray-500' },
+];
+
 export const ChatWidget: React.FC<ChatWidgetProps> = ({
   isOpen, setIsOpen, history, setHistory, input, setInput, isGenerating, isAgentWorking, activeTask,
   onSubmit, onApplyCode, onCompareCode, onApplyAll, onAutoFix, onRevert, onToggleVoice,
@@ -33,12 +51,78 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  
+  // Slash Command State
+  const [showCommands, setShowCommands] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const [filteredCommands, setFilteredCommands] = useState(SLASH_COMMANDS);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [history, isOpen, isAgentWorking, isExpanded]);
+
+  useEffect(() => {
+      const match = input.match(/^\/(\w*)$/);
+      if (match) {
+          const query = match[1].toLowerCase();
+          const filtered = SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith('/' + query));
+          setFilteredCommands(filtered);
+          setShowCommands(filtered.length > 0);
+          // Reset index when list changes
+          if (query === '' || filtered.length < filteredCommands.length) {
+              setCommandIndex(0);
+          }
+      } else {
+          setShowCommands(false);
+      }
+  }, [input]);
+
+  // Scroll active command into view
+  useEffect(() => {
+      if (showCommands && menuRef.current) {
+          const activeEl = menuRef.current.children[commandIndex + 1] as HTMLElement; // +1 for header
+          if (activeEl) {
+              activeEl.scrollIntoView({ block: 'nearest' });
+          }
+      }
+  }, [commandIndex, showCommands]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (showCommands) {
+          if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setCommandIndex(prev => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+              return;
+          }
+          if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setCommandIndex(prev => (prev + 1) % filteredCommands.length);
+              return;
+          }
+          if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              if (filteredCommands[commandIndex]) {
+                  selectCommand(filteredCommands[commandIndex].cmd);
+              }
+              return;
+          }
+          if (e.key === 'Escape') {
+              e.preventDefault();
+              setShowCommands(false);
+              return;
+          }
+      }
+  };
+
+  const selectCommand = (cmd: string) => {
+      setInput(cmd + ' ');
+      setShowCommands(false);
+      inputRef.current?.focus();
+  };
 
   if (!isOpen) {
     return (
@@ -117,8 +201,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                         <MessageSquare size={32} />
                         <p>Start a conversation or run a command.</p>
                         <div className="flex gap-2 mt-2">
-                             <span className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700">/agent build login</span>
-                             <span className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700">/image logo</span>
+                             <button onClick={() => setInput('/agent build login ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-primary-500 transition-colors">/agent build login</button>
+                             <button onClick={() => setInput('/search ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-primary-500 transition-colors">/search react hooks</button>
                         </div>
                     </div>
                 )}
@@ -146,7 +230,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     </div>
                 )}
                 
-                {/* Agent Activity Log - Integrated Thought Process */}
+                {/* Agent Activity Log */}
                 {isAgentWorking && activeTask && (
                     <div className="mx-1 my-2 bg-gray-800/80 backdrop-blur rounded-xl border border-purple-500/30 overflow-hidden text-xs shadow-lg animate-in fade-in slide-in-from-bottom-2">
                         <div className="bg-purple-900/30 p-2.5 flex justify-between items-center border-b border-purple-500/20">
@@ -174,15 +258,45 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             </div>
 
             {/* Input */}
-            <div className="p-4 border-t border-gray-700 bg-gray-850 shrink-0">
+            <div className="p-4 border-t border-gray-700 bg-gray-850 shrink-0 relative">
+                {showCommands && filteredCommands.length > 0 && (
+                    <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 zoom-in-95 z-50 max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600" ref={menuRef}>
+                        <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2 sticky top-0 backdrop-blur-md z-10">
+                            <Command size={10} /> Available Commands
+                        </div>
+                        <div>
+                            {filteredCommands.map((cmd, idx) => {
+                                const isActive = idx === commandIndex;
+                                return (
+                                    <div 
+                                        key={cmd.cmd}
+                                        onClick={() => selectCommand(cmd.cmd)}
+                                        className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer text-sm transition-colors ${isActive ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
+                                    >
+                                        <div className={`p-1.5 rounded-md ${isActive ? 'bg-primary-500 text-white' : `bg-gray-800 ${cmd.color}`}`}>
+                                            <cmd.Icon size={14} />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="font-bold font-mono">{cmd.cmd}</span>
+                                            <span className={`text-[10px] ${isActive ? 'text-primary-200' : 'text-gray-500'}`}>{cmd.desc}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 <form onSubmit={onSubmit} className="flex gap-3 items-end">
                     <div className="flex-1 relative group">
                         <input 
+                            ref={inputRef}
                             type="text" 
                             className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-4 pr-10 py-3 text-white text-sm focus:border-primary-500 focus:outline-none transition-all shadow-inner placeholder-gray-600" 
-                            placeholder={isAgentWorking ? "Add instructions to queue..." : "Ask Omni to generate code..."}
+                            placeholder={isAgentWorking ? "Add instructions to queue..." : "Type / for commands or ask Omni..."}
                             value={input} 
                             onChange={e => setInput(e.target.value)} 
+                            onKeyDown={handleKeyDown}
                             autoFocus
                         />
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">

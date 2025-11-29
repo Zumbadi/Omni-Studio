@@ -35,15 +35,15 @@ export const PROJECT_TEMPLATES = [
     type: ProjectType.REACT_WEB, 
     description: 'Landing page, Auth, and Dashboard layout using Tailwind.', 
     icon: 'Globe',
-    prompt: 'Create a SaaS starter kit with a landing page (Hero, Features, Pricing), authentication forms (Login/Signup), and a protected dashboard layout with a sidebar.' 
+    prompt: 'Create a SaaS starter kit with a landing page (Hero, Features, Pricing), authentication forms (Login/Signup), and a protected dashboard layout with a sidebar. Use React, Tailwind CSS, and Lucide icons.' 
   },
   { 
     id: 't2', 
-    name: 'E-commerce Store', 
-    type: ProjectType.REACT_WEB, 
-    description: 'Product grid, cart logic, and checkout flow.', 
-    icon: 'ShoppingBag',
-    prompt: 'Create an e-commerce store with a responsive product grid, a shopping cart state manager, and a checkout form with validation.' 
+    name: 'Food Delivery Ecosystem', 
+    type: ProjectType.REACT_NATIVE, 
+    description: 'Customer App, Driver App, and Restaurant Dashboard.', 
+    icon: 'Smartphone',
+    prompt: 'Create a full Food Delivery Ecosystem. 1. React Native Customer App with food feed, cart, and tracking. 2. Driver App with order requests and map navigation. 3. React Web Restaurant Dashboard for order management. 4. Node.js Backend for order dispatching. Focus on the Customer App structure first.' 
   },
   { 
     id: 't3', 
@@ -55,11 +55,11 @@ export const PROJECT_TEMPLATES = [
   },
   { 
     id: 't4', 
-    name: 'Fitness Tracker', 
-    type: ProjectType.REACT_NATIVE, 
-    description: 'Workout logger with progress charts.', 
-    icon: 'Activity',
-    prompt: 'Create a fitness tracking mobile app. Include a screen to log workouts (sets/reps), a timer component, and a summary screen showing weekly progress.' 
+    name: 'AI Chat Platform', 
+    type: ProjectType.REACT_WEB, 
+    description: 'ChatGPT clone with streaming response UI.', 
+    icon: 'Bot',
+    prompt: 'Create an AI Chat Interface similar to ChatGPT. Include a sidebar for chat history, a streaming message renderer with markdown support, and a Python (FastAPI) backend wrapper for the model API.' 
   },
   { 
     id: 't5', 
@@ -71,20 +71,76 @@ export const PROJECT_TEMPLATES = [
   },
   { 
     id: 't6', 
-    name: 'iOS Crypto Wallet', 
-    type: ProjectType.IOS_APP, 
-    description: 'SwiftUI wallet interface with charts.', 
-    icon: 'Smartphone',
-    prompt: 'Create an iOS Crypto Wallet app using Swift and SwiftUI. Include a dashboard view with a line chart for portfolio value, a list of assets, and a send/receive modal.' 
+    name: 'Streaming Service', 
+    type: ProjectType.REACT_WEB, 
+    description: 'Netflix-style video catalog and player.', 
+    icon: 'Film',
+    prompt: 'Create a Streaming Service application (Netflix clone). Include a Hero banner with video background, horizontal scrolling rows for movie categories, a video player component, and a detailed info modal.' 
   },
   { 
     id: 't7', 
-    name: 'Android News Reader', 
-    type: ProjectType.ANDROID_APP, 
-    description: 'Kotlin/Jetpack Compose news feed.', 
-    icon: 'Smartphone',
-    prompt: 'Create an Android News Reader app using Kotlin and Jetpack Compose. Include a lazy column for news articles, an app bar with search, and a detail view for reading stories.' 
+    name: 'Task Management Suite', 
+    type: ProjectType.REACT_WEB, 
+    description: 'Kanban board + Mobile Companion App.', 
+    icon: 'Layout',
+    prompt: 'Create a Task Management Suite. 1. A React Web Kanban board with drag-and-drop columns. 2. A React Native companion app for viewing tasks on the go. 3. A synced Node.js backend with realtime websocket updates.' 
   },
+  {
+    id: 't8',
+    name: 'Influencer Brand Kit',
+    type: ProjectType.REACT_WEB,
+    description: 'Portfolio, Media Kit, and Link-in-Bio page.',
+    icon: 'Camera',
+    prompt: 'Create a personal branding site for an influencer. Include a "Link in Bio" style mobile landing page, a Media Kit section with stats (followers, engagement), and a portfolio grid of instagram posts. Use a trendy, high-contrast aesthetic.'
+  },
+  {
+    id: 't9',
+    name: 'Travel Companion',
+    type: ProjectType.REACT_NATIVE,
+    description: 'Itinerary planner with maps and local guides.',
+    icon: 'Map',
+    prompt: 'Create a Travel Companion mobile app. Features: 1. Trip Itinerary Timeline. 2. Map view with points of interest (simulated). 3. "Local Gems" discovery feed. Use React Native with a bottom tab navigator and sleek, airy UI.'
+  },
+  {
+    id: 't10',
+    name: 'Crypto DeFi Dashboard',
+    type: ProjectType.REACT_WEB,
+    description: 'Real-time asset tracking and swap interface.',
+    icon: 'TrendingUp',
+    prompt: 'Create a DeFi Crypto Dashboard. Include a real-time price ticker marquee, a portfolio value line chart, and a "Swap" widget interface similar to Uniswap. Use a dark, cyberpunk neon color scheme.'
+  },
+  {
+    id: 't11',
+    name: 'E-Commerce Storefront',
+    type: ProjectType.REACT_WEB,
+    description: 'Modern shop with cart, products, and checkout.',
+    icon: 'ShoppingBag',
+    prompt: 'Create a comprehensive E-Commerce Storefront. Features: 1. Responsive Grid Product Layout. 2. Product Detail Page with image gallery and "Add to Cart". 3. Slide-over Shopping Cart drawer. 4. Multi-step Checkout Form. Use Tailwind CSS for a minimalist, premium aesthetic.'
+  },
+  {
+    id: 't12',
+    name: '2D Browser Game',
+    type: ProjectType.REACT_WEB,
+    description: 'Canvas-based arcade game engine.',
+    icon: 'Activity',
+    prompt: 'Create a 2D Browser Game using React and HTML5 Canvas. Implement a core Game Loop, a Sprite Renderer class, and a Physics engine for collision detection. Create a demo "Space Shooter" level with player movement, shooting mechanics, and enemy waves.'
+  },
+  {
+    id: 't13',
+    name: 'Personal Finance App',
+    type: ProjectType.REACT_NATIVE,
+    description: 'Expense tracker with charts and budgets.',
+    icon: 'Smartphone',
+    prompt: 'Create a Personal Finance mobile app using React Native. Features: 1. Expense logging form with category selection. 2. Dashboard with a Donut Chart visualization of spending (using react-native-svg). 3. Monthly budget setting interface. Use a clean, trustworthy financial color palette.'
+  },
+  {
+    id: 't14',
+    name: 'Blog API Platform',
+    type: ProjectType.NODE_API,
+    description: 'Headless CMS API for blogging.',
+    icon: 'Server',
+    prompt: 'Create a robust Blog API Platform using Node.js and Express. Define Mongoose models for "Post", "Author", and "Comment". Implement RESTful routes for CRUD operations, pagination, and full-text search. Add JWT authentication middleware for protecting write operations.'
+  }
 ];
 
 // --- EXPANDED DEMO CONTENT ---
