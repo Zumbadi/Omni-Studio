@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity } from 'lucide-react';
 import { Button } from './Button';
@@ -86,7 +87,11 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           'src/App.tsx', 'src/App.jsx', 'src/App.js',
           'App.tsx', 'App.jsx', 'App.js',
           'index.tsx', 'index.jsx', 'index.js',
-          'main.tsx', 'main.jsx', 'main.js'
+          'main.tsx', 'main.jsx', 'main.js',
+          // Expo Router
+          'app/index.tsx', 'app/index.jsx', 'app/index.js',
+          'app/_layout.tsx', 'app/_layout.jsx',
+          'app/(tabs)/index.tsx'
       ];
 
       for (const path of entryPoints) {
@@ -98,14 +103,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           }
       }
       
-      // 2. React Native specific (expo-router)
-      if (!entryFile && project.type === ProjectType.REACT_NATIVE) {
-          const found = allFiles.find(f => f.path.includes('app/index.tsx') || f.path.includes('app/(tabs)/index.tsx') || f.node.name === 'App.tsx');
-          entryFile = found?.node;
-          entryPath = found?.path;
-      }
-
-      // 3. Native iOS/Android specific
+      // 2. Native iOS/Android specific
       if (project.type === ProjectType.IOS_APP) {
           const found = allFiles.find(f => f.node.name === 'OmniApp.swift' || f.node.name.endsWith('App.swift') || f.node.name === 'ContentView.swift');
           if (found) {
@@ -121,20 +119,24 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           }
       }
 
-      // 4. Generic Fallback: Search content for entry point markers
+      // 3. Scan content for entry point markers if no file matched by name
       if (!entryFile) {
           const found = allFiles.find(f => f.node.content && (
               f.node.content.includes('createRoot(') || 
               f.node.content.includes('ReactDOM.render') ||
               f.node.content.includes('@main') ||
               f.node.content.includes('export default function App') ||
+              f.node.content.includes('export default class App') ||
+              f.node.content.includes('registerRootComponent') ||
               f.node.content.includes('class MainActivity')
           ));
-          entryFile = found?.node;
-          entryPath = found?.path;
+          if (found) {
+              entryFile = found.node;
+              entryPath = found.path;
+          }
       }
 
-      // 5. Fallback to active file prop if nothing global found (Component Preview Mode)
+      // 4. Fallback to active file prop if nothing global found (Component Preview Mode)
       const codeToRun = entryFile?.content || propPreviewSrc;
       const pathToRun = entryPath || 'src/App.tsx'; // Default context
 

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { FileNode } from '../types';
 import { getAllFiles } from './fileHelpers';
@@ -12,7 +13,8 @@ const resolvePath = (basePath: string, relativePath: string): string => {
     if (!relativePath.startsWith('.')) return relativePath;
 
     const stack = basePath.split('/');
-    if (stack.length > 0) stack.pop(); // Remove filename from base path to get dir
+    // Base path usually includes filename, remove it to get directory
+    if (stack.length > 0) stack.pop(); 
     
     const parts = relativePath.split('/');
     for (const part of parts) {
@@ -88,6 +90,7 @@ const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[
         if (fileEntry && fileEntry.node.content && !visited.has(fileEntry.node.id)) {
             visited.add(fileEntry.node.id);
             
+            // Recurse with the path of the *imported* file as the new base
             let inlinedContent = bundleCode(fileEntry.node.content, allFiles, depth + 1, visited, collectedStyles, fileEntry.path);
             
             // Clean up exports in inlined code
@@ -103,7 +106,7 @@ const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[
     return bundled;
 };
 
-export const generatePreviewHtml = (code: string, isNative: boolean, files: FileNode[] = [], activeFilePath: string = 'root', envVars: Record<string, string> = {}) => {
+export const generatePreviewHtml = (code: string, isNative: boolean, files: FileNode[] = [], activeFilePath: string = 'src/App.tsx', envVars: Record<string, string> = {}) => {
   const isSwift = code.includes('import SwiftUI') || (code.includes('struct') && code.includes('View'));
   const isKotlin = code.includes('import androidx.compose') || code.includes('fun main');
   
@@ -116,7 +119,6 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
   const allFiles = getAllFiles(files); 
   const collectedStyles: string[] = [];
   
-  // Use a default path if activeFilePath is not useful
   const effectivePath = (activeFilePath && activeFilePath !== 'root') ? activeFilePath : 'src/App.tsx';
   
   let bundledCode = bundleCode(code, allFiles, 0, new Set(), collectedStyles, effectivePath);
@@ -162,34 +164,27 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
       }
   }
 
-  // Case C: Anonymous
+  // Case C: Anonymous or Expression
   if (!appDefined) {
+      // Look for export default function() {...}
       if (finalCode.match(/export\s+default\s+function\s*\(/)) {
           finalCode = finalCode.replace(/export\s+default\s+function/, 'const App = function');
           appDefined = true;
-      } else if (finalCode.match(/export\s+default\s+\(/)) {
-          finalCode = finalCode.replace(/export\s+default\s+/, 'const App = ');
-          appDefined = true;
-      } else if (finalCode.match(/export\s+default\s+class\s*\{/)) {
+      } 
+      // Look for export default class {}
+      else if (finalCode.match(/export\s+default\s+class\s*\{/)) {
           finalCode = finalCode.replace(/export\s+default\s+class/, 'const App = class');
           appDefined = true;
       }
-  }
-
-  // Case D: Identifier
-  if (!appDefined) {
-      const idMatch = finalCode.match(/export\s+default\s+([a-zA-Z0-9_]+);?/);
-      if (idMatch) {
-          const name = idMatch[1];
-          finalCode = finalCode.replace(/export\s+default\s+.*?;?/, '');
-          if (name !== 'App') {
-              finalCode += `\nconst App = ${name};`;
-          }
+      // Look for export default () => ... or export default identifier
+      else if (finalCode.match(/export\s+default\s+/)) {
+          // Replace 'export default' with 'const App ='
+          finalCode = finalCode.replace(/export\s+default\s+/, 'const App = ');
           appDefined = true;
       }
   }
 
-  // 3. Remove any remaining export keywords
+  // 3. Remove any remaining export keywords (named exports)
   finalCode = finalCode.replace(/^\s*export\s+/gm, '');
 
   // 4. Asset Resolution (Images/Svgs)
@@ -252,6 +247,7 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
         if (window[name]) return window[name];
         if (name === 'react' || name === 'React') return window.React;
         if (name === 'react-dom' || name === 'ReactDOM') return window.ReactDOM;
+        if (name === 'react/jsx-runtime') return window.React; // Fix for new JSX transform
         console.warn('Stubbing missing module:', name);
         return ProxyModule;
     };
