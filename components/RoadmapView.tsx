@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Map, BrainCircuit, Loader2, Flag, Check, ArrowRight } from 'lucide-react';
+import { Map, BrainCircuit, Loader2, Flag, Check, ArrowRight, Trophy } from 'lucide-react';
 import { Button } from './Button';
 import { ProjectPhase } from '../types';
 
@@ -35,7 +35,7 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({ roadmap, isGenerating,
             ) : (
                 <div className="space-y-6 max-w-3xl mx-auto">
                     {roadmap.map((phase, i) => (
-                        <div key={phase.id} className="bg-gray-800 rounded-xl border border-gray-700 p-5 shadow-lg hover:border-gray-600 transition-colors relative overflow-hidden group">
+                        <div key={phase.id} className={`bg-gray-800 rounded-xl border p-5 shadow-lg transition-colors relative overflow-hidden group ${phase.status === 'completed' ? 'border-green-600/50 shadow-green-900/10' : 'border-gray-700 hover:border-gray-600'}`}>
                             {/* Progress Bar Background */}
                             <div className="absolute top-0 left-0 h-1 bg-gray-700 w-full">
                                 <div 
@@ -44,25 +44,35 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({ roadmap, isGenerating,
                                 ></div>
                             </div>
 
-                            <div className="flex justify-between items-center mb-4">
+                            {/* Completed Overlay Pattern */}
+                            {phase.status === 'completed' && (
+                                <div className="absolute top-0 right-0 p-2">
+                                    <Trophy size={64} className="text-green-500/10 rotate-12"/>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between items-center mb-4 relative z-10">
                                 <div>
-                                    <h3 className="font-bold text-gray-200 text-base">{phase.title}</h3>
+                                    <h3 className="font-bold text-gray-200 text-base flex items-center gap-2">
+                                        {phase.title}
+                                        {phase.status === 'completed' && <span className="text-[10px] bg-green-500 text-black px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 animate-in zoom-in"><Trophy size={10} fill="currentColor"/> Milestone</span>}
+                                    </h3>
                                     <span className="text-[10px] text-gray-500">Phase {i + 1}</span>
                                 </div>
-                                <span className={`text-[10px] px-2.5 py-1 rounded-full uppercase font-bold border ${phase.status === 'completed' ? 'bg-green-900/30 text-green-400 border-green-800' : phase.status === 'active' ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-gray-700/30 text-gray-400 border-gray-600'}`}>
+                                <span className={`text-[10px] px-2.5 py-1 rounded-full uppercase font-bold border ${phase.status === 'completed' ? 'bg-green-900/30 text-green-400 border-green-800 animate-pulse' : phase.status === 'active' ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-gray-700/30 text-gray-400 border-gray-600'}`}>
                                     {phase.status}
                                 </span>
                             </div>
 
-                            <div className="space-y-2 mb-5">
+                            <div className="space-y-2 mb-5 relative z-10">
                                 {phase.goals.map((g, idx) => (
                                     <div key={idx} className="flex items-center gap-2 text-xs text-gray-400">
-                                        <Flag size={12} className="text-yellow-500 shrink-0"/> {g}
+                                        <Flag size={12} className={phase.status === 'completed' ? 'text-green-500' : 'text-yellow-500'} /> {g}
                                     </div>
                                 ))}
                             </div>
 
-                            <div className="bg-black/20 rounded-lg p-1 mb-4 border border-gray-700/50">
+                            <div className="bg-black/20 rounded-lg p-1 mb-4 border border-gray-700/50 relative z-10">
                                 {phase.tasks.map(task => (
                                     <div 
                                         key={task.id} 
@@ -77,11 +87,13 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({ roadmap, isGenerating,
                                 ))}
                             </div>
 
-                            <div className="flex justify-end">
-                                <Button size="sm" variant="secondary" onClick={() => onExecutePhase(phase)} className="text-xs group-hover:border-primary-500/50 group-hover:text-white transition-all">
-                                    Execute with AI <ArrowRight size={12} className="ml-2 group-hover:translate-x-1 transition-transform"/>
-                                </Button>
-                            </div>
+                            {phase.status !== 'completed' && (
+                                <div className="flex justify-end relative z-10">
+                                    <Button size="sm" variant="secondary" onClick={() => onExecutePhase(phase)} className="text-xs group-hover:border-primary-500/50 group-hover:text-white transition-all">
+                                        Execute with AI <ArrowRight size={12} className="ml-2 group-hover:translate-x-1 transition-transform"/>
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

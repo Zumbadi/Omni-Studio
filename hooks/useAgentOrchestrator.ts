@@ -67,6 +67,9 @@ export const useAgentOrchestrator = ({
   
   const modifiedFilesRef = useRef<Record<string, string>>({});
   const preRunSnapshot = useRef<FileNode[] | null>(null);
+  
+  // Track previous roadmap state to detect milestone completion
+  const prevRoadmapRef = useRef<ProjectPhase[]>(roadmap);
 
   const revertLastAgentRun = () => {
       if (preRunSnapshot.current) {
@@ -78,6 +81,20 @@ export const useAgentOrchestrator = ({
           addToast("error", "No snapshot available to revert.");
       }
   };
+
+  // --- MILESTONE NOTIFICATION SYSTEM ---
+  useEffect(() => {
+      roadmap.forEach(phase => {
+          const prevPhase = prevRoadmapRef.current.find(p => p.id === phase.id);
+          // Check if status changed to 'completed'
+          if (prevPhase && prevPhase.status !== 'completed' && phase.status === 'completed') {
+              addToast('success', `Milestone Reached: ${phase.title}`);
+              addSystemMessage(`🏆 **Milestone Unlocked:** ${phase.title} has been completed successfully.`);
+              setTerminalLogs(prev => [...prev, `[System] 🌟 MILESTONE ACHIEVED: ${phase.title}`]);
+          }
+      });
+      prevRoadmapRef.current = roadmap;
+  }, [roadmap, addToast, addSystemMessage, setTerminalLogs]);
 
   // --- AUTO-PILOT LOOP ---
   useEffect(() => {

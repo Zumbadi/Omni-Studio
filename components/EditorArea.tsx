@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal, Maximize2, Minimize2 } from 'lucide-react';
+import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal, Maximize2, Minimize2, Save } from 'lucide-react';
 import { CodeEditor, CodeEditorHandle } from './CodeEditor';
 import { DiffEditor } from './DiffEditor';
 import { Terminal } from './Terminal';
@@ -61,6 +61,7 @@ interface EditorAreaProps {
   // Zen Mode Props
   isZenMode?: boolean;
   onToggleZenMode?: () => void;
+  onSaveAll?: () => void;
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
@@ -72,7 +73,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   layout, toggleLayout, bottomPanelHeight, handleResizeStart,
   terminalLogs, onCommand, onAiFix,
   testResults, isRunningTests, onRunTests,
-  isZenMode, onToggleZenMode
+  isZenMode, onToggleZenMode, onSaveAll
 }) => {
   
   const [activeBottomTab, setActiveBottomTab] = useState<'terminal' | 'problems' | 'tests'>('terminal');
@@ -240,6 +241,15 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
             {openFiles.length === 0 && <div className="px-4 py-2.5 text-xs text-gray-600 italic">No open files</div>}
             
             <div className="ml-auto flex items-center">
+                {onSaveAll && (
+                    <button
+                        onClick={onSaveAll}
+                        className="px-3 flex items-center text-gray-500 hover:text-white border-l border-gray-800 h-full transition-colors"
+                        title="Save All"
+                    >
+                        <Save size={14} />
+                    </button>
+                )}
                 {onToggleZenMode && (
                     <button
                         onClick={onToggleZenMode}

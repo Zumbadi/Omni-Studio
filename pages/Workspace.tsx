@@ -822,6 +822,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     terminalLogs={terminalLogs} onCommand={handleCommand} onAiFix={handleAiFix}
                     testResults={testResults} isRunningTests={isRunningTests} onRunTests={runTests}
                     isZenMode={isZenMode} onToggleZenMode={toggleZenMode}
+                    onSaveAll={handleExplicitSave}
                 />
             </div>
         )}

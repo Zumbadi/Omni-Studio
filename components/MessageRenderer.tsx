@@ -12,7 +12,7 @@ interface MessageRendererProps {
   onRevert?: () => void;
 }
 
-export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApplyCode, onAutoFix, onCompareCode, onRevert }) => {
+export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApplyCode, onAutoFix, onCompareCode, onApplyAll, onRevert }) => {
   
   const getScoreColor = (score: number) => {
       if (score >= 90) return 'text-green-400 border-green-500/30 bg-green-900/20';
@@ -44,6 +44,25 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
       agentColor = 'text-blue-400';
       agentName = 'Builder';
   }
+
+  // Extract all code blocks for Apply All
+  const codeBlocks = React.useMemo(() => {
+      const blocks: string[] = [];
+      const parts = message.text.split(/(```[\s\S]*?```)/g);
+      parts.forEach(part => {
+          if (part.startsWith('```') && part.endsWith('```')) {
+              const content = part.replace(/^```\w*\n?/, '').replace(/```$/, '');
+              blocks.push(content);
+          }
+      });
+      return blocks;
+  }, [message.text]);
+
+  const handleApplyAll = () => {
+      if (onApplyAll && codeBlocks.length > 0) {
+          onApplyAll(codeBlocks);
+      }
+  };
 
   const renderAttachments = () => {
       if (!message.attachments || message.attachments.length === 0) return null;
@@ -306,6 +325,21 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
       )}
       
       <div className={`max-w-[98%] rounded-2xl rounded-tl-none p-2 overflow-hidden border ${isSystemUpdate ? 'bg-gray-900 border-gray-700 border-l-4 border-l-purple-500' : 'bg-gray-800 border-gray-700'} text-gray-200 text-sm w-full shadow-md relative group`}>
+         {/* Apply All Header */}
+         {codeBlocks.length > 1 && onApplyAll && (
+             <div className="flex justify-between items-center bg-gray-900/50 p-2 border-b border-gray-700/50 mb-2 rounded-t-md">
+                 <span className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
+                    <Sparkles size={10} className="text-primary-400"/> {codeBlocks.length} Code Snippets
+                 </span>
+                 <button 
+                    onClick={handleApplyAll}
+                    className="flex items-center gap-1 text-[10px] bg-primary-600/20 hover:bg-primary-600/40 text-primary-300 border border-primary-500/30 px-2 py-1 rounded transition-colors"
+                 >
+                    <CornerDownLeft size={10}/> Apply All
+                 </button>
+             </div>
+         )}
+
          {renderTextContent(message.text)}
          {renderAttachments()}
          {renderSources()}
