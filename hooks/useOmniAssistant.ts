@@ -4,6 +4,7 @@ import { ChatMessage, ProjectType, FileNode } from '../types';
 import { generateCodeResponse, critiqueCode, generateImage, generateSpeech, detectIntent, editImage } from '../services/geminiService';
 import { findRelevantContext } from '../utils/projectAnalysis';
 import { getAllFiles } from '../utils/fileHelpers';
+import { useDebounce } from './useDebounce';
 
 interface UseOmniAssistantProps {
   projectId: string;
@@ -37,11 +38,14 @@ export const useOmniAssistant = ({
       }];
   });
 
+  // Debounce history saving to prevent blocking UI during streaming updates
+  const debouncedHistory = useDebounce(chatHistory, 2000);
+
   useEffect(() => {
       if (projectId) {
-          localStorage.setItem(`omni_chat_${projectId}`, JSON.stringify(chatHistory));
+          localStorage.setItem(`omni_chat_${projectId}`, JSON.stringify(debouncedHistory));
       }
-  }, [chatHistory, projectId]);
+  }, [debouncedHistory, projectId]);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 1024);

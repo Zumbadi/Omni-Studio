@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, memo } from 'react';
 import { Sparkles, MessageSquare, Zap, Wrench, Loader2 } from 'lucide-react';
 import { highlightCode } from '../utils/syntaxHighlight';
 
@@ -42,7 +42,7 @@ const KEYWORDS = [
   'className', 'style', 'onClick', 'onChange', 'value', 'key', 'children'
 ];
 
-export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
+export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
   code, onChange, fileName, config, onCodeAction, onSelectionChange, 
   breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange, onDrop, readOnly = false
 }, ref) => {
@@ -611,6 +611,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(({
       </div>
     </div>
   );
-});
+}));
 
 CodeEditor.displayName = 'CodeEditor';

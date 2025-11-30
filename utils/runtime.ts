@@ -23,12 +23,20 @@ const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[
         bundled = bundled.replace(importStatement, `// ${importStatement} (Injected)`);
     }
 
-    // 2. Handle JS/TS Imports
-    const importRegex = /import\s+.*?\s+from\s+['"]((\.|@\/).+?)['"];?/g;
+    // 2. Handle JS/TS Imports (Named, Default, and Side-effect)
+    // Matches: import ... from "..." OR import "..."
+    const importRegex = /(import\s+(?:[\w\s{},*]*\s+from\s+)?['"]((\.|@\/).+?)['"];?)/g;
     let match;
-    while ((match = importRegex.exec(entryCode)) !== null) {
-        const importStatement = match[0];
-        const importPath = match[1];
+    
+    // We use a simple approach: find all matches, replace them if we find the file.
+    // We need to reset lastIndex if we were using exec in a loop, but with replace or matchAll it's safer.
+    // However, to handle recursion order correctly, we iterate.
+    
+    const matches = [...entryCode.matchAll(importRegex)];
+    
+    for (const m of matches) {
+        const importStatement = m[0];
+        const importPath = m[2]; // The path inside quotes
         
         let fileNode: FileNode | undefined;
 
@@ -45,6 +53,7 @@ const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[
                 })?.node;
             }
         } else {
+            // Relative import logic (simplified flat search for this demo)
             const filename = importPath.split('/').pop()?.replace(/['"]/g, '');
             fileNode = allFiles.find(f => {
                 const fname = f.node.name.split('.')[0];
@@ -59,10 +68,8 @@ const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[
             
             // Strip imports from the inlined content to prevent duplication/recursion issues
             inlinedContent = inlinedContent
-                .replace(/import\s+.*?\s+from\s+['"].*?['"];?/g, '')
+                .replace(/(import\s+(?:[\w\s{},*]*\s+from\s+)?['"]((\.|@\/).+?)['"];?)/g, '')
                 .replace(/import\s+['"].*?\.css['"];?/g, '')
-                // We keep the logic mostly clean here, relying on the top-level sanitization for 'export default' handling
-                // but we can strip them here for inlined modules to avoid conflicts
                 .replace(/export\s+default\s+/g, '') 
                 .replace(/export\s+/g, ''); 
 
@@ -99,7 +106,7 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
     .replace(/import\s+{.*?}\s+from\s+['"]react-native['"];/g, '')
     .replace(/import\s+{.*?}\s+from\s+['"]lucide-react['"];/g, '')
     .replace(/import\s+['"].*?\.css['"];?/g, '')
-    .replace(/import\s+.*?;/g, '');
+    .replace(/(import\s+(?:[\w\s{},*]*\s+from\s+)?['"]((\.|@\/).+?)['"];?)/g, '');
 
   let appDefined = false;
 
@@ -208,7 +215,15 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
             const root = ReactDOM.createRoot(rootEl);
             root.render(<ErrorBoundary><App /></ErrorBoundary>);
         } else {
-            rootEl.innerHTML = '<div style="color:#ef4444; padding:20px; font-family:monospace;"><h3>Preview Error</h3><p>Entry component "App" not found.</p><p style="font-size:12px; color:#666">Ensure your entry file exports a default component (e.g., <code>export default function App() {}</code>).</p></div>';
+            // Fallback for when no export default App is found, check for other components
+            const foundComponent = Object.keys(window).find(k => k !== 'App' && typeof window[k] === 'function' && /^[A-Z]/.test(k));
+            if (foundComponent) {
+                const Comp = window[foundComponent];
+                const root = ReactDOM.createRoot(rootEl);
+                root.render(<ErrorBoundary><Comp /></ErrorBoundary>);
+            } else {
+                rootEl.innerHTML = '<div style="color:#ef4444; padding:20px; font-family:monospace;"><h3>Preview Error</h3><p>Entry component "App" not found.</p><p style="font-size:12px; color:#666">Ensure your entry file exports a default component (e.g., <code>export default function App() {}</code>).</p></div>';
+            }
         }
     } catch(e) {
         rootEl.innerHTML = '<div style="color:#ef4444; padding:20px;"><h3>Mounting Error</h3><pre>' + e.toString() + '</pre></div>';
@@ -225,6 +240,7 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
         <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
         <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
         <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
         ${styleBlock}
         <style>
           body { margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -257,6 +273,8 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
         </script>
         <script type="text/babel">
           const { useState, useEffect, useRef, useMemo, useCallback } = React;
+          // Recharts Shim
+          const { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } = window.Recharts || {};
 
           // React Native / Expo Shims for Web Preview
           const flattenStyles = (style) => style ? (Array.isArray(style) ? style.reduce((a,c)=>({...a,...c}), {}) : style) : {};

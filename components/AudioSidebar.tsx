@@ -4,9 +4,11 @@ import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2,
 import { Button } from './Button';
 import { Voice } from '../types';
 
+export type AudioTab = 'mixer' | 'cloning' | 'pro' | 'sequencer';
+
 interface AudioSidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'mixer' | 'cloning' | 'pro' | 'sequencer') => void;
+  setActiveTab: (tab: AudioTab) => void;
   voices: Voice[];
   selectedVoice: string;
   setSelectedVoice: (id: string) => void;

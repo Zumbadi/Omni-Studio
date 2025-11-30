@@ -405,9 +405,18 @@ export const useAgentOrchestrator = ({
                       modifiedFileNames.push(fileNode.name);
                       
                   } else if (review.suggestedCommand && handleCommand) {
-                      setTerminalLogs(prev => [...prev, `[${critic.name}] 🛠️ Running: ${review.suggestedCommand}`]);
+                      // COMMAND EXECUTION (Self-Healing)
+                      setTerminalLogs(prev => [...prev, `[${critic.name}] 🛠️ Executing: ${review.suggestedCommand}`]);
                       handleCommand(review.suggestedCommand);
-                      feedback = `Ran command: ${review.suggestedCommand}. Please re-check if dependencies are now resolved.`;
+                      
+                      // Wait for simulated installation
+                      await new Promise(r => setTimeout(r, 2000));
+                      
+                      // Retry with specific feedback
+                      feedback = `Ran command: "${review.suggestedCommand}". Dependency issue should be resolved. Please verify imports.`;
+                      setTerminalLogs(prev => [...prev, `[System] 🔄 Retrying build after environmental fix...`]);
+                      
+                      // Do NOT mark success, loop continues to next attempt with better environment
                   } else {
                       feedback = review.feedback;
                       const issues = review.issues?.slice(0, 2).join(', ') || "Validation failed";

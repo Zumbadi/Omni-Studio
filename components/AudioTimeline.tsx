@@ -4,6 +4,7 @@ import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Tr
 import { Button } from './Button';
 import { AudioTrack } from '../types';
 import { bufferToWav } from '../utils/audioHelpers';
+import { AudioTab } from './AudioSidebar';
 
 interface AudioTimelineProps {
   tracks: AudioTrack[];
@@ -13,7 +14,7 @@ interface AudioTimelineProps {
   isExporting: boolean;
   onShowAssets: () => void;
   activeTab: string;
-  setActiveTab: (tab: 'mixer' | 'cloning' | 'pro' | 'sequencer') => void;
+  setActiveTab: (tab: AudioTab) => void;
   isRecording: boolean;
   startRecording: () => void;
   stopRecording: () => void;

@@ -9,6 +9,7 @@ import { AppSidebar } from './components/AppSidebar';
 import JSZip from 'jszip';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { Login } from './components/Login';
+import { useDebounce } from './hooks/useDebounce';
 
 // Lazy Load Heavy Components for Performance Optimization
 const Workspace = lazy(() => import('./pages/Workspace').then(m => ({ default: m.Workspace })));
@@ -65,10 +66,13 @@ const App: React.FC = () => {
       }
   }, [currentView]);
 
+  // Debounced persistence for projects
+  const debouncedProjects = useDebounce(projects, 1000);
+
   // Persist state
   useEffect(() => {
-    localStorage.setItem('omni_projects', JSON.stringify(projects));
-  }, [projects]);
+    localStorage.setItem('omni_projects', JSON.stringify(debouncedProjects));
+  }, [debouncedProjects]);
 
   useEffect(() => {
       localStorage.setItem('omni_current_view', currentView);

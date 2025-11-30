@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download, Globe, ExternalLink } from 'lucide-react';
+import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download, Globe, ExternalLink, PenTool, Terminal } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface MessageRendererProps {
@@ -157,16 +157,25 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                       )}
                   </div>
 
+                  {/* Auto-Fix Available Indicator */}
                   {fixCode && (
-                      <div className="mt-4 bg-black/20 p-3 rounded-lg border border-white/10">
+                      <div className="mt-4 bg-green-900/20 p-3 rounded-lg border border-green-500/30">
                           <div className="flex justify-between items-center mb-2">
-                              <span className="text-xs font-medium text-green-300 flex items-center gap-1"><Sparkles size={12}/> Critic suggested a fix</span>
+                              <span className="text-xs font-bold text-green-300 flex items-center gap-1">
+                                  <PenTool size={12}/> Auto-Correction Ready
+                              </span>
+                              <span className="text-[9px] bg-green-900/50 text-green-200 px-2 py-0.5 rounded font-mono">
+                                  SELF-HEALING
+                              </span>
+                          </div>
+                          <div className="text-[10px] text-green-200/70 mb-2">
+                              The critic has automatically generated a fix for the identified issues.
                           </div>
                           <button 
                               onClick={() => onApplyCode(fixCode)}
                               className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white text-xs font-medium py-2 rounded-lg transition-all shadow-lg"
                           >
-                              <CornerDownLeft size={14} /> Apply Fix & Update File
+                              <CornerDownLeft size={14} /> Apply Critic's Fix
                           </button>
                       </div>
                   )}
@@ -243,6 +252,20 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                               )}
                           </React.Fragment>
                       ))}
+                  </div>
+              );
+          }
+          
+          // Auto-Fix Badge
+          if (part.includes('AUTO-FIXED')) {
+              const split = part.split('AUTO-FIXED');
+              return (
+                  <div key={idx} className="p-2 whitespace-pre-wrap leading-relaxed text-gray-300">
+                      {split[0]}
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-green-900/30 text-green-300 border border-green-800 px-1.5 py-0.5 rounded font-bold uppercase mx-1">
+                          <Zap size={8} fill="currentColor"/> Auto-Fixed
+                      </span>
+                      {split[1]}
                   </div>
               );
           }

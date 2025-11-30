@@ -174,11 +174,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       return ['> Omni-Studio initialized.', '> Ready.'];
   });
 
+  const debouncedTerminalLogs = useDebounce(terminalLogs, 3000);
+
   useEffect(() => {
       if (project?.id) {
-          localStorage.setItem(`omni_terminal_${project.id}`, JSON.stringify(terminalLogs.slice(-200)));
+          localStorage.setItem(`omni_terminal_${project.id}`, JSON.stringify(debouncedTerminalLogs.slice(-200)));
       }
-  }, [terminalLogs, project?.id]);
+  }, [debouncedTerminalLogs, project?.id]);
 
   const [liveConsoleLogs, setLiveConsoleLogs] = useState<string[]>([]);
   const [debugVariables, setDebugVariables] = useState<{name: string, value: string}[]>([]);
@@ -246,11 +248,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       return [];
   });
 
+  const debouncedKnowledgeDocs = useDebounce(knowledgeDocs, 2000);
+
   useEffect(() => {
       if (project?.id) {
-          localStorage.setItem(`omni_knowledge_${project.id}`, JSON.stringify(knowledgeDocs));
+          localStorage.setItem(`omni_knowledge_${project.id}`, JSON.stringify(debouncedKnowledgeDocs));
       }
-  }, [knowledgeDocs, project?.id]);
+  }, [debouncedKnowledgeDocs, project?.id]);
 
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showVoiceCommander, setShowVoiceCommander] = useState(false);

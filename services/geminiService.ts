@@ -15,7 +15,6 @@ const getAiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// ... (Rest of existing utility functions: getProviderConfig, cleanJson, extractCode, retryOperation) ...
 const getProviderConfig = (modelName: string) => {
     try {
         const providers = JSON.parse(localStorage.getItem('omni_api_providers') || '[]');
@@ -46,13 +45,33 @@ const safeParseJSON = (jsonString: string, fallback: any = {}) => {
 const extractCode = (rawText: string): string => {
     if (!rawText) return "";
     if (rawText.includes('DELETE_FILE')) return 'DELETE_FILE';
-    const codeBlockRegex = /```(?:typescript|javascript|tsx|jsx|css|json|html|swift|kotlin|xml|bash|sh|dockerfile|yaml)?\n([\s\S]*?)```/g;
-    const matches = [...rawText.matchAll(codeBlockRegex)];
-    if (matches.length > 0) return matches.reduce((a, b) => a[1].length > b[1].length ? a : b)[1].trim();
+    
+    // Prioritize language-specific blocks over generic ones
+    const priorityRegex = /```(?:typescript|javascript|tsx|jsx|css|json|html|swift|kotlin|xml|bash|sh|dockerfile|yaml)\n([\s\S]*?)```/g;
+    const priorityMatches = [...rawText.matchAll(priorityRegex)];
+    
+    if (priorityMatches.length > 0) {
+        return priorityMatches.reduce((a, b) => a[1].length > b[1].length ? a : b)[1].trim();
+    }
+
+    const genericRegex = /```\w*\n([\s\S]*?)```/g;
+    const genericMatches = [...rawText.matchAll(genericRegex)];
+    if (genericMatches.length > 0) {
+        return genericMatches.reduce((a, b) => a[1].length > b[1].length ? a : b)[1].trim();
+    }
+
     let cleaned = rawText.trim();
-    if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```\w*\n?/, '').replace(/```$/, '');
+    if (/^(import|export|const|function|class|interface|type)\s/.test(cleaned)) {
+        return cleaned;
+    }
+
     const preambleMatch = cleaned.match(/^(here is|sure,|certainly|below is).*?:\n/i);
     if (preambleMatch) cleaned = cleaned.substring(preambleMatch[0].length).trim();
+    
+    if (cleaned.startsWith('`') && cleaned.endsWith('`')) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+
     return cleaned;
 };
 
@@ -93,7 +112,7 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - ICONS: Use '@expo/vector-icons' (e.g. FontAwesome, Ionicons).
             - ASSETS: Use local require('./assets/...') or remote URIs.
             - STATE MANAGEMENT: Use React Context or Zustand (simple).
-            - FORBIDDEN: Do NOT use HTML tags (div, span, h1, ul, li). Do NOT use 'framer-motion' (use 'react-native-reanimated' if needed).
+            - FORBIDDEN: Do NOT use HTML tags (div, span, h1, ul, li). Do NOT use 'framer-motion'.
             - PREVIEW: Code must be runnable in Expo Go simulation.
             ${commonInstructions}`;
             
@@ -209,8 +228,14 @@ export const executeBuildTask = async (
     const ai = getAiClient();
     const model = agent.model || 'gemini-2.5-flash';
     const rules = `${getFrameworkInstructions(projectType)}\n${context?.projectRules || ''}\n${context?.mcpContext || ''}`;
-    const env = context ? `Phase: ${context.roadmap?.find(p=>p.status==='active')?.title}, Errors: ${context.terminalLogs?.slice(-2).join('\n')}` : '';
-    const retry = previousFeedback ? `!!! REJECTED PREVIOUSLY. FIX: "${previousFeedback}" !!!` : '';
+    const env = context ? `Phase: ${context.roadmap?.find(p=>p.status==='active')?.title}, Errors: ${context.terminalLogs?.slice(-5).join('\n')}` : '';
+    
+    // Aggressive Feedback Injection
+    const retry = previousFeedback ? `
+    !!! CRITICAL: PREVIOUS ATTEMPT REJECTED !!!
+    CRITIC FEEDBACK: "${previousFeedback}"
+    INSTRUCTION: Fix the specific issues above. Do NOT repeat the same mistake.
+    ` : '';
     
     const systemInstruction = `
         ${agent.systemPrompt}
@@ -220,8 +245,9 @@ export const executeBuildTask = async (
         ${env}
         ${context?.relatedCode || ''}
         ${retry}
-        STRICT OUTPUT: Return ONLY valid file content. NO markdown fences. NO placeholders.
+        STRICT OUTPUT: Return ONLY valid file content. NO markdown fences if possible, but I will strip them. NO placeholders.
         CRITICAL: If this is the main entry file (App.tsx), you MUST export a default component named 'App'.
+        If you are stuck, write a comment explaining why.
     `;
 
     try {
@@ -242,24 +268,28 @@ export const reviewBuildTask = async (
     if (!getApiKey()) return { approved: true, feedback: "Auto-approved", issues: [] };
     const ai = getAiClient();
     const rules = `${getFrameworkInstructions(projectType)}\n${context?.projectRules || ''}`;
+    const recentLogs = context?.terminalLogs?.slice(-10).join('\n') || '';
     
     const systemInstruction = `
-        IDENTITY: Senior Principal Engineer (Critic).
-        GOAL: Ensure code quality AND development velocity. Avoid unnecessary loops.
+        IDENTITY: Senior Principal Engineer (The Critic).
+        GOAL: Ensure code quality, stability, and unblock the pipeline via self-correction.
         
         TASK: Review changes for "${fileName}".
         REQUIREMENTS: "${requirements}".
         CONTEXT: ${rules}
+        RUNTIME LOGS: 
+        ${recentLogs}
 
         DECISION MATRIX:
-        1. **PERFECT**: If code is correct -> Approve (approved: true).
-        2. **MINOR ISSUES** (Syntax, missing imports, unused vars, formatting, slight logic bugs, React hook rules):
-           -> **DO NOT REJECT**.
-           -> **FIX IT YOURSELF**.
-           -> Return "approved: false" (technically the builder failed) BUT provide the **FULL CORRECTED CODE** in "fixCode".
-           -> This counts as a "Critic Rescue" and unblocks the pipeline.
-        3. **CRITICAL FAILURES** (Wrong framework, missing core feature, completely hallucinated logic, security vulnerability):
-           -> Reject (approved: false). Provide feedback.
+        1. **PERFECT**: If code is correct and meets requirements -> Approve.
+        2. **MINOR ISSUES** (Syntax, unused imports, formatting, simple logic errors):
+           -> **AUTO-FIX**: Return "approved: false" BUT provide the **FULL CORRECTED CODE** in "fixCode".
+           -> Do not reject if you can fix it.
+        3. **DEPENDENCY ISSUES**: If the code uses a library that might be missing (check imports vs package.json logic or if logs show "Module not found"):
+           -> Return "approved: false".
+           -> Provide "suggestedCommand" (e.g., "npm install axios" or "npm install -D @types/node").
+        4. **CRITICAL FAILURES** (Wrong framework, missing core feature, security risk, hallucinations):
+           -> Reject with specific feedback.
 
         OUTPUT JSON:
         {
@@ -267,7 +297,7 @@ export const reviewBuildTask = async (
             "feedback": "Concise summary", 
             "issues": ["List of issues"], 
             "fixCode": "FULL CORRECTED CODE IF AUTO-FIXABLE (OR NULL)",
-            "suggestedCommand": "Terminal command if needed (e.g. npm install)"
+            "suggestedCommand": "Terminal command if needed (OR NULL)"
         }
     `;
 
@@ -332,7 +362,6 @@ export const generateCodeResponse = async (
     } catch (error: any) { onStream(`Error: ${error.message}`); }
 };
 
-// ... (Rest of existing exports: generateGhostText, chatWithVoice, etc. - ensure these are present as before)
 export const generateGhostText = async (p: string, s: string) => { if (!getApiKey()) return ""; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Complete:\n${p}[CURSOR]${s}`, config: { maxOutputTokens: 64, temperature: 0.2 } }) as GenerateContentResponse; return r.text?.trimEnd() || ""; } catch { return ""; } };
 export const chatWithVoice = async (p: string) => { if (!getApiKey()) return "No Key"; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: p, config: { systemInstruction: "Concise response." } }) as GenerateContentResponse; return r.text || "?"; } catch { return "Error"; } };
 export const generateProjectScaffold = async (p: string, t: ProjectType) => { if (!getApiKey()) return []; const ai = getAiClient(); try { const r = await retryOperation(() => ai.models.generateContent({ model: 'gemini-2.5-flash', contents: "Generate.", config: { systemInstruction: `Scaffold JSON for ${t}: "${p}". Schema: [{name, type, content?, children?}]. Ensure root has src/App.tsx (or appropriate entry) exporting default App component.`, responseMimeType: 'application/json' } })) as GenerateContentResponse; return safeParseJSON(r.text || '[]', []); } catch { return []; } };
