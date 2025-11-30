@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { FileNode, Project, ProjectType } from '../types';
 import { WEB_FILE_TREE, NATIVE_FILE_TREE, NODE_FILE_TREE, IOS_FILE_TREE, ANDROID_FILE_TREE } from '../constants';
 import { findFileById, getAllFiles, upsertFileByPath } from '../utils/fileHelpers';
+import { useDebounce } from './useDebounce';
 
 export const useFileSystem = (project: Project | null) => {
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -55,13 +56,25 @@ export const useFileSystem = (project: Project | null) => {
     }
   }, [project?.id, project?.type]);
 
-  // Persistence
+  // Debounced Persistence to prevent main thread blocking on every keystroke
+  const debouncedFiles = useDebounce(files, 2000);
+  const debouncedTrash = useDebounce(deletedFiles, 2000);
+  const debouncedTabs = useDebounce({ openFiles, activeFileId }, 2000);
+
   useEffect(() => {
     if (!project) return;
-    localStorage.setItem(`omni_files_${project.id}`, JSON.stringify(files));
-    localStorage.setItem(`omni_trash_${project.id}`, JSON.stringify(deletedFiles));
-    localStorage.setItem(`omni_open_tabs_${project.id}`, JSON.stringify({ openFiles, activeFileId }));
-  }, [files, deletedFiles, openFiles, activeFileId, project?.id]);
+    localStorage.setItem(`omni_files_${project.id}`, JSON.stringify(debouncedFiles));
+  }, [debouncedFiles, project?.id]);
+
+  useEffect(() => {
+    if (!project) return;
+    localStorage.setItem(`omni_trash_${project.id}`, JSON.stringify(debouncedTrash));
+  }, [debouncedTrash, project?.id]);
+
+  useEffect(() => {
+    if (!project) return;
+    localStorage.setItem(`omni_open_tabs_${project.id}`, JSON.stringify(debouncedTabs));
+  }, [debouncedTabs, project?.id]);
 
   const updateFileContent = useCallback((id: string, content: string) => {
       setFiles(prev => {

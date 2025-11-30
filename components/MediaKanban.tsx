@@ -23,6 +23,11 @@ export const MediaKanban: React.FC<MediaKanbanProps> = ({ posts, onSelectPost })
             onClick={() => onSelectPost(post)} 
             className="bg-gray-800 p-3 rounded-lg border border-gray-700 shadow-sm hover:border-primary-500/50 hover:bg-gray-750 transition-all group cursor-pointer relative"
           >
+            <div className="flex justify-between items-start mb-2">
+                <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wide ${post.brandId ? 'bg-primary-900/30 text-primary-300 border border-primary-800' : 'bg-gray-700 text-gray-400'}`}>
+                    {post.brandId || 'Personal'}
+                </span>
+            </div>
             <h4 className="text-sm font-medium text-gray-200 mb-2 line-clamp-2 group-hover:text-white">{post.title}</h4>
             <div className="flex justify-between items-center mt-2">
               <span className="text-[10px] text-gray-500 capitalize px-1.5 py-0.5 bg-black/30 rounded">{post.platform}</span>

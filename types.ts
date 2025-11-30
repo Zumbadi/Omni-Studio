@@ -162,6 +162,7 @@ export interface SocialPost {
   id: string;
   title: string;
   platform: 'youtube' | 'tiktok' | 'twitter' | 'instagram';
+  brandId?: string; // Multi-brand support
   status: 'idea' | 'scripting' | 'generating' | 'ready' | 'uploaded';
   thumbnail?: string;
   views?: string;

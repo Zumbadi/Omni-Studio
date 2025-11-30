@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, memo } from 'react';
+import React, { useState, useRef, memo, useMemo } from 'react';
 import { Folder, File as FileIcon, ChevronRight, ChevronDown, MoreVertical, Link, FolderInput, FileInput, FilePlus, FolderPlus, Package, Plus, Play, UploadCloud, Trash2, FileCode, FileJson, Image as ImageIcon, FileType, Pin } from 'lucide-react';
 import { FileNode, Project } from '../types';
 
@@ -38,45 +38,37 @@ export const FileExplorer = memo(({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const findPackageJson = (nodes: FileNode[]): string | undefined => {
-      for (const node of nodes) {
-          if (node.name === 'package.json' && node.type === 'file') return node.content;
-          if (node.children) {
-              const found = findPackageJson(node.children);
-              if (found) return found;
+  // Memoize dependency parsing to prevent recalculation on every render
+  const { scripts, dependencies } = useMemo(() => {
+      const findFile = (nodes: FileNode[], name: string): string | undefined => {
+          for (const node of nodes) {
+              if (node.name === name && node.type === 'file') return node.content;
+              if (node.children) {
+                  const found = findFile(node.children, name);
+                  if (found) return found;
+              }
           }
-      }
-      return undefined;
-  };
-  
-  const packageJsonContent = findPackageJson(files);
-  let scripts = {};
-  let dependencies = {};
-  
-  try {
-      if (packageJsonContent) {
-          const json = JSON.parse(packageJsonContent);
-          scripts = json.scripts || {};
-          dependencies = json.dependencies || {};
-      }
-  } catch (e) {}
+          return undefined;
+      };
 
-  const findNativeDeps = (nodes: FileNode[], filename: string): string | undefined => {
-      for (const node of nodes) {
-          if (node.name === filename && node.type === 'file') return node.content;
-          if (node.children) {
-              const found = findNativeDeps(node.children, filename);
-              if (found) return found;
+      const pkgContent = findFile(files, 'package.json');
+      let scriptsObj = {};
+      let depsObj = {};
+
+      try {
+          if (pkgContent) {
+              const json = JSON.parse(pkgContent);
+              scriptsObj = json.scripts || {};
+              depsObj = json.dependencies || {};
           }
-      }
-      return undefined;
-  };
+      } catch (e) {}
 
-  const podfileContent = findNativeDeps(files, 'Podfile');
-  if (podfileContent) dependencies = { ...dependencies, ...{'iOS Pods': 'Native'} };
-  
-  const gradleContent = findNativeDeps(files, 'build.gradle.kts');
-  if (gradleContent) dependencies = { ...dependencies, ...{'Android Gradle': 'Native'} };
+      // Check native deps
+      if (findFile(files, 'Podfile')) depsObj = { ...depsObj, 'iOS Pods': 'Native' };
+      if (findFile(files, 'build.gradle.kts')) depsObj = { ...depsObj, 'Android Gradle': 'Native' };
+
+      return { scripts: scriptsObj, dependencies: depsObj };
+  }, [files]);
 
   const getFileIcon = (name: string) => {
       if (name.endsWith('.tsx') || name.endsWith('.jsx')) return <FileCode size={14} className="text-blue-400"/>;

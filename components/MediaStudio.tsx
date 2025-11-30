@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Clapperboard, Plus, Upload, Image as ImageIcon, Wand2, X, Video, Loader2, Sparkles, Save, Calendar, LayoutGrid, FileText, Target, Scissors } from 'lucide-react';
+import { Clapperboard, Plus, Upload, Image as ImageIcon, Wand2, X, Video, Loader2, Sparkles, Save, Calendar, LayoutGrid, FileText, Target, Scissors, Grid, Briefcase, Lightbulb } from 'lucide-react';
 import { Button } from './Button';
 import { MOCK_SOCIAL_POSTS } from '../constants';
 import { SocialPost, Scene, Character, ReferenceAsset, AudioTrack, ContentStrategy } from '../types';
@@ -10,6 +10,10 @@ import { MediaCalendar } from './MediaCalendar';
 import { MediaStrategy } from './MediaStrategy';
 import { MediaDirectorView } from './MediaDirectorView';
 import { MediaProTools } from './MediaProTools';
+import { MediaAssetsLibrary } from './MediaAssetsLibrary';
+import { MediaScriptEditor } from './MediaScriptEditor';
+import { MediaIdeaGenerator } from './MediaIdeaGenerator';
+import { useDebounce } from '../hooks/useDebounce';
 
 export const MediaStudio: React.FC = () => {
   const [posts, setPosts] = useState<SocialPost[]>(() => {
@@ -22,9 +26,14 @@ export const MediaStudio: React.FC = () => {
       return saved ? JSON.parse(saved) : { targetAudience: '', primaryGoal: 'engagement', contentPillars: [], toneVoice: '', postingFrequency: 'daily' };
   });
 
-  const [activeView, setActiveView] = useState<'kanban' | 'calendar' | 'create' | 'detail' | 'strategy'>('kanban');
+  const [activeView, setActiveView] = useState<'kanban' | 'calendar' | 'create' | 'detail' | 'strategy' | 'assets' | 'generator'>('kanban');
   const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
   
+  // Brand Management
+  const [brands, setBrands] = useState<string[]>(['Nike', 'TechStart', 'Personal']);
+  const [activeBrand, setActiveBrand] = useState<string>('all');
+  const [showBrandMenu, setShowBrandMenu] = useState(false);
+
   // Detail View Tab
   const [detailTab, setDetailTab] = useState<'script' | 'timeline' | 'pro'>('script');
 
@@ -70,8 +79,16 @@ export const MediaStudio: React.FC = () => {
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
 
+  // Filter posts by brand
+  const filteredPosts = activeBrand === 'all' 
+      ? posts 
+      : posts.filter(p => p.brandId === activeBrand || (!p.brandId && activeBrand === 'Personal')); // Fallback for legacy
+
+  // Debounced storage for posts to improve performance
+  const debouncedPosts = useDebounce(posts, 2000);
+
   useEffect(() => {
-    const postsToSave = posts.map(p => ({
+    const postsToSave = debouncedPosts.map(p => ({
         ...p,
         scenes: p.scenes?.map(s => ({
             ...s,
@@ -80,7 +97,7 @@ export const MediaStudio: React.FC = () => {
     }));
     localStorage.setItem('omni_social_posts', JSON.stringify(postsToSave));
     window.dispatchEvent(new Event('omniAssetsUpdated'));
-  }, [posts]);
+  }, [debouncedPosts]);
 
   useEffect(() => {
       localStorage.setItem('omni_media_strategy', JSON.stringify(strategy));
@@ -151,12 +168,11 @@ export const MediaStudio: React.FC = () => {
       }
   };
 
-  // ... (Keep all creation/generation logic same as before) ...
   const handleCreateContentPlan = async () => {
     if (!newPostPrompt) return;
     setIsGeneratingPlan(true);
     const strategyContext = `Target Audience: ${strategy.targetAudience}, Goal: ${strategy.primaryGoal}, Tone: ${strategy.toneVoice}`;
-    const fullPrompt = `${newPostPrompt}. Context: ${strategyContext}`;
+    const fullPrompt = `${newPostPrompt}. Context: ${strategyContext}. Brand: ${activeBrand}`;
     let generatedScript = "";
     await generateSocialContent(fullPrompt, selectedPlatform, (chunk) => { generatedScript += chunk; });
     const titleMatch = generatedScript.match(/Title:\s*(.*)/);
@@ -170,7 +186,8 @@ export const MediaStudio: React.FC = () => {
     futureDate.setDate(futureDate.getDate() + Math.floor(Math.random() * 14));
     const newPost: SocialPost = {
       id: `p${Date.now()}`, title: title, platform: selectedPlatform as any, status: 'idea', script: generatedScript,
-      scenes: defaultScenes, scheduledDate: futureDate.toISOString(), characters: [], styleReferences: []
+      scenes: defaultScenes, scheduledDate: futureDate.toISOString(), characters: [], styleReferences: [],
+      brandId: activeBrand === 'all' ? 'Personal' : activeBrand
     };
     setPosts(prev => [...prev, newPost]);
     setIsGeneratingPlan(false);
@@ -178,6 +195,14 @@ export const MediaStudio: React.FC = () => {
     setActiveView('detail');
     setHistory([newPost]);
     setHistoryIndex(0);
+  };
+
+  const handleCreatePostFromIdea = (newPost: SocialPost) => {
+      setPosts(prev => [...prev, newPost]);
+      setSelectedPost(newPost);
+      setActiveView('detail');
+      setHistory([newPost]);
+      setHistoryIndex(0);
   };
 
   const getEnhancedPrompt = (description: string) => {
@@ -188,7 +213,7 @@ export const MediaStudio: React.FC = () => {
           prompt += `. Character: ${mainChar.description || mainChar.name}.`;
       }
       if (selectedPost.styleReferences && selectedPost.styleReferences.length > 0) {
-          prompt += `. Style: ${selectedPost.styleReferences[0].stylePrompt}`;
+          prompt += `. Style Reference: ${selectedPost.styleReferences[0].stylePrompt}. Maintain consistent visual identity.`;
       }
       return prompt;
   };
@@ -210,6 +235,44 @@ export const MediaStudio: React.FC = () => {
       pushHistory(updatedPost);
   };
 
+  const handleSyncScriptToScenes = (newScenes: Scene[]) => {
+      if (!selectedPost) return;
+      const updatedPost = { ...selectedPost, scenes: newScenes };
+      setSelectedPost(updatedPost);
+      setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p));
+      pushHistory(updatedPost);
+      setDetailTab('timeline'); // Switch to timeline to show result
+  };
+
+  const handleCreateMontage = (assets: any[]) => {
+      if (assets.length === 0) return;
+      
+      const newScenes: Scene[] = assets.map((asset, i) => ({
+          id: `s-${Date.now()}-${i}`,
+          description: asset.description || 'Montage Clip',
+          status: 'done',
+          duration: 4,
+          transition: 'cut',
+          imageUrl: asset.type === 'image' ? asset.url : undefined,
+          videoUrl: asset.type === 'video' ? asset.url : undefined
+      }));
+
+      const newPost: SocialPost = {
+          id: `p-montage-${Date.now()}`,
+          title: `Montage from ${assets.length} Assets`,
+          platform: 'youtube', // default
+          status: 'ready',
+          scenes: newScenes,
+          scheduledDate: new Date().toISOString(),
+          brandId: activeBrand === 'all' ? 'Personal' : activeBrand
+      };
+
+      setPosts(prev => [...prev, newPost]);
+      setSelectedPost(newPost);
+      setActiveView('detail');
+      setDetailTab('timeline');
+  };
+
   const handleGenerateImage = async (sceneId: string) => {
      if (!selectedPost) return;
      const scene = selectedPost.scenes?.find(s => s.id === sceneId);
@@ -227,7 +290,6 @@ export const MediaStudio: React.FC = () => {
       const scene = selectedPost.scenes?.find(s => s.id === sceneId);
       if (!scene) return;
       
-      // Robust Veo API Key Check
       try {
           const win = window as any;
           if (win.aistudio && win.aistudio.hasSelectedApiKey) {
@@ -247,7 +309,6 @@ export const MediaStudio: React.FC = () => {
       else updateScene(sceneId, { status: 'pending' });
   };
 
-  // ... Magic Edit ...
   const handleMagicEditSubmit = async () => {
       if (!editSceneId || !editPrompt || !selectedPost) return;
       const scene = selectedPost.scenes?.find(s => s.id === editSceneId);
@@ -260,7 +321,6 @@ export const MediaStudio: React.FC = () => {
       setEditModalOpen(false);
   };
 
-  // ... Trim ...
   const handleApplyTrim = () => {
       if (trimSceneId) {
           updateSceneWithHistory(trimSceneId, { mediaStartTime: trimValues.start, duration: trimValues.duration });
@@ -268,7 +328,6 @@ export const MediaStudio: React.FC = () => {
       }
   };
 
-  // ... Upload ...
   const handleConfirmUpload = () => {
       if (!selectedPost) return;
       setIsUploading(true);
@@ -287,7 +346,6 @@ export const MediaStudio: React.FC = () => {
       }, 500);
   };
 
-  // ... Pro Helpers ...
   const handleUploadCharacter = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !characterName || !selectedPost) return;
@@ -328,7 +386,6 @@ export const MediaStudio: React.FC = () => {
      const int = setInterval(() => { p += 2; setRenderProgress(p); if (p >= 100) { clearInterval(int); setIsRendering(false); alert("Render Complete! Downloading final cut..."); } }, 100);
   };
 
-  // ... Scene Manipulation ...
   const handleSplitScene = (index: number) => {
       if (!selectedPost?.scenes) return;
       const scenes = [...selectedPost.scenes];
@@ -373,6 +430,15 @@ export const MediaStudio: React.FC = () => {
   const cycleTransition = (current: Scene['transition']) => {
       const types: Scene['transition'][] = ['cut', 'fade', 'dissolve', 'slide-left', 'slide-right', 'zoom', 'blur', 'wipe'];
       return types[(types.indexOf(current || 'cut') + 1) % types.length];
+  };
+
+  const handleDeleteAsset = (postId: string, sceneId: string) => {
+      const post = posts.find(p => p.id === postId);
+      if(post && post.scenes) {
+          const updatedScenes = post.scenes.map(s => s.id === sceneId ? {...s, imageUrl: undefined, videoUrl: undefined} : s);
+          const updatedPost = {...post, scenes: updatedScenes};
+          setPosts(posts.map(p => p.id === postId ? updatedPost : p));
+      }
   };
 
   // ... Modals ...
@@ -420,13 +486,39 @@ export const MediaStudio: React.FC = () => {
 
        {/* Sidebar */}
        <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col p-6 shadow-xl z-10 hidden md:flex">
-          <h2 className="text-xl font-bold flex items-center gap-2"><Clapperboard className="text-red-500" /> Media Studio</h2>
+          <h2 className="text-xl font-bold flex items-center gap-2 mb-2"><Clapperboard className="text-red-500" /> Media Studio</h2>
+          
+          {/* Brand Selector */}
+          <div className="mb-6 relative">
+              <button 
+                onClick={() => setShowBrandMenu(!showBrandMenu)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 flex items-center justify-between text-xs font-medium text-gray-200 hover:border-gray-600 transition-colors"
+              >
+                  <span className="flex items-center gap-2"><Briefcase size={12}/> {activeBrand === 'all' ? 'All Brands' : activeBrand}</span>
+                  <Plus size={12} className="transform rotate-45" />
+              </button>
+              {showBrandMenu && (
+                  <div className="absolute top-full left-0 w-full bg-gray-800 border border-gray-700 rounded-lg mt-1 shadow-xl z-20 overflow-hidden">
+                      <div className="p-1">
+                          <button onClick={() => { setActiveBrand('all'); setShowBrandMenu(false); }} className={`w-full text-left px-3 py-1.5 text-xs rounded ${activeBrand === 'all' ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>All Brands</button>
+                          {brands.map(b => (
+                              <button key={b} onClick={() => { setActiveBrand(b); setShowBrandMenu(false); }} className={`w-full text-left px-3 py-1.5 text-xs rounded ${activeBrand === b ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>{b}</button>
+                          ))}
+                          <div className="border-t border-gray-700 my-1"></div>
+                          <button onClick={() => { const b = prompt("New Brand Name:"); if(b) setBrands([...brands, b]); }} className="w-full text-left px-3 py-1.5 text-xs text-primary-400 hover:bg-gray-700 rounded flex items-center gap-2"><Plus size={12}/> New Brand</button>
+                      </div>
+                  </div>
+              )}
+          </div>
+
           <Button onClick={() => { setSelectedPost(null); setActiveView('create'); }} className="mb-6 w-full shadow-lg shadow-primary-900/20"><Plus size={16} className="mr-2" /> New Content</Button>
           <div className="space-y-1 mb-6">
              <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-2">Views</div>
              <button onClick={() => setActiveView('kanban')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${activeView === 'kanban' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}><LayoutGrid size={16} /> Pipeline</button>
              <button onClick={() => setActiveView('calendar')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${activeView === 'calendar' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}><Calendar size={16} /> Schedule</button>
+             <button onClick={() => setActiveView('generator')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${activeView === 'generator' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}><Lightbulb size={16} /> Idea Generator</button>
              <button onClick={() => setActiveView('strategy')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${activeView === 'strategy' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}><Target size={16} /> Strategy</button>
+             <button onClick={() => setActiveView('assets')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${activeView === 'assets' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}><Grid size={16} /> Asset Library</button>
           </div>
        </div>
 
@@ -440,12 +532,14 @@ export const MediaStudio: React.FC = () => {
           <div className="md:hidden flex border-b border-gray-800 overflow-x-auto">
               <button onClick={() => setActiveView('kanban')} className={`flex-1 py-3 px-4 text-xs font-medium whitespace-nowrap ${activeView === 'kanban' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Pipeline</button>
               <button onClick={() => setActiveView('calendar')} className={`flex-1 py-3 px-4 text-xs font-medium whitespace-nowrap ${activeView === 'calendar' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Schedule</button>
-              <button onClick={() => setActiveView('strategy')} className={`flex-1 py-3 px-4 text-xs font-medium whitespace-nowrap ${activeView === 'strategy' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Strategy</button>
+              <button onClick={() => setActiveView('assets')} className={`flex-1 py-3 px-4 text-xs font-medium whitespace-nowrap ${activeView === 'assets' ? 'text-white border-b-2 border-primary-500' : 'text-gray-500'}`}>Assets</button>
           </div>
 
-          {activeView === 'kanban' && <MediaKanban posts={posts} onSelectPost={(p) => { setSelectedPost(p); setActiveView('detail'); }} />}
-          {activeView === 'calendar' && <MediaCalendar posts={posts} onSelectPost={(p) => { setSelectedPost(p); setActiveView('detail'); }} />}
+          {activeView === 'kanban' && <MediaKanban posts={filteredPosts} onSelectPost={(p) => { setSelectedPost(p); setActiveView('detail'); }} />}
+          {activeView === 'calendar' && <MediaCalendar posts={filteredPosts} onSelectPost={(p) => { setSelectedPost(p); setActiveView('detail'); }} />}
           {activeView === 'strategy' && <MediaStrategy strategy={strategy} setStrategy={setStrategy} />}
+          {activeView === 'assets' && <MediaAssetsLibrary posts={filteredPosts} onDeleteAsset={handleDeleteAsset} onCreateMontage={handleCreateMontage} />}
+          {activeView === 'generator' && <MediaIdeaGenerator onCreatePost={handleCreatePostFromIdea} brandId={activeBrand === 'all' ? 'Default' : activeBrand} />}
           
           {activeView === 'create' && (<div className="flex-1 p-4 md:p-8 overflow-y-auto"><div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500"><button className="mb-6 flex items-center gap-2 text-gray-400 hover:text-white transition-colors" onClick={() => setActiveView('kanban')}>&larr; Back</button><h1 className="text-2xl md:text-3xl font-bold mb-6">Create Viral Content</h1><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">{['youtube', 'twitter', 'tiktok', 'instagram'].map(p => (<div key={p} onClick={() => setSelectedPlatform(p)} className={`p-4 bg-gray-900 border rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer capitalize ${selectedPlatform === p ? 'border-primary-500 bg-gray-800' : 'border-gray-800'}`}><span className="text-sm font-medium">{p}</span></div>))}</div><div className="bg-gray-900 rounded-xl p-6 border border-gray-800 mb-6"><textarea className="w-full h-32 bg-black border border-gray-700 rounded-lg p-4 text-gray-200 focus:outline-none focus:border-primary-500 transition-colors" placeholder="Describe your idea..." value={newPostPrompt} onChange={(e) => setNewPostPrompt(e.target.value)} /></div><Button size="lg" className="w-full py-4 text-base" onClick={handleCreateContentPlan} disabled={isGeneratingPlan}>{isGeneratingPlan ? 'Generating...' : 'Generate Content Plan'}</Button></div></div>)}
           
@@ -468,6 +562,7 @@ export const MediaStudio: React.FC = () => {
                         onRedo={handleRedo}
                         onRenderMovie={handleRenderMovie}
                         onGenerateImage={handleGenerateImage}
+                        onGenerateVideo={handleGenerateVideo}
                         onSplitScene={handleSplitScene}
                         onDuplicateScene={handleDuplicateScene}
                         onDeleteScene={handleDeleteScene}
@@ -489,10 +584,13 @@ export const MediaStudio: React.FC = () => {
                         onUploadReference={handleUploadReference}
                     />
                 ) : (
-                    <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-                        <div className="w-full md:w-1/2 border-r border-gray-800 bg-gray-900 p-6 overflow-y-auto"><h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><FileText size={16}/> Script</h3><textarea className="w-full h-[300px] md:h-[calc(100%-2rem)] bg-black/50 border border-gray-800 rounded-xl p-6 text-gray-300 leading-relaxed focus:outline-none font-mono text-sm" defaultValue={selectedPost.script} /></div>
-                        <div className="w-full md:w-1/2 bg-gray-900 p-6 overflow-y-auto"><h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><LayoutGrid size={16}/> Scenes</h3><div className="space-y-6">{selectedPost.scenes?.map((scene, idx) => (<div key={scene.id} className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden"><div className="p-3 border-b border-gray-800 bg-gray-850 flex justify-between items-center"><span className="text-xs font-bold text-gray-500">SCENE {idx + 1}</span><div className="flex gap-1"><button onClick={() => handleGenerateImage(scene.id)} disabled={scene.status === 'generating'} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors">{scene.status === 'generating' ? <Loader2 size={14} className="animate-spin"/> : <ImageIcon size={14}/>}</button><button onClick={() => handleGenerateVideo(scene.id)} disabled={scene.status === 'generating'} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors">{scene.status === 'generating' ? <Loader2 size={14} className="animate-spin"/> : <Video size={14}/>}</button></div></div><div className="p-4"><p className="text-sm text-gray-300 mb-4">{scene.description}</p><div className="aspect-video bg-black rounded-lg flex items-center justify-center relative overflow-hidden group border border-gray-800">{scene.videoUrl ? <video src={scene.videoUrl} controls className="w-full h-full object-cover" /> : scene.imageUrl ? <img src={scene.imageUrl} className={`w-full h-full object-cover ${scene.bgRemoved ? 'object-contain' : ''}`} /> : <div className="text-gray-700 flex flex-col items-center gap-2"><Sparkles size={24} /><span className="text-xs">No visuals</span></div>}</div></div></div>))}</div></div>
-                    </div>
+                    <MediaScriptEditor 
+                        script={selectedPost.script || ''}
+                        onUpdateScript={(s) => setSelectedPost(p => p ? {...p, script: s} : null)}
+                        onSyncToTimeline={handleSyncScriptToScenes}
+                        platform={selectedPost.platform}
+                        topic={selectedPost.title}
+                    />
                 )}
             </div>
           )}

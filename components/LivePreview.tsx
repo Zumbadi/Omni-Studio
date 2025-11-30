@@ -17,6 +17,32 @@ interface LivePreviewProps {
   currentBranch?: string;
 }
 
+// Moved outside to prevent re-creation on every render
+const SplashScreen = () => (
+    <div className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards" style={{ animationDelay: '2s' }}>
+        <div className="relative w-48 h-48 mb-12 flex items-center justify-center">
+            {/* Orb Core */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-full opacity-20 blur-3xl animate-pulse"></div>
+            
+            {/* Rotating Rings */}
+            <div className="absolute w-32 h-32 border-[1px] border-blue-500/30 rounded-full animate-spin-slow" style={{ animationDuration: '8s' }}></div>
+            <div className="absolute w-40 h-40 border-[1px] border-purple-500/20 rounded-full animate-spin-reverse-slow" style={{ animationDuration: '12s' }}></div>
+            
+            {/* Center Logo */}
+            <div className="relative w-16 h-16 bg-gradient-to-tr from-white to-gray-300 rounded-xl rotate-45 shadow-[0_0_30px_rgba(255,255,255,0.3)] flex items-center justify-center overflow-hidden animate-float">
+                <div className="absolute inset-0 bg-white/20 skew-x-12 animate-shimmer"></div>
+            </div>
+        </div>
+        
+        <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-100 to-gray-400 mb-3 tracking-tight animate-in slide-in-from-bottom-4 fade-in duration-1000">Omni Runtime</h2>
+        
+        <div className="flex gap-3 items-center text-xs text-blue-300/80 font-mono bg-blue-900/10 px-4 py-1.5 rounded-full border border-blue-500/20 animate-in slide-in-from-bottom-4 fade-in duration-1000 delay-200">
+            <Loader2 size={12} className="animate-spin"/> 
+            <span>Initializing Virtual Environment...</span>
+        </div>
+    </div>
+);
+
 export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: propPreviewSrc, onRefresh, onConsoleLog, files = [], currentBranch = 'main' }) => {
   const isNative = project.type === ProjectType.REACT_NATIVE;
   const isIOS = project.type === ProjectType.IOS_APP;
@@ -178,32 +204,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
       const t = setTimeout(() => setIsInitialLoading(false), 2500); // Extended for visual effect
       return () => clearTimeout(t);
   }, [previewSrc]);
-
-  // Enhanced Gemini-Style Splash Screen
-  const SplashScreen = () => (
-      <div className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards" style={{ animationDelay: '2s' }}>
-          <div className="relative w-48 h-48 mb-12 flex items-center justify-center">
-              {/* Orb Core */}
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-full opacity-20 blur-3xl animate-pulse"></div>
-              
-              {/* Rotating Rings */}
-              <div className="absolute w-32 h-32 border-[1px] border-blue-500/30 rounded-full animate-spin-slow" style={{ animationDuration: '8s' }}></div>
-              <div className="absolute w-40 h-40 border-[1px] border-purple-500/20 rounded-full animate-spin-reverse-slow" style={{ animationDuration: '12s' }}></div>
-              
-              {/* Center Logo */}
-              <div className="relative w-16 h-16 bg-gradient-to-tr from-white to-gray-300 rounded-xl rotate-45 shadow-[0_0_30px_rgba(255,255,255,0.3)] flex items-center justify-center overflow-hidden animate-float">
-                  <div className="absolute inset-0 bg-white/20 skew-x-12 animate-shimmer"></div>
-              </div>
-          </div>
-          
-          <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-100 to-gray-400 mb-3 tracking-tight animate-in slide-in-from-bottom-4 fade-in duration-1000">Omni Runtime</h2>
-          
-          <div className="flex gap-3 items-center text-xs text-blue-300/80 font-mono bg-blue-900/10 px-4 py-1.5 rounded-full border border-blue-500/20 animate-in slide-in-from-bottom-4 fade-in duration-1000 delay-200">
-              <Loader2 size={12} className="animate-spin"/> 
-              <span>Initializing Virtual Environment...</span>
-          </div>
-      </div>
-  );
 
   const handleSimulatedBuild = () => {
       setIsBuilding(true);

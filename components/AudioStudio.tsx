@@ -9,6 +9,7 @@ import { AudioTimeline } from './AudioTimeline';
 import { AudioSidebar } from './AudioSidebar';
 import { AudioBeatMaker } from './AudioBeatMaker';
 import { bufferToWav } from '../utils/audioHelpers';
+import { useDebounce } from '../hooks/useDebounce';
 
 export const AudioStudio: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'cloning' | 'mixer' | 'pro' | 'sequencer'>('mixer');
@@ -47,11 +48,13 @@ export const AudioStudio: React.FC = () => {
 
   const [mastering, setMastering] = useState({ enabled: false, warmth: 50, clarity: 50, punch: 50 });
 
+  const debouncedTracks = useDebounce(tracks, 2000);
+
   useEffect(() => {
-    const tracksToSave = tracks.map(t => ({ ...t, audioUrl: t.audioUrl?.startsWith('data:') ? t.audioUrl : undefined })); 
+    const tracksToSave = debouncedTracks.map(t => ({ ...t, audioUrl: t.audioUrl?.startsWith('data:') ? t.audioUrl : undefined })); 
     localStorage.setItem('omni_audio_tracks', JSON.stringify(tracksToSave));
     window.dispatchEvent(new Event('omniAssetsUpdated'));
-  }, [tracks]);
+  }, [debouncedTracks]);
 
   useEffect(() => {
     localStorage.setItem('omni_voices', JSON.stringify(voices));
