@@ -116,41 +116,50 @@ export const WorkspaceSidebar = memo(({
           ))}
       </div>
 
-      {/* Side Panel Content */}
+      {/* Side Panel Content - Mobile Drawer Logic */}
       {layout.showSidebar && (
-        <div className="bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 absolute md:static h-full z-30 shadow-2xl md:shadow-none" style={{ width: sidebarWidth }}>
-          {activeActivity === 'EXPLORER' && (
-              <div className="flex flex-col h-full">
-                   {/* Explicit Save Button */}
-                   <div className="px-4 pt-3 pb-1">
-                       <button 
-                           onClick={() => onFileOps.onRunScript('save', 'save')} 
-                           className="w-full bg-primary-600 hover:bg-primary-500 text-white py-2 rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-2 mb-2 border border-primary-500/50"
-                       >
-                           <Save size={14} /> Save Project
-                       </button>
-                   </div>
-                   <FileExplorer 
-                        files={files} 
-                        activeFileId={activeFileId} 
-                        project={project} 
-                        remoteDirName={remoteDirName} 
-                        deletedFiles={deletedFiles}
-                        onFileClick={onFileClick} 
-                        onContextMenu={onContextMenu}
-                        {...onFileOps}
-                    />
-              </div>
-          )}
-          {activeActivity === 'GIT' && <GitPanel files={files} commits={commits} currentBranch={currentBranch} onCommit={onCommit} onSwitchBranch={onSwitchBranch} />}
-          {activeActivity === 'SEARCH' && <SearchPanel query={searchQuery} onSearch={onSearch} results={searchResults} onResultClick={onResultClick} onReplace={onReplace} onReplaceAll={onReplaceAll} />}
-          {activeActivity === 'DEBUG' && <DebugPanel variables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={onRemoveBreakpoint} />}
-          {activeActivity === 'EXTENSIONS' && <ExtensionsPanel extensions={extensions} onToggle={onToggleExtension} />}
-          {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} onInsertAsset={onInsertAsset} />}
-          {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} history={agentHistory} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} activeAgent={activeAgent} />}
-          {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
-          {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddDoc={onAddKnowledgeDoc} onUpdateDoc={onUpdateKnowledgeDoc} onDeleteDoc={onDeleteKnowledgeDoc} />}
-        </div>
+        <>
+            {/* Mobile Backdrop */}
+            <div className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm" onClick={onToggleSidebar}></div>
+            
+            {/* Sidebar Panel */}
+            <div 
+                className="bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 absolute md:static h-full z-30 shadow-2xl md:shadow-none animate-in slide-in-from-left-10 duration-200" 
+                style={{ width: sidebarWidth }}
+            >
+              {activeActivity === 'EXPLORER' && (
+                  <div className="flex flex-col h-full">
+                       {/* Explicit Save Button */}
+                       <div className="px-4 pt-3 pb-1">
+                           <button 
+                               onClick={() => onFileOps.onRunScript('save', 'save')} 
+                               className="w-full bg-primary-600 hover:bg-primary-500 text-white py-2 rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-2 mb-2 border border-primary-500/50"
+                           >
+                               <Save size={14} /> Save Project
+                           </button>
+                       </div>
+                       <FileExplorer 
+                            files={files} 
+                            activeFileId={activeFileId} 
+                            project={project} 
+                            remoteDirName={remoteDirName} 
+                            deletedFiles={deletedFiles}
+                            onFileClick={onFileClick} 
+                            onContextMenu={onContextMenu}
+                            {...onFileOps}
+                        />
+                  </div>
+              )}
+              {activeActivity === 'GIT' && <GitPanel files={files} commits={commits} currentBranch={currentBranch} onCommit={onCommit} onSwitchBranch={onSwitchBranch} />}
+              {activeActivity === 'SEARCH' && <SearchPanel query={searchQuery} onSearch={onSearch} results={searchResults} onResultClick={onResultClick} onReplace={onReplace} onReplaceAll={onReplaceAll} />}
+              {activeActivity === 'DEBUG' && <DebugPanel variables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={onRemoveBreakpoint} />}
+              {activeActivity === 'EXTENSIONS' && <ExtensionsPanel extensions={extensions} onToggle={onToggleExtension} />}
+              {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} onInsertAsset={onInsertAsset} />}
+              {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} history={agentHistory} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} activeAgent={activeAgent} />}
+              {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
+              {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddDoc={onAddKnowledgeDoc} onUpdateDoc={onUpdateKnowledgeDoc} onDeleteDoc={onDeleteKnowledgeDoc} />}
+            </div>
+        </>
       )}
     </>
   );

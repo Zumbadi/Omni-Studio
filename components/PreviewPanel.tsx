@@ -36,6 +36,8 @@ interface PreviewPanelProps {
   onDeleteProject?: (id: string) => void;
   onDeploymentComplete?: (url: string) => void;
   onConsoleLog?: (log: string) => void;
+  currentBranch?: string;
+  onMergeBranch?: () => void;
 }
 
 const LoadingFallback = () => (
@@ -47,7 +49,8 @@ const LoadingFallback = () => (
 export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
   roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile,
-  isMaximized, onToggleMaximize, onUpdateProject, onDeleteProject, onDeploymentComplete, onConsoleLog
+  isMaximized, onToggleMaximize, onUpdateProject, onDeleteProject, onDeploymentComplete, onConsoleLog,
+  currentBranch, onMergeBranch
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
 
@@ -81,10 +84,27 @@ export const PreviewPanel = memo(({
       {/* Panel Content */}
       <div className="flex-1 overflow-hidden flex flex-col relative">
           <Suspense fallback={<LoadingFallback />}>
-            {activeTab === 'preview' && <LivePreview project={project} previewSrc={previewSrc} onRefresh={onRefreshPreview} onConsoleLog={onConsoleLog} files={files} />}
+            {activeTab === 'preview' && (
+                <LivePreview 
+                    project={project} 
+                    previewSrc={previewSrc} 
+                    onRefresh={onRefreshPreview} 
+                    onConsoleLog={onConsoleLog} 
+                    files={files} 
+                    currentBranch={currentBranch}
+                />
+            )}
             {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} />}
             {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} />}
-            {activeTab === 'deploy' && <DeploymentConsole project={project} onLog={onLog} onDeploymentComplete={onDeploymentComplete} />}
+            {activeTab === 'deploy' && (
+                <DeploymentConsole 
+                    project={project} 
+                    onLog={onLog} 
+                    onDeploymentComplete={onDeploymentComplete} 
+                    currentBranch={currentBranch}
+                    onMerge={onMergeBranch}
+                />
+            )}
             {activeTab === 'audit' && <AuditView files={files} />}
             {activeTab === 'docs' && <DocsViewer project={project} files={files} onSaveFile={onSaveFile} />}
             {activeTab === 'roadmap' && <RoadmapView roadmap={roadmap} isGenerating={isGeneratingPlan} onGenerate={onGeneratePlan} onExecutePhase={onExecutePhase} onToggleTask={onToggleTask} />}

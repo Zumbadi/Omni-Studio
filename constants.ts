@@ -33,7 +33,7 @@ export const PROJECT_TEMPLATES = [
     id: 't1', 
     name: 'SaaS Starter Kit', 
     type: ProjectType.REACT_WEB, 
-    description: 'Landing page, Auth, and Dashboard layout using Tailwind.', 
+    description: 'Landing page, Auth, and Dashboard layout.', 
     icon: 'Globe',
     prompt: 'Create a SaaS starter kit with a landing page (Hero, Features, Pricing), authentication forms (Login/Signup), and a protected dashboard layout with a sidebar. Use React, Tailwind CSS, and Lucide icons.' 
   },
@@ -44,14 +44,6 @@ export const PROJECT_TEMPLATES = [
     description: 'Customer App, Driver App, and Restaurant Dashboard.', 
     icon: 'Smartphone',
     prompt: 'Create a full Food Delivery Ecosystem. 1. React Native Customer App with food feed, cart, and tracking. 2. Driver App with order requests and map navigation. 3. React Web Restaurant Dashboard for order management. 4. Node.js Backend for order dispatching. Focus on the Customer App structure first.' 
-  },
-  { 
-    id: 't3', 
-    name: 'Social Feed App', 
-    type: ProjectType.REACT_NATIVE, 
-    description: 'Scrollable feed with images, likes, and comments.', 
-    icon: 'Smartphone',
-    prompt: 'Create a mobile social media feed app using React Native. Include a scrollable FlatList of posts with images, a like button component, and a tab bar navigation.' 
   },
   { 
     id: 't4', 
@@ -67,7 +59,7 @@ export const PROJECT_TEMPLATES = [
     type: ProjectType.NODE_API, 
     description: 'Express server with Auth middleware and User CRUD.', 
     icon: 'Server',
-    prompt: 'Create a production-ready REST API boilerplate using Express. Include authentication middleware (JWT), a User model, and CRUD routes for managing resources.' 
+    prompt: 'Create a production-ready REST API boilerplate using Express. Include authentication middleware (JWT), a User model, and CRUD routes for managing resources. Add a Dockerfile.' 
   },
   { 
     id: 't6', 
@@ -76,14 +68,6 @@ export const PROJECT_TEMPLATES = [
     description: 'Netflix-style video catalog and player.', 
     icon: 'Film',
     prompt: 'Create a Streaming Service application (Netflix clone). Include a Hero banner with video background, horizontal scrolling rows for movie categories, a video player component, and a detailed info modal.' 
-  },
-  { 
-    id: 't7', 
-    name: 'Task Management Suite', 
-    type: ProjectType.REACT_WEB, 
-    description: 'Kanban board + Mobile Companion App.', 
-    icon: 'Layout',
-    prompt: 'Create a Task Management Suite. 1. A React Web Kanban board with drag-and-drop columns. 2. A React Native companion app for viewing tasks on the go. 3. A synced Node.js backend with realtime websocket updates.' 
   },
   {
     id: 't8',
@@ -100,14 +84,6 @@ export const PROJECT_TEMPLATES = [
     description: 'Itinerary planner with maps and local guides.',
     icon: 'Map',
     prompt: 'Create a Travel Companion mobile app. Features: 1. Trip Itinerary Timeline. 2. Map view with points of interest (simulated). 3. "Local Gems" discovery feed. Use React Native with a bottom tab navigator and sleek, airy UI.'
-  },
-  {
-    id: 't10',
-    name: 'Crypto DeFi Dashboard',
-    type: ProjectType.REACT_WEB,
-    description: 'Real-time asset tracking and swap interface.',
-    icon: 'TrendingUp',
-    prompt: 'Create a DeFi Crypto Dashboard. Include a real-time price ticker marquee, a portfolio value line chart, and a "Swap" widget interface similar to Uniswap. Use a dark, cyberpunk neon color scheme.'
   },
   {
     id: 't11',
@@ -181,7 +157,6 @@ export const WEB_FILE_TREE: FileNode[] = [
         isOpen: false,
         children: [
             { id: 'logo', name: 'logo.svg', type: 'file', content: '<svg>...</svg>' },
-            { id: 'hero', name: 'hero-bg.png', type: 'file', content: 'Binary data...' }
         ]
       },
       {
@@ -192,73 +167,10 @@ export const WEB_FILE_TREE: FileNode[] = [
         children: [
           { id: 'btn', name: 'Button.tsx', type: 'file', content: `import React from 'react';\n\nexport const Button = ({ children, onClick, variant = 'primary' }) => (\n  <button \n    onClick={onClick} \n    className={\`px-4 py-2 rounded transition-colors \${variant === 'primary' ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}\`}\n  >\n    {children}\n  </button>\n);` },
           { id: 'head', name: 'Header.tsx', type: 'file', content: `import React from 'react';\nimport { Bell, User } from 'lucide-react';\n\nexport const Header = () => (\n  <header className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-gray-900">\n    <div className="font-bold text-xl text-white">Omni SaaS</div>\n    <div className="flex items-center gap-4">\n      <Bell size={20} className="text-gray-400 hover:text-white cursor-pointer" />\n      <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold"><User size={16} /></div>\n    </div>\n  </header>\n);` },
-          { id: 'card', name: 'Card.tsx', type: 'file', content: `import React from 'react';\n\nexport const Card = ({ title, children }) => (\n  <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-sm hover:border-indigo-500/50 transition-all">\n    <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>\n    <div className="text-gray-400">{children}</div>\n  </div>\n);` }
         ]
       },
-      {
-        id: 'pages',
-        name: 'pages',
-        type: 'directory',
-        isOpen: true,
-        children: [
-            { id: 'dash', name: 'Dashboard.tsx', type: 'file', content: `import React from 'react';\nimport { Card } from '../components/Card';\n\nexport default function Dashboard() {\n  return (\n    <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">\n      <Card title="Revenue">\n        <div className="text-3xl font-bold text-white">$12,450</div>\n        <div className="text-sm text-green-400">+15% from last month</div>\n      </Card>\n      <Card title="Active Users">\n        <div className="text-3xl font-bold text-white">1,203</div>\n        <div className="text-sm text-blue-400">Current session</div>\n      </Card>\n      <Card title="Bounce Rate">\n        <div className="text-3xl font-bold text-white">42%</div>\n        <div className="text-sm text-yellow-400">-2% improvement</div>\n      </Card>\n    </div>\n  );\n}` }
-        ]
-      },
-      {
-          id: 'hooks',
-          name: 'hooks',
-          type: 'directory',
-          isOpen: false,
-          children: [
-              { id: 'useauth', name: 'useAuth.ts', type: 'file', content: `import { useState, useEffect } from 'react';\n\nexport const useAuth = () => {\n  const [user, setUser] = useState(null);\n  // Auth logic here\n  return { user };\n};` }
-          ]
-      },
-      { id: '1', name: 'App.tsx', type: 'file', content: `import React, { useState } from 'react';
-import { Header } from './components/Header';
-import { Button } from './components/Button';
-import Dashboard from './pages/Dashboard';
-
-export default function App() {
-  const [count, setCount] = useState(0);
-
-  return (
-    <div className="min-h-screen bg-slate-950 flex flex-col font-sans text-white">
-      <Header />
-      <main className="flex-1 overflow-auto">
-        <Dashboard />
-        
-        <div className="px-8 pb-8">
-            <div className="max-w-md w-full bg-slate-900 rounded-xl p-8 border border-slate-800">
-            <h2 className="text-2xl font-bold text-white mb-2">Interactive Demo</h2>
-            <p className="text-slate-400 mb-8">
-                Edit <code className="bg-slate-950 px-2 py-1 rounded text-sm text-indigo-300">App.tsx</code> to see live changes.
-            </p>
-            
-            <div className="flex flex-col items-center gap-4">
-                <div className="text-7xl font-bold text-white mb-4 tabular-nums tracking-tighter">{count}</div>
-                
-                <div className="flex gap-4 w-full">
-                <button 
-                    onClick={() => setCount(c => c - 1)}
-                    className="flex-1 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-all"
-                >
-                    Decrease
-                </button>
-                <Button onClick={() => setCount(c => c + 1)}>
-                    Increase
-                </Button>
-                </div>
-            </div>
-            </div>
-        </div>
-      </main>
-    </div>
-  );
-}` },
+      { id: '1', name: 'App.tsx', type: 'file', content: `import React, { useState } from 'react';\nimport { Header } from './components/Header';\nimport { Button } from './components/Button';\n\nexport default function App() {\n  const [count, setCount] = useState(0);\n\n  return (\n    <div className="min-h-screen bg-slate-950 flex flex-col font-sans text-white">\n      <Header />\n      <main className="flex-1 p-8 flex flex-col items-center justify-center">\n        <h1 className="text-4xl font-bold mb-4">Welcome to Omni-Studio</h1>\n        <p className="text-slate-400 mb-8">Edit src/App.tsx to see changes.</p>\n        <div className="flex items-center gap-4">\n           <div className="text-6xl font-bold">{count}</div>\n           <Button onClick={() => setCount(c => c + 1)}>Increment</Button>\n        </div>\n      </main>\n    </div>\n  );\n}` },
       { id: '2', name: 'index.css', type: 'file', content: `@tailwind base;\n@tailwind components;\n@tailwind utilities;` },
-      { id: 'utils', name: 'utils', type: 'directory', children: [
-          { id: 'help', name: 'helpers.ts', type: 'file', content: `export const formatDate = (date: Date) => date.toLocaleDateString();` }
-      ]}
     ]
   },
   {
@@ -268,7 +180,7 @@ export default function App() {
     content: `{\n  "name": "omni-web",\n  "version": "1.0.0",\n  "dependencies": {\n    "react": "^18.2.0",\n    "react-dom": "^18.2.0",\n    "lucide-react": "^0.292.0",\n    "tailwindcss": "^3.3.0"\n  },\n  "scripts": {\n    "start": "vite",\n    "build": "vite build"\n  }\n}`
   },
   { id: 'docker', name: 'Dockerfile', type: 'file', content: `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nRUN npm run build\nEXPOSE 3000\nCMD ["npm", "start"]` },
-  { id: 'compose', name: 'docker-compose.yml', type: 'file', content: `version: '3'\nservices:\n  web:\n    build: .\n    ports:\n      - "3000:3000"\n    volumes:\n      - .:/app\n      - /app/node_modules\n    environment:\n      - NODE_ENV=development` },
+  { id: 'compose', name: 'docker-compose.yml', type: 'file', content: `version: '3.8'\nservices:\n  web:\n    build: .\n    ports:\n      - "3000:3000"\n    volumes:\n      - .:/app\n      - /app/node_modules\n    environment:\n      - NODE_ENV=development` },
   { id: 'read', name: 'README.md', type: 'file', content: `# Omni Web Project\n\nGenerated by Omni-Studio. This project uses React and Tailwind CSS.` }
 ];
 
@@ -281,143 +193,12 @@ export const NATIVE_FILE_TREE: FileNode[] = [
     children: [
       { id: 'tabs', name: '(tabs)', type: 'directory', isOpen: true, children: [
           { id: 'idx', name: 'index.tsx', type: 'file', content: `import { StyleSheet } from 'react-native';\nimport EditScreenInfo from '@/components/EditScreenInfo';\nimport { Text, View } from '@/components/Themed';\n\nexport default function TabOneScreen() {\n  return (\n    <View style={styles.container}>\n      <Text style={styles.title}>Tab One</Text>\n      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />\n      <EditScreenInfo path="app/(tabs)/index.tsx" />\n    </View>\n  );\n}\n\nconst styles = StyleSheet.create({\n  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },\n  title: { fontSize: 20, fontWeight: 'bold' },\n  separator: { marginVertical: 30, height: 1, width: '80%' },\n});` },
-          { id: 'profile', name: 'profile.tsx', type: 'file', content: `import { View, Text } from 'react-native';\nexport default function Profile() { return <View><Text>Profile</Text></View>; }` }
       ]},
-      { id: 'layout', name: '_layout.tsx', type: 'file', content: `import FontAwesome from '@expo/vector-icons/FontAwesome';\nimport { Tabs } from 'expo-router';\n\nexport default function TabLayout() {\n  return (\n    <Tabs screenOptions={{ tabBarActiveTintColor: '#2f95dc' }}>\n      <Tabs.Screen name="index" options={{ title: 'Tab One', tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} /> }} />\n      <Tabs.Screen name="two" options={{ title: 'Tab Two', tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} /> }} />\n    </Tabs>\n  );\n}` },
-      { id: '1', name: 'App.tsx', type: 'file', content: `import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, ScrollView, SafeAreaView } from 'react-native';
-
-export default function App() {
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-         <Text style={styles.title}>Omni Mobile</Text>
-         <Text style={styles.subtitle}>Live Preview</Text>
-      </View>
-      
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 20 }}>
-        <View style={styles.card}>
-           <Text style={styles.cardTitle}>Getting Started</Text>
-           <Text style={styles.cardText}>
-             This is a simulated React Native environment running in the browser.
-           </Text>
-           <TouchableOpacity 
-             style={styles.button} 
-             onPress={() => Alert.alert('Interaction', 'Button Pressed!')}
-           >
-             <Text style={styles.buttonText}>Tap Me</Text>
-           </TouchableOpacity>
-        </View>
-
-        <View style={[styles.card, { marginTop: 20 }]}>
-           <Text style={styles.cardTitle}>Components</Text>
-           <View style={styles.row}>
-              <View style={styles.badge}><Text style={styles.badgeText}>View</Text></View>
-              <View style={styles.badge}><Text style={styles.badgeText}>Text</Text></View>
-              <View style={styles.badge}><Text style={styles.badgeText}>Image</Text></View>
-           </View>
-        </View>
-
-        <View style={[styles.card, { marginTop: 20 }]}>
-           <Image source={{ uri: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80' }} style={styles.image} />
-           <Text style={[styles.cardTitle, { marginTop: 10 }]}>Rich Media</Text>
-           <Text style={styles.cardText}>Full image support with proper styling.</Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-  },
-  header: {
-    backgroundColor: '#4f46e5',
-    paddingTop: 20,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#a5b4fc',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  cardText: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 4,
-    lineHeight: 20,
-  },
-  button: {
-    backgroundColor: '#4f46e5',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap'
-  },
-  badge: {
-    backgroundColor: '#e0e7ff',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  badgeText: {
-    color: '#4f46e5',
-    fontSize: 12,
-    fontWeight: 'bold'
-  },
-  image: {
-    width: '100%',
-    height: 150,
-    borderRadius: 12,
-  }
-});` },
+      { id: 'layout', name: '_layout.tsx', type: 'file', content: `import FontAwesome from '@expo/vector-icons/FontAwesome';\nimport { Tabs } from 'expo-router';\n\nexport default function TabLayout() {\n  return (\n    <Tabs screenOptions={{ tabBarActiveTintColor: '#2f95dc' }}>\n      <Tabs.Screen name="index" options={{ title: 'Tab One', tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} /> }} />\n    </Tabs>\n  );\n}` },
     ]
   },
   { id: 'components', name: 'components', type: 'directory', isOpen: false, children: [
       { id: 'themed', name: 'Themed.tsx', type: 'file', content: `import { Text as DefaultText, View as DefaultView } from 'react-native';\nexport function Text(props) { return <DefaultText {...props} />; }` },
-      { id: 'edit', name: 'EditScreenInfo.tsx', type: 'file', content: `import React from 'react';\nimport { View, Text } from 'react-native';\nexport default function EditScreenInfo({ path }) { return <View><Text>{path}</Text></View>; }` }
-  ]},
-  { id: 'consts', name: 'constants', type: 'directory', isOpen: false, children: [
-      { id: 'colors', name: 'Colors.ts', type: 'file', content: `export default { light: { text: '#000', background: '#fff' }, dark: { text: '#fff', background: '#000' } };` }
   ]},
   {
     id: '4',
@@ -437,8 +218,6 @@ export const IOS_FILE_TREE: FileNode[] = [
     children: [
         { id: 'app', name: 'OmniApp.swift', type: 'file', content: `import SwiftUI\n\n@main\nstruct OmniApp: App {\n    var body: some Scene {\n        WindowGroup {\n            ContentView()\n        }\n    }\n}` },
         { id: 'content', name: 'ContentView.swift', type: 'file', content: `import SwiftUI\n\nstruct ContentView: View {\n    var body: some View {\n        VStack {\n            Image(systemName: "globe")\n                .imageScale(.large)\n                .foregroundStyle(.tint)\n            Text("Hello, iOS World!")\n        }\n        .padding()\n    }\n}\n\n#Preview {\n    ContentView()\n}` },
-        { id: 'assets', name: 'Assets.xcassets', type: 'directory', children: [] },
-        { id: 'info', name: 'Info.plist', type: 'file', content: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>CFBundleDisplayName</key>\n    <string>OmniApp</string>\n</dict>\n</plist>` }
     ]
   },
   { id: 'proj', name: 'project.pbxproj', type: 'file', content: `// Simulated Xcode Project File` }
@@ -458,14 +237,12 @@ export const ANDROID_FILE_TREE: FileNode[] = [
                         { id: 'act', name: 'MainActivity.kt', type: 'file', content: `package com.omni.app\n\nimport android.os.Bundle\nimport androidx.activity.ComponentActivity\nimport androidx.activity.compose.setContent\nimport androidx.compose.material3.Text\nimport androidx.compose.runtime.Composable\n\nclass MainActivity : ComponentActivity() {\n    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n        setContent {\n            Greeting("Android")\n        }\n    }\n}\n\n@Composable\nfun Greeting(name: String) {\n    Text(text = "Hello $name!")\n}` }
                     ]}
                 ]},
-                { id: 'res', name: 'res', type: 'directory', children: [] },
                 { id: 'man', name: 'AndroidManifest.xml', type: 'file', content: `<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <application>\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>` }
             ]}
         ]},
         { id: 'build', name: 'build.gradle.kts', type: 'file', content: `plugins {\n    alias(libs.plugins.androidApplication)\n    alias(libs.plugins.kotlinAndroid)\n}` }
     ]
-  },
-  { id: 'settings', name: 'settings.gradle.kts', type: 'file', content: `rootProject.name = "OmniApp"\ninclude(":app")` }
+  }
 ];
 
 export const NODE_FILE_TREE: FileNode[] = [
@@ -475,32 +252,12 @@ export const NODE_FILE_TREE: FileNode[] = [
     type: 'directory',
     isOpen: true,
     children: [
-      { id: 'config', name: 'config', type: 'directory', children: [
-          { id: 'db', name: 'db.js', type: 'file', content: `const mongoose = require('mongoose');\nconst connectDB = async () => { try { await mongoose.connect(process.env.MONGO_URI); console.log('MongoDB Connected'); } catch (err) { console.error(err); process.exit(1); } };\nmodule.exports = connectDB;` },
-          { id: 'logger', name: 'logger.js', type: 'file', content: `const winston = require('winston');\nconst logger = winston.createLogger({ transports: [new winston.transports.Console()] });\nmodule.exports = logger;` }
-      ]},
-      { id: 'ctrl', name: 'controllers', type: 'directory', children: [
-          { id: 'userCtrl', name: 'userController.js', type: 'file', content: `const User = require('../models/User');\nexports.getUsers = async (req, res) => { try { const users = await User.find(); res.json({ success: true, data: users }); } catch (err) { res.status(500).json({ error: err.message }); } };\nmodule.exports = router;` },
-          { id: 'authCtrl', name: 'authController.js', type: 'file', content: `exports.login = (req, res) => { res.json({ token: 'abc.123.xyz' }); };` }
-      ]},
-      { id: 'middleware', name: 'middleware', type: 'directory', children: [
-          { id: 'authMW', name: 'auth.js', type: 'file', content: `module.exports = (req, res, next) => { if(req.headers.authorization) next(); else res.status(401).json({ error: 'Unauthorized' }); };` },
-          { id: 'errMW', name: 'error.js', type: 'file', content: `module.exports = (err, req, res, next) => { console.error(err.stack); res.status(500).send('Something broke!'); };` }
-      ]},
-      { id: 'models', name: 'models', type: 'directory', children: [
-          { id: 'userModel', name: 'User.js', type: 'file', content: `const mongoose = require('mongoose');\nconst UserSchema = new mongoose.Schema({ name: String, email: { type: String, unique: true }, role: { type: String, default: 'user' }, createdAt: { type: Date, default: Date.now } });\nmodule.exports = mongoose.model('User', UserSchema);` },
-          { id: 'productModel', name: 'Product.js', type: 'file', content: `const mongoose = require('mongoose');\nconst ProductSchema = new mongoose.Schema({ name: String, price: Number, stock: Number });\nmodule.exports = mongoose.model('Product', ProductSchema);` }
-      ]},
-      { id: 'routes', name: 'routes', type: 'directory', children: [
-          { id: 'userRoute', name: 'users.js', type: 'file', content: `const express = require('express');\nconst router = express.Router();\nconst { getUsers } = require('../controllers/userController');\nrouter.get('/', getUsers);\nmodule.exports = router;` },
-          { id: 'authRoute', name: 'auth.js', type: 'file', content: `const express = require('express');\nconst router = express.Router();\nconst { login } = require('../controllers/authController');\nrouter.post('/login', login);\nmodule.exports = router;` }
-      ]},
       { id: '1', name: 'app.js', type: 'file', content: `const express = require('express');\nconst app = express();\napp.use(express.json());\napp.get('/', (req, res) => res.send('API Running'));\nmodule.exports = app;` }
     ]
   },
   { id: 'pkg', name: 'package.json', type: 'file', content: `{\n  "name": "omni-api",\n  "version": "1.0.0",\n  "main": "src/app.js",\n  "scripts": { "start": "node src/app.js", "dev": "nodemon src/app.js" },\n  "dependencies": {\n    "express": "^4.18.2",\n    "mongoose": "^7.0.0",\n    "dotenv": "^16.0.0"\n  }\n}` },
   { id: 'docker', name: 'Dockerfile', type: 'file', content: `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD ["npm", "start"]` },
-  { id: 'compose', name: 'docker-compose.yml', type: 'file', content: `version: '3'\nservices:\n  api:\n    build: .\n    ports:\n      - "3000:3000"\n    environment:\n      - MONGO_URI=mongodb://mongo:27017/omni\n    depends_on:\n      - mongo\n  mongo:\n    image: mongo:latest\n    ports:\n      - "27017:27017"` },
+  { id: 'compose', name: 'docker-compose.yml', type: 'file', content: `version: '3.8'\nservices:\n  api:\n    build: .\n    ports:\n      - "3000:3000"\n    environment:\n      - MONGO_URI=mongodb://mongo:27017/omni\n    depends_on:\n      - mongo\n  mongo:\n    image: mongo:latest\n    ports:\n      - "27017:27017"` },
   { id: 'read', name: 'README.md', type: 'file', content: `# Omni API Project\n\nNode.js Express API generated by Omni-Studio.` }
 ];
 

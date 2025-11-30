@@ -32,7 +32,7 @@ export const useOmniAssistant = ({
       return [{
           id: 'init-welcome',
           role: 'model',
-          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/agent [task]\` to auto-assign task`,
+          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/pipeline\` to run CI/CD\n- \`/agent [task]\` to auto-assign task\n- \`/docker\` to containerize app`,
           timestamp: Date.now()
       }];
   });
@@ -198,20 +198,71 @@ export const useOmniAssistant = ({
         
         if (command === '/docker') {
              setIsGenerating(true);
-             addSystemMessage("Generating Docker configuration for dev branch...");
+             addSystemMessage("Analyzing dependencies to generate Docker configuration...");
+             
+             // Scan for dependencies
+             const allFiles = getAllFiles(files);
+             const packageJson = allFiles.find(f => f.node.name === 'package.json')?.node.content || '';
+             
+             const hasMongo = packageJson.includes('mongoose') || packageJson.includes('mongodb');
+             const hasPostgres = packageJson.includes('pg') || packageJson.includes('sequelize') || packageJson.includes('typeorm');
+             const hasRedis = packageJson.includes('redis');
              
              let dockerfileContent = "";
-             let composeContent = "";
+             let composeServices = "";
              
              if (projectType === ProjectType.NODE_API) {
-                 dockerfileContent = `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD ["npm", "start"]`;
-                 composeContent = `version: '3.8'\nservices:\n  api:\n    build: .\n    ports:\n      - "3000:3000"\n    environment:\n      - NODE_ENV=development\n    volumes:\n      - .:/app\n      - /app/node_modules`;
+                 dockerfileContent = `# Production Node.js Image
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]`;
+                 
+                 composeServices = `  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development`;
+                 
+                 if (hasMongo) {
+                     composeServices += `\n      - MONGO_URI=mongodb://mongo:27017/app\n    depends_on:\n      - mongo\n  mongo:\n    image: mongo:latest\n    ports:\n      - "27017:27017"`;
+                 }
+                 if (hasPostgres) {
+                     composeServices += `\n      - DATABASE_URL=postgres://user:pass@postgres:5432/app\n    depends_on:\n      - postgres\n  postgres:\n    image: postgres:15\n    environment:\n      POSTGRES_USER: user\n      POSTGRES_PASSWORD: pass\n      POSTGRES_DB: app\n    ports:\n      - "5432:5432"`;
+                 }
+                 if (hasRedis) {
+                     composeServices += `\n      - REDIS_URL=redis://redis:6379\n    depends_on:\n      - redis\n  redis:\n    image: redis:alpine\n    ports:\n      - "6379:6379"`;
+                 }
+
              } else {
-                 dockerfileContent = `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nRUN npm run build\nEXPOSE 3000\nCMD ["npm", "start"]`;
-                 composeContent = `version: '3.8'\nservices:\n  web:\n    build: .\n    ports:\n      - "3000:3000"\n    volumes:\n      - .:/app\n      - /app/node_modules`;
+                 dockerfileContent = `# Stage 1: Build
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# Stage 2: Serve
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]`;
+                 composeServices = `  web:
+    build: .
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production`;
              }
 
-             const response = `Here are the configuration files to dockerize your ${projectType} project.\n\n` +
+             const composeContent = `version: '3.8'\nservices:\n${composeServices}`;
+
+             const response = `Based on your **${projectType}** project and dependencies (${hasMongo ? 'MongoDB' : ''} ${hasPostgres ? 'PostgreSQL' : ''} ${hasRedis ? 'Redis' : ''}), here is your optimized Docker setup.\n\n` +
                 `\`\`\`dockerfile\n// filename: Dockerfile\n${dockerfileContent}\n\`\`\`\n\n` +
                 `\`\`\`yaml\n// filename: docker-compose.yml\n${composeContent}\n\`\`\``;
              
@@ -223,7 +274,17 @@ export const useOmniAssistant = ({
                      timestamp: Date.now()
                  }]);
                  setIsGenerating(false);
-             }, 1000);
+             }, 1500);
+             return;
+        }
+        
+        if (command === '/pipeline' || command === '/deploy') {
+             setChatHistory(prev => [...prev, {
+                 id: `pipe-${Date.now()}`,
+                 role: 'model',
+                 text: `To run the ${command === '/deploy' ? 'Deployment' : 'CI/CD'} Pipeline, please use the **Deploy** tab in the right panel. It will visually guide you through Linting, Building, Testing, and Pushing containers.`,
+                 timestamp: Date.now()
+             }]);
              return;
         }
         
@@ -257,7 +318,7 @@ export const useOmniAssistant = ({
         }
         
         if (command === '/help') {
-            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/tts [text]\`\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
+            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/pipeline\` (CI/CD)\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
             return;
         }
     }

@@ -394,13 +394,16 @@ export const useAgentOrchestrator = ({
                       }
 
                   } else if (review.fixCode) {
-                      // AUTO-FIX
+                      // AUTO-FIX (Critic rescues the build)
                       updateFileContent(fileNode.id, review.fixCode);
                       modifiedFilesRef.current[fileNode.id] = review.fixCode;
-                      addSystemMessage(`**${critic.name}** auto-fixed issues in \`${fileNode.name}\`.`);
-                      setTerminalLogs(prev => [...prev, `[${critic.name}] 🛠️ Auto-applied fix.`]);
+                      addSystemMessage(`**${critic.name}** AUTO-FIXED minor issues in \`${fileNode.name}\` (Efficiency Boost).`);
+                      setTerminalLogs(prev => [...prev, `[${critic.name}] 🔧 Applied auto-fixes. Proceeding...`]);
+                      
+                      // Treat as success to stop loop
                       success = true;
                       modifiedFileNames.push(fileNode.name);
+                      
                   } else if (review.suggestedCommand && handleCommand) {
                       setTerminalLogs(prev => [...prev, `[${critic.name}] 🛠️ Running: ${review.suggestedCommand}`]);
                       handleCommand(review.suggestedCommand);

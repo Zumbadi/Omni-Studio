@@ -45,6 +45,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ onClose }) => {
             <ShortcutRow keys={['Ctrl', 'S']} desc="Save Active File" />
             <ShortcutRow keys={['Ctrl', 'B']} desc="Toggle Sidebar" />
             <ShortcutRow keys={['Ctrl', 'J']} desc="Toggle Terminal" />
+            <ShortcutRow keys={['Ctrl', 'Shift', 'Z']} desc="Toggle Zen Mode" />
           </div>
 
           <div>

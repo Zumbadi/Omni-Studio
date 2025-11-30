@@ -15,6 +15,7 @@ const getAiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+// ... (Rest of existing utility functions: getProviderConfig, cleanJson, extractCode, retryOperation) ...
 const getProviderConfig = (modelName: string) => {
     try {
         const providers = JSON.parse(localStorage.getItem('omni_api_providers') || '[]');
@@ -33,11 +34,10 @@ const cleanJson = (text: string): string => {
     return cleaned;
 };
 
-// Robust Code Extractor
 const extractCode = (rawText: string): string => {
     if (!rawText) return "";
     if (rawText.includes('DELETE_FILE')) return 'DELETE_FILE';
-    const codeBlockRegex = /```(?:typescript|javascript|tsx|jsx|css|json|html|swift|kotlin|xml|bash|sh)?\n([\s\S]*?)```/g;
+    const codeBlockRegex = /```(?:typescript|javascript|tsx|jsx|css|json|html|swift|kotlin|xml|bash|sh|dockerfile|yaml)?\n([\s\S]*?)```/g;
     const matches = [...rawText.matchAll(codeBlockRegex)];
     if (matches.length > 0) return matches.reduce((a, b) => a[1].length > b[1].length ? a : b)[1].trim();
     let cleaned = rawText.trim();
@@ -47,7 +47,6 @@ const extractCode = (rawText: string): string => {
     return cleaned;
 };
 
-// Exponential Backoff Retry Wrapper
 const retryOperation = async <T>(operation: () => Promise<T>, retries = 3, delay = 2000): Promise<T> => {
   try {
     return await operation();
@@ -69,6 +68,8 @@ const getFrameworkInstructions = (type: ProjectType) => {
         - STYLE: Write clean, modular, and strongly-typed code.
         - ICONS: Use 'lucide-react' for React/Web projects.
         - FORMAT: Provide FULL file content. No placeholders like "// ... rest of code".
+        - ENTRY POINT: Ensure the main entry file is named 'App.tsx' (or 'src/App.tsx') and exports a default component named 'App'.
+        - DOCKER AWARENESS: Assume the application may run in a container (respect PORT env var, listen on 0.0.0.0).
     `;
 
     switch (type) {
@@ -129,6 +130,7 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - UTILS: Use 'express-async-handler' for routes.
             - FORMAT: CommonJS (require/module.exports).
             - DEPENDENCIES: express, mongoose, dotenv, cors, jsonwebtoken.
+            - CONTAINER: Include Dockerfile and docker-compose.yml for deployment. Ensure app listens on process.env.PORT || 3000.
             ${commonInstructions}`;
             
         default:
@@ -141,6 +143,7 @@ const getFrameworkInstructions = (type: ProjectType) => {
             - STATE: React Hooks (useState, useEffect, useContext).
             - ROUTING: React Router or simple conditional rendering.
             - PATTERNS: Mobile-first responsive design.
+            - ENTRY: Must include 'src/App.tsx' as the main entry point exporting 'App'.
             - FORBIDDEN: Class components, jQuery, direct DOM manipulation.
             - IMPORTANT: Always import React from 'react'.
             ${commonInstructions}`;
@@ -209,6 +212,7 @@ export const executeBuildTask = async (
         ${context?.relatedCode || ''}
         ${retry}
         STRICT OUTPUT: Return ONLY valid file content. NO markdown fences. NO placeholders.
+        CRITICAL: If this is the main entry file (App.tsx), you MUST export a default component named 'App'.
     `;
 
     try {
@@ -229,24 +233,47 @@ export const reviewBuildTask = async (
     if (!getApiKey()) return { approved: true, feedback: "Auto-approved", issues: [] };
     const ai = getAiClient();
     const rules = `${getFrameworkInstructions(projectType)}\n${context?.projectRules || ''}`;
+    
     const systemInstruction = `
-        Critic Agent. Job: Review changes for "${fileName}".
-        Reqs: "${requirements}".
-        ${rules}
-        Criteria: 1. Framework compliance. 2. Completeness (No placeholders). 3. Correctness.
-        Output JSON: { "approved": bool, "feedback": string, "issues": string[], "fixCode": string|null, "suggestedCommand": string|null }
-        If REJECTED, you MUST provide "fixCode" with the full corrected file.
+        IDENTITY: Senior Principal Engineer (Critic).
+        GOAL: Ensure code quality AND development velocity. Avoid unnecessary loops.
+        
+        TASK: Review changes for "${fileName}".
+        REQUIREMENTS: "${requirements}".
+        CONTEXT: ${rules}
+
+        DECISION MATRIX:
+        1. **PERFECT**: If code is correct -> Approve (approved: true).
+        2. **MINOR ISSUES** (Syntax, missing imports, unused vars, formatting, slight logic bugs, React hook rules):
+           -> **DO NOT REJECT**.
+           -> **FIX IT YOURSELF**.
+           -> Return "approved: false" (technically the builder failed) BUT provide the **FULL CORRECTED CODE** in "fixCode".
+           -> This counts as a "Critic Rescue" and unblocks the pipeline.
+        3. **CRITICAL FAILURES** (Wrong framework, missing core feature, completely hallucinated logic, security vulnerability):
+           -> Reject (approved: false). Provide feedback.
+
+        OUTPUT JSON:
+        {
+            "approved": boolean, 
+            "feedback": "Concise summary", 
+            "issues": ["List of issues"], 
+            "fixCode": "FULL CORRECTED CODE IF AUTO-FIXABLE (OR NULL)",
+            "suggestedCommand": "Terminal command if needed (e.g. npm install)"
+        }
     `;
+
     try {
         const response = await retryOperation(() => ai.models.generateContent({
             model: 'gemini-3-pro-preview',
-            contents: `Original Len: ${originalCode.length}\n\nNew Code:\n${newCode.substring(0, 30000)}`, 
+            contents: `Original Length: ${originalCode.length}\n\nProposed Code:\n${newCode.substring(0, 30000)}`, 
             config: { systemInstruction, responseMimeType: 'application/json' }
         })) as GenerateContentResponse;
+        
         const parsed = JSON.parse(cleanJson(response.text || '{}'));
         if (parsed.fixCode) parsed.fixCode = extractCode(parsed.fixCode);
+        
         return parsed;
-    } catch { return { approved: true, feedback: "Critic check failed.", issues: [] }; }
+    } catch { return { approved: true, feedback: "Critic check failed (Auto-Pass).", issues: [] }; }
 };
 
 export const generateCodeResponse = async (
@@ -296,10 +323,10 @@ export const generateCodeResponse = async (
     } catch (error: any) { onStream(`Error: ${error.message}`); }
 };
 
-// ... (Exports)
+// ... (Rest of existing exports: generateGhostText, chatWithVoice, etc. - ensure these are present as before)
 export const generateGhostText = async (p: string, s: string) => { if (!getApiKey()) return ""; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Complete:\n${p}[CURSOR]${s}`, config: { maxOutputTokens: 64, temperature: 0.2 } }) as GenerateContentResponse; return r.text?.trimEnd() || ""; } catch { return ""; } };
 export const chatWithVoice = async (p: string) => { if (!getApiKey()) return "No Key"; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: p, config: { systemInstruction: "Concise response." } }) as GenerateContentResponse; return r.text || "?"; } catch { return "Error"; } };
-export const generateProjectScaffold = async (p: string, t: ProjectType) => { if (!getApiKey()) return []; const ai = getAiClient(); try { const r = await retryOperation(() => ai.models.generateContent({ model: 'gemini-2.5-flash', contents: "Generate.", config: { systemInstruction: `Scaffold JSON for ${t}: "${p}". Schema: [{name, type, content?, children?}]`, responseMimeType: 'application/json' } })) as GenerateContentResponse; return JSON.parse(cleanJson(r.text || '[]')); } catch { return []; } };
+export const generateProjectScaffold = async (p: string, t: ProjectType) => { if (!getApiKey()) return []; const ai = getAiClient(); try { const r = await retryOperation(() => ai.models.generateContent({ model: 'gemini-2.5-flash', contents: "Generate.", config: { systemInstruction: `Scaffold JSON for ${t}: "${p}". Schema: [{name, type, content?, children?}]. Ensure root has src/App.tsx (or appropriate entry) exporting default App component.`, responseMimeType: 'application/json' } })) as GenerateContentResponse; return JSON.parse(cleanJson(r.text || '[]')); } catch { return []; } };
 export const generateProjectPlan = async (d: string, t: ProjectType) => { if (!getApiKey()) return []; const ai = getAiClient(); try { const r = await retryOperation(() => ai.models.generateContent({ model: 'gemini-2.5-flash', contents: "Roadmap", config: { systemInstruction: `Roadmap JSON for ${t}: "${d}". Schema: [{id, title, status, goals:[], tasks:[{id, text, done}]}]`, responseMimeType: 'application/json' } })) as GenerateContentResponse; return JSON.parse(cleanJson(r.text || '[]')); } catch { return []; } };
 export const generateProjectDocs = async (s: string, t: ProjectType, cb: (c: string) => void) => { if (!getApiKey()) { cb("No Key"); return; } const ai = getAiClient(); try { const r = await ai.models.generateContentStream({ model: 'gemini-2.5-flash', contents: "README", config: { systemInstruction: `Write README for ${t}:\n${s}` } }); for await (const c of r) if((c as GenerateContentResponse).text) cb((c as GenerateContentResponse).text!); } catch(e:any) { cb(e.message); } };
 export const runAgentFileTask = async (a: AIAgent, n: string, c: string, ctx?: AgentContext) => { if (!getApiKey()) return null; const ai = getAiClient(); try { const r = await retryOperation(() => ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `File: ${n}\n${c}`, config: { systemInstruction: `${a.systemPrompt} Task: Improve file. Return full content.` } })) as GenerateContentResponse; return r.text; } catch { return null; } };

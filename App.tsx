@@ -1,21 +1,32 @@
 
-import React, { useState, useEffect } from 'react';
-import { Workspace } from './pages/Workspace';
-import { FineTuningDashboard } from './components/FineTuningDashboard';
-import { Settings } from './components/Settings';
-import { AudioStudio } from './components/AudioStudio';
-import { MediaStudio } from './components/MediaStudio';
-import { Login } from './components/Login';
-import { Dashboard } from './components/Dashboard';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AppView, Project, ProjectType, FileNode } from './types';
 import { MOCK_PROJECTS } from './constants';
-import { Menu } from 'lucide-react';
-import { Button } from './components/Button';
+import { Menu, Loader2 } from 'lucide-react';
 import { TeamManager } from './components/TeamManager';
 import { NewProjectModal } from './components/NewProjectModal';
 import { AppSidebar } from './components/AppSidebar';
 import JSZip from 'jszip';
 import { ShortcutsModal } from './components/ShortcutsModal';
+import { Login } from './components/Login';
+
+// Lazy Load Heavy Components for Performance Optimization
+const Workspace = lazy(() => import('./pages/Workspace').then(m => ({ default: m.Workspace })));
+const FineTuningDashboard = lazy(() => import('./components/FineTuningDashboard').then(m => ({ default: m.FineTuningDashboard })));
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const AudioStudio = lazy(() => import('./components/AudioStudio').then(m => ({ default: m.AudioStudio })));
+const MediaStudio = lazy(() => import('./components/MediaStudio').then(m => ({ default: m.MediaStudio })));
+const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+
+const LoadingScreen = () => (
+    <div className="flex-1 flex flex-col items-center justify-center bg-gray-950 text-gray-500 h-full w-full absolute inset-0 z-50">
+        <div className="relative">
+            <div className="absolute inset-0 bg-primary-500/20 blur-xl rounded-full animate-pulse"></div>
+            <Loader2 size={48} className="animate-spin text-primary-500 relative z-10" />
+        </div>
+        <p className="text-sm font-medium animate-pulse mt-4 text-primary-400/80 font-mono tracking-wider">INITIALIZING MODULE...</p>
+    </div>
+);
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -42,6 +53,17 @@ const App: React.FC = () => {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showTeamManager, setShowTeamManager] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+
+  // Smart Prefetching: If user is on Dashboard, they are likely to open Workspace soon.
+  useEffect(() => {
+      if (currentView === AppView.DASHBOARD) {
+          const timer = setTimeout(() => {
+              // Prefetch the heavy Workspace chunk
+              import('./pages/Workspace');
+          }, 1500); // Wait 1.5s to prioritize initial Dashboard render
+          return () => clearTimeout(timer);
+      }
+  }, [currentView]);
 
   // Persist state
   useEffect(() => {
@@ -198,24 +220,26 @@ const App: React.FC = () => {
       {showHelp && <ShortcutsModal onClose={() => setShowHelp(false)} />}
       
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
-          {currentView === AppView.DASHBOARD && (
-              <div className="relative flex-1 flex flex-col overflow-hidden bg-gray-950">
-                  <Dashboard 
-                      projects={projects} 
-                      onProjectSelect={handleProjectSelect} 
-                      onDeleteProject={handleDeleteProject} 
-                      onNewProject={() => setShowNewProjectModal(true)}
-                      onNavigate={handleNavClick}
-                      onManageTeam={() => setShowTeamManager(true)}
-                      onExportProject={handleExportProject}
-                  />
-              </div>
-          )}
-          {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} onDeleteProject={handleDeleteProject} onUpdateProject={handleUpdateProject} />}
-          {currentView === AppView.FINETUNE && <FineTuningDashboard />}
-          {currentView === AppView.AUDIO && <AudioStudio />}
-          {currentView === AppView.MEDIA && <MediaStudio />}
-          {currentView === AppView.SETTINGS && <Settings />}
+          <Suspense fallback={<LoadingScreen />}>
+              {currentView === AppView.DASHBOARD && (
+                  <div className="relative flex-1 flex flex-col overflow-hidden bg-gray-950">
+                      <Dashboard 
+                          projects={projects} 
+                          onProjectSelect={handleProjectSelect} 
+                          onDeleteProject={handleDeleteProject} 
+                          onNewProject={() => setShowNewProjectModal(true)}
+                          onNavigate={handleNavClick}
+                          onManageTeam={() => setShowTeamManager(true)}
+                          onExportProject={handleExportProject}
+                      />
+                  </div>
+              )}
+              {currentView === AppView.WORKSPACE && <Workspace project={selectedProject} onDeleteProject={handleDeleteProject} onUpdateProject={handleUpdateProject} />}
+              {currentView === AppView.FINETUNE && <FineTuningDashboard />}
+              {currentView === AppView.AUDIO && <AudioStudio />}
+              {currentView === AppView.MEDIA && <MediaStudio />}
+              {currentView === AppView.SETTINGS && <Settings />}
+          </Suspense>
       </div>
     </div>
   );

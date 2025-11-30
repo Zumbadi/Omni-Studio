@@ -1,28 +1,35 @@
 
 import React, { useState, useEffect } from 'react';
-import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle, Scissors, Copy, Code, Atom, Palette, Database, Braces, ImageIcon, Video, Volume2, Wand2, Clock, Workflow } from 'lucide-react';
+import { GitBranch, GitCommit, Search, Bug, Play, Pause, Trash2, Package, Puzzle, Download, Cloud, Check, AlertCircle, RefreshCw, Terminal, Shield, Bot, FileText, ChevronRight, ChevronDown, Plus, X, TrendingUp, User, Zap, Loader2, Square, Replace, ArrowRight, Circle, Scissors, Copy, Code, Atom, Palette, Database, Braces, ImageIcon, Video, Volume2, Wand2, Clock, Workflow, Container } from 'lucide-react';
 import { FileNode, GitCommit as GitCommitType, Extension, AuditIssue, AgentTask, SocialPost, AudioTrack, AIAgent, Snippet, KnowledgeDoc } from '../types';
 import { Button } from './Button';
 import { DEFAULT_AGENTS } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { generateCommitMessage } from '../services/geminiService';
 import { getAllFiles } from '../utils/fileHelpers';
-import { KnowledgePanel } from './KnowledgePanel'; // Import
+import { KnowledgePanel } from './KnowledgePanel';
 
-// ... (Keep GitPanel, SearchPanel, DebugPanel, ExtensionsPanel, AssetsPanel, SnippetsPanel, AgentsPanel unchanged) ...
-
-// Re-export KnowledgePanel for use in WorkspaceSidebar
-export { KnowledgePanel }; 
+export { KnowledgePanel };
 
 // --- GIT PANEL ---
-interface GitPanelProps { files: FileNode[]; commits: GitCommitType[]; currentBranch: string; onCommit: (msg: string) => void; onSwitchBranch: () => void; }
-export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranch, onCommit, onSwitchBranch }) => {
+interface GitPanelProps { 
+    files: FileNode[]; 
+    commits: GitCommitType[]; 
+    currentBranch: string; 
+    branches: string[];
+    onCommit: (msg: string) => void; 
+    onCreateBranch: (name: string) => void;
+    onSwitchBranch: (name: string) => void;
+}
+
+export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranch, branches, onCommit, onCreateBranch, onSwitchBranch }) => {
   const [message, setMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
 
   const handleGenerateMessage = async () => {
       setIsGenerating(true);
-      // Get modified files
       const modified = getAllFiles(files)
         .filter(f => f.node.gitStatus === 'modified' || f.node.gitStatus === 'added')
         .map(f => f.node.name);
@@ -38,12 +45,54 @@ export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranc
       setIsGenerating(false);
   };
 
+  const handleCreateBranch = () => {
+      if(newBranchName.trim()) {
+          onCreateBranch(newBranchName.trim());
+          setNewBranchName('');
+          setShowBranchMenu(false);
+      }
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-gray-900">
       <div className="p-4 border-b border-gray-800 bg-gray-900 sticky top-0 z-10">
-         <div className="flex justify-between items-center mb-4">
+         <div className="flex justify-between items-center mb-4 relative">
              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Source Control</h2>
-             <button onClick={onSwitchBranch} className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300"><GitBranch size={12}/> {currentBranch}</button>
+             <button 
+                onClick={() => setShowBranchMenu(!showBranchMenu)} 
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors ${currentBranch === 'dev' ? 'bg-purple-900/30 text-purple-400 border border-purple-500/30' : 'bg-gray-800 text-gray-300 border border-gray-700'}`}
+             >
+                 {currentBranch === 'dev' ? <Container size={10} /> : <GitBranch size={10}/>} {currentBranch}
+             </button>
+
+             {showBranchMenu && (
+                 <div className="absolute top-8 right-0 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 p-2 animate-in fade-in zoom-in-95">
+                     <div className="text-[10px] font-bold text-gray-500 uppercase mb-2 px-1">Switch Branch</div>
+                     {branches.map(b => (
+                         <div 
+                            key={b} 
+                            onClick={() => { onSwitchBranch(b); setShowBranchMenu(false); }}
+                            className={`flex items-center justify-between px-2 py-1.5 rounded cursor-pointer text-xs ${currentBranch === b ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
+                         >
+                             <span className="flex items-center gap-2">
+                                 {b === 'dev' ? <Container size={10}/> : <GitBranch size={10}/>} {b}
+                             </span>
+                             {currentBranch === b && <Check size={10}/>}
+                         </div>
+                     ))}
+                     <div className="border-t border-gray-700 my-2"></div>
+                     <div className="flex gap-1">
+                         <input 
+                            type="text" 
+                            className="w-full bg-gray-900 border border-gray-600 rounded px-1.5 py-1 text-[10px] text-white focus:border-primary-500 outline-none"
+                            placeholder="New branch..."
+                            value={newBranchName}
+                            onChange={e => setNewBranchName(e.target.value)}
+                         />
+                         <button onClick={handleCreateBranch} className="bg-primary-600 text-white p-1 rounded hover:bg-primary-500"><Plus size={10}/></button>
+                     </div>
+                 </div>
+             )}
          </div>
          
          {/* Git Graph Visualization */}
@@ -52,7 +101,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranc
                  <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-700"></div>
                  {commits.slice(0, 3).map((c, i) => (
                      <div key={c.id} className="absolute left-0 flex items-center" style={{ top: `${i * 24}px` }}>
-                         <div className="w-4 h-4 rounded-full bg-gray-900 border-2 border-blue-500 z-10"></div>
+                         <div className={`w-4 h-4 rounded-full bg-gray-900 border-2 z-10 ${currentBranch === 'dev' ? 'border-purple-500' : 'border-blue-500'}`}></div>
                          <div className="ml-3 text-[10px] text-gray-500 truncate w-40">{c.message}</div>
                      </div>
                  ))}
@@ -82,7 +131,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ files, commits, currentBranc
          <Button size="sm" className="w-full" onClick={() => { onCommit(message); setMessage(''); }} disabled={!message.trim()}>Commit Changes</Button>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          <div className="text-[10px] font-bold text-gray-500 px-2 mb-1 uppercase">History</div>
+          <div className="text-[10px] font-bold text-gray-500 px-2 mb-1 uppercase">History ({currentBranch})</div>
           {commits.map(c => (
               <div key={c.id} className="text-xs text-gray-400 p-2 rounded hover:bg-gray-800 flex justify-between group">
                   <span className="truncate max-w-[140px]">{c.message}</span>

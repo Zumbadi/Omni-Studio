@@ -4,7 +4,7 @@ import { FileNode } from '../types';
 import { getAllFiles } from './fileHelpers';
 
 const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[], depth = 0, visited = new Set<string>(), collectedStyles: string[] = []): string => {
-    if (depth > 20) return entryCode; // Increased depth limit but still safe
+    if (depth > 20) return entryCode; // Recursion limit
     
     let bundled = entryCode;
     
@@ -57,15 +57,14 @@ const bundleCode = (entryCode: string, allFiles: {node: FileNode, path: string}[
             
             let inlinedContent = bundleCode(fileNode.content, allFiles, depth + 1, visited, collectedStyles);
             
-            // Strip imports from the inlined content
+            // Strip imports from the inlined content to prevent duplication/recursion issues
             inlinedContent = inlinedContent
                 .replace(/import\s+.*?\s+from\s+['"].*?['"];?/g, '')
                 .replace(/import\s+['"].*?\.css['"];?/g, '')
-                .replace(/export\s+default\s+function\s+(\w+)/g, 'function $1')
-                .replace(/export\s+const\s+(\w+)/g, 'const $1')
-                .replace(/export\s+class\s+(\w+)/g, 'class $1')
-                .replace(/export\s+default\s+(\w+);?/g, '') 
-                .replace(/export\s+{.*?};?/g, ''); 
+                // We keep the logic mostly clean here, relying on the top-level sanitization for 'export default' handling
+                // but we can strip them here for inlined modules to avoid conflicts
+                .replace(/export\s+default\s+/g, '') 
+                .replace(/export\s+/g, ''); 
 
             bundled = `${inlinedContent}\n\n${bundled}`;
         }
@@ -85,14 +84,86 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
       return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><script src="https://cdn.tailwindcss.com"></script><style>body{margin:0;padding:0;background-color:#000;color:white;font-family:sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center}.mockup{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at center,#1a1a1a 0%,#000 100%);text-align:center;padding:20px}.icon{font-size:48px;margin-bottom:20px;color:${color}}h1{font-size:24px;margin-bottom:10px}p{color:#888;font-size:14px;max-width:300px;line-height:1.5}.badge{background:#333;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;margin-top:20px;border:1px solid #444}</style></head><body><div class="mockup"><div class="icon">${isSwift ? '' : '🤖'}</div><h1>${lang} Preview</h1><p>Native compilation is required.</p><div class="badge">UI Simulation Mode</div></div></body></html>`;
   }
 
-  const allFiles = getAllFiles(files); // Flatten once
+  const allFiles = getAllFiles(files); 
   const collectedStyles: string[] = [];
   let bundledCode = bundleCode(code, allFiles, 0, new Set(), collectedStyles);
   const styleBlock = collectedStyles.length > 0 ? `<style>${collectedStyles.join('\n')}</style>` : '';
 
+  // Robust 'export default' aliasing to 'App'
+  let finalCode = bundledCode;
+  
+  // 1. Clean up imports
+  finalCode = finalCode
+    .replace(/import\s+React.*?;/g, '')
+    .replace(/import\s+{.*?}\s+from\s+['"]react['"];/g, '')
+    .replace(/import\s+{.*?}\s+from\s+['"]react-native['"];/g, '')
+    .replace(/import\s+{.*?}\s+from\s+['"]lucide-react['"];/g, '')
+    .replace(/import\s+['"].*?\.css['"];?/g, '')
+    .replace(/import\s+.*?;/g, '');
+
+  let appDefined = false;
+
+  // 2. Identify and alias the default export
+  
+  // Case A: Named Function: export default function Name() {}
+  const namedFuncMatch = finalCode.match(/export\s+default\s+function\s+([a-zA-Z0-9_]+)/);
+  if (namedFuncMatch) {
+      const name = namedFuncMatch[1];
+      finalCode = finalCode.replace(/export\s+default\s+function/, 'function');
+      if (name !== 'App') {
+          finalCode += `\nconst App = ${name};`;
+      }
+      appDefined = true;
+  }
+
+  // Case B: Named Class: export default class Name {}
+  if (!appDefined) {
+      const namedClassMatch = finalCode.match(/export\s+default\s+class\s+([a-zA-Z0-9_]+)/);
+      if (namedClassMatch) {
+          const name = namedClassMatch[1];
+          finalCode = finalCode.replace(/export\s+default\s+class/, 'class');
+          if (name !== 'App') {
+              finalCode += `\nconst App = ${name};`;
+          }
+          appDefined = true;
+      }
+  }
+
+  // Case C: Anonymous: export default function() {} or export default () => {}
+  if (!appDefined) {
+      if (finalCode.match(/export\s+default\s+function\s*\(/)) {
+          finalCode = finalCode.replace(/export\s+default\s+function/, 'const App = function');
+          appDefined = true;
+      } else if (finalCode.match(/export\s+default\s+\(/)) {
+          finalCode = finalCode.replace(/export\s+default\s+/, 'const App = ');
+          appDefined = true;
+      } else if (finalCode.match(/export\s+default\s+class\s*\{/)) {
+          finalCode = finalCode.replace(/export\s+default\s+class/, 'const App = class');
+          appDefined = true;
+      }
+  }
+
+  // Case D: Identifier: export default Name;
+  if (!appDefined) {
+      const idMatch = finalCode.match(/export\s+default\s+([a-zA-Z0-9_]+);?/);
+      if (idMatch) {
+          const name = idMatch[1];
+          // Remove the export line
+          finalCode = finalCode.replace(/export\s+default\s+.*?;?/, '');
+          if (name !== 'App') {
+              finalCode += `\nconst App = ${name};`;
+          }
+          appDefined = true;
+      }
+  }
+
+  // 3. Remove any remaining export keywords (safe cleanup for browser script)
+  finalCode = finalCode.replace(/^\s*export\s+/gm, '');
+
+  // 4. Asset Resolution (Images/Svgs)
   if (files.length > 0) {
       const pathRegex = /['"](\.{0,2}\/?[^'"]+\.(png|jpg|jpeg|gif|svg))['"]/gi;
-      const matches = [...bundledCode.matchAll(pathRegex)];
+      const matches = [...finalCode.matchAll(pathRegex)];
       
       const resolvePath = (relativePath: string, basePath: string): string => {
           if (relativePath.startsWith('/')) return relativePath.substring(1);
@@ -125,23 +196,24 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
                   if (fileNode.content.startsWith('<svg')) replacement = `data:image/svg+xml;base64,${btoa(fileNode.content)}`;
                   else replacement = fileNode.content;
               }
-              if (replacement) bundledCode = bundledCode.split(originalString).join(replacement);
+              if (replacement) finalCode = finalCode.split(originalString).join(replacement);
           }
       });
   }
 
-  const sanitizedCode = bundledCode
-    .replace(/import\s+React.*?;/g, '')
-    .replace(/import\s+{.*?}\s+from\s+['"]react-native['"];/g, '')
-    .replace(/import\s+{.*?}\s+from\s+['"]lucide-react['"];/g, '')
-    .replace(/import\s+{.*?}\s+from\s+['"]expo-router['"];/g, '')
-    .replace(/import\s+.*?\s+from\s+['"]@expo\/vector-icons\/.*?['"];/g, '')
-    .replace(/import\s+['"].*?\.css['"];?/g, '')
-    .replace(/import\s+.*?;/g, '')
-    .replace(/export\s+default\s+function\s+App/g, 'function App')
-    .replace(/export\s+default\s+class\s+App/g, 'class App')
-    .replace(/export\s+default\s+App;/g, '')
-    .replace(/export\s+default\s+/g, '');
+  const mountScript = `
+    const rootEl = document.getElementById('root');
+    try {
+        if (typeof App !== 'undefined') {
+            const root = ReactDOM.createRoot(rootEl);
+            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        } else {
+            rootEl.innerHTML = '<div style="color:#ef4444; padding:20px; font-family:monospace;"><h3>Preview Error</h3><p>Entry component "App" not found.</p><p style="font-size:12px; color:#666">Ensure your entry file exports a default component (e.g., <code>export default function App() {}</code>).</p></div>';
+        }
+    } catch(e) {
+        rootEl.innerHTML = '<div style="color:#ef4444; padding:20px;"><h3>Mounting Error</h3><pre>' + e.toString() + '</pre></div>';
+    }
+  `;
 
   return `
     <!DOCTYPE html>
@@ -181,63 +253,24 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
             console.error = (...args) => { originalError(...args); sendToParent('error', args); };
             
             window.onerror = (msg, url, line) => { sendToParent('error', [\`Runtime Error: \${msg} (Line \${line})\`]); };
-
-            window.addEventListener('message', (event) => {
-                if (event.data && event.data.type === 'eval') {
-                    try {
-                        const result = eval(event.data.code);
-                        console.log(result);
-                    } catch (e) {
-                        console.error(e);
-                    }
-                }
-            });
           })();
         </script>
         <script type="text/babel">
           const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-          const flattenStyles = (style) => {
-             if (!style) return {};
-             if (Array.isArray(style)) {
-                 return style.reduce((acc, curr) => ({ ...acc, ...flattenStyles(curr) }), {});
-             }
-             return style;
-          };
-
-          const View = ({ style, children, ...props }) => <div style={{ display: 'flex', flexDirection: 'column', boxSizing: 'border-box', ...flattenStyles(style) }} {...props}>{children}</div>;
-          const Text = ({ style, children, ...props }) => <span style={{ display: 'block', ...flattenStyles(style) }} {...props}>{children}</span>;
-          const TouchableOpacity = ({ style, children, onPress, ...props }) => <button style={{ border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', ...flattenStyles(style) }} onClick={onPress} {...props}>{children}</button>;
-          const Image = ({ style, source, ...props }) => <img src={source?.uri || 'https://via.placeholder.com/150'} style={{ objectFit: 'cover', ...flattenStyles(style) }} {...props} />;
-          const ScrollView = ({ style, children, contentContainerStyle, ...props }) => <div style={{ overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', ...flattenStyles(style) }} {...props}><div style={{ display: 'flex', flexDirection: 'column', ...flattenStyles(contentContainerStyle) }}>{children}</div></div>;
-          const TextInput = ({ style, value, onChangeText, placeholder, secureTextEntry, ...props }) => <input type={secureTextEntry ? "password" : "text"} value={value} onChange={(e) => onChangeText && onChangeText(e.target.value)} placeholder={placeholder} style={{ outline: 'none', border: '1px solid #ccc', padding: '8px', ...flattenStyles(style) }} {...props} />;
-          const FlatList = ({ data, renderItem, keyExtractor, style, ...props }) => <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', ...flattenStyles(style) }}>{data && data.map((item, index) => <React.Fragment key={keyExtractor ? keyExtractor(item) : index}>{renderItem({ item, index })}</React.Fragment>)}</div>;
-          const ActivityIndicator = ({ size, color }) => <div style={{ display: 'flex', justifyContent: 'center', padding: 10 }}><span style={{ width: 20, height: 20, borderRadius: '50%', border: \`3px solid \${color||'#000'}\`, borderTopColor: 'transparent', animation: 'spin 1s linear infinite', display: 'block' }}></span><style>{\`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }\`}</style></div>;
-          const Alert = { alert: (title, msg) => window.alert(\`\${title}\\n\${msg || ''}\`) };
-          const StyleSheet = { create: (styles) => styles, flatten: flattenStyles, absoluteFillObject: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } };
-          const SafeAreaView = ({ style, children, ...props }) => <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', ...flattenStyles(style) }} {...props}>{children}</div>;
-
-          const Slot = () => <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed #444', borderRadius: 8, margin: 10, color: '#666' }}>[Router Slot]</div>;
-          const Stack = ({ children }) => <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>{children}</div>;
-          Stack.Screen = () => null;
-          const Tabs = ({ children, screenOptions }) => (
-             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <div style={{ flex: 1, position: 'relative' }}><div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>[Tab Content Area]</div></div>
-                <div style={{ height: 60, borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#fff' }}>
-                   {React.Children.map(children, child => {
-                      if(!child) return null;
-                      const { name, options } = child.props;
-                      return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.6 }}>{options?.tabBarIcon && options.tabBarIcon({ color: '#888' })}<span style={{ fontSize: 10, marginTop: 2 }}>{options?.title || name}</span></div>;
-                   })}
-                </div>
-             </div>
-          );
-          Tabs.Screen = () => null;
-
-          const IconShim = ({ size = 24, color = 'currentColor', ...props }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>;
-          const ProxyComponent = new Proxy({}, { get: (target, prop) => IconShim });
-          Object.assign(window, ProxyComponent);
-          const TabBarIcon = IconShim;
+          // React Native / Expo Shims for Web Preview
+          const flattenStyles = (style) => style ? (Array.isArray(style) ? style.reduce((a,c)=>({...a,...c}), {}) : style) : {};
+          const View = ({ style, ...p }) => <div style={{ display:'flex', flexDirection:'column', ...flattenStyles(style) }} {...p} />;
+          const Text = ({ style, ...p }) => <span style={{ display:'block', ...flattenStyles(style) }} {...p} />;
+          const TouchableOpacity = ({ style, onPress, ...p }) => <button style={{ border:'none', background:'transparent', cursor:'pointer', ...flattenStyles(style) }} onClick={onPress} {...p} />;
+          const Image = ({ style, source, ...p }) => <img src={source?.uri || 'https://via.placeholder.com/150'} style={{ objectFit:'cover', ...flattenStyles(style) }} {...p} />;
+          const ScrollView = ({ style, contentContainerStyle, children, ...p }) => <div style={{ overflowY:'auto', height:'100%', ...flattenStyles(style) }} {...p}><div style={{ ...flattenStyles(contentContainerStyle) }}>{children}</div></div>;
+          const StyleSheet = { create: (s) => s, flatten: flattenStyles };
+          
+          // Expo Router Shims
+          const Slot = () => <div className="p-4 border-2 border-dashed border-gray-300 rounded text-center text-gray-400">Router Slot Content</div>;
+          const Stack = ({children}) => <>{children}</>; Stack.Screen = () => null;
+          const Tabs = ({children}) => <div className="flex flex-col h-full"><div className="flex-1">{children}</div><div className="h-12 bg-gray-100 border-t flex justify-around items-center text-xs text-gray-500">Tabs Footer</div></div>; Tabs.Screen = () => null;
 
           class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -248,14 +281,9 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
             }
           }
 
-          try {
-            ${sanitizedCode}
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<ErrorBoundary><App /></ErrorBoundary>);
-          } catch (err) {
-             const root = ReactDOM.createRoot(document.getElementById('root'));
-             root.render(<div style={{ padding: 20, color: '#ef4444' }}><h3>Compilation Error</h3><pre>{err.toString()}</pre></div>);
-          }
+          ${finalCode}
+          
+          ${mountScript}
         </script>
       </body>
     </html>

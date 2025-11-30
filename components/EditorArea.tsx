@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal } from 'lucide-react';
+import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal, Maximize2, Minimize2 } from 'lucide-react';
 import { CodeEditor, CodeEditorHandle } from './CodeEditor';
 import { DiffEditor } from './DiffEditor';
 import { Terminal } from './Terminal';
@@ -57,6 +57,10 @@ interface EditorAreaProps {
   testResults: TestResult[];
   isRunningTests: boolean;
   onRunTests: () => void;
+
+  // Zen Mode Props
+  isZenMode?: boolean;
+  onToggleZenMode?: () => void;
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
@@ -67,7 +71,8 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   editorRef, updateFileContent, editorConfig, handleCodeAction, setEditorSelection, breakpoints, setBreakpoints, setCursorPos, addToast,
   layout, toggleLayout, bottomPanelHeight, handleResizeStart,
   terminalLogs, onCommand, onAiFix,
-  testResults, isRunningTests, onRunTests
+  testResults, isRunningTests, onRunTests,
+  isZenMode, onToggleZenMode
 }) => {
   
   const [activeBottomTab, setActiveBottomTab] = useState<'terminal' | 'problems' | 'tests'>('terminal');
@@ -235,6 +240,15 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
             {openFiles.length === 0 && <div className="px-4 py-2.5 text-xs text-gray-600 italic">No open files</div>}
             
             <div className="ml-auto flex items-center">
+                {onToggleZenMode && (
+                    <button
+                        onClick={onToggleZenMode}
+                        className={`px-3 flex items-center border-l border-gray-800 h-full transition-colors ${isZenMode ? 'text-primary-400 bg-primary-900/20' : 'text-gray-500 hover:text-white'}`}
+                        title={isZenMode ? "Exit Zen Mode (Ctrl+K Z)" : "Enter Zen Mode (Ctrl+K Z)"}
+                    >
+                        {isZenMode ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}
+                    </button>
+                )}
                 <button
                     onClick={handleReloadFile}
                     className="px-3 flex items-center text-gray-500 hover:text-white border-l border-gray-800 h-full"

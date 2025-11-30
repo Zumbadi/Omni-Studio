@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Omni-Studio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Omni-Studio | AI Native IDE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -22,11 +23,71 @@
             },
             fontFamily: {
               mono: ['Menlo', 'Monaco', 'Consolas', "Liberation Mono", "Courier New", 'monospace'],
+            },
+            animation: {
+              'spin-slow': 'spin 3s linear infinite',
+              'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
             }
           },
         },
       }
     </script>
+    <style>
+      body { background-color: #0d1117; color: #fff; margin: 0; padding: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+      
+      /* Cinematic Initial Loader */
+      #initial-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background-color: #0d1117;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.5s ease-out;
+      }
+      
+      .neural-core {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: radial-gradient(circle at center, #6366f1 0%, transparent 70%);
+        animation: pulse-core 2s infinite ease-in-out;
+        position: relative;
+        margin-bottom: 24px;
+      }
+      
+      .neural-ring {
+        position: absolute;
+        inset: -20px;
+        border: 2px solid rgba(99, 102, 241, 0.2);
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 3s linear infinite;
+      }
+      
+      .neural-ring:nth-child(2) {
+        inset: -32px;
+        border: 2px solid rgba(139, 92, 246, 0.15);
+        border-bottom-color: #8b5cf6;
+        animation: spin-reverse 4s linear infinite;
+      }
+
+      .loader-text {
+        font-family: monospace;
+        color: #6366f1;
+        letter-spacing: 2px;
+        font-size: 12px;
+        opacity: 0.8;
+        animation: pulse-text 2s infinite;
+      }
+
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      @keyframes spin-reverse { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+      @keyframes pulse-core { 0%, 100% { opacity: 0.5; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } }
+      @keyframes pulse-text { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+    </style>
   <script type="importmap">
 {
   "imports": {
@@ -41,7 +102,15 @@
 }
 </script>
 </head>
-  <body class="bg-gray-950 text-gray-100 overflow-hidden">
-    <div id="root"></div>
+  <body>
+    <div id="root">
+        <div id="initial-loader">
+            <div class="neural-core">
+                <div class="neural-ring"></div>
+                <div class="neural-ring"></div>
+            </div>
+            <div class="loader-text">INITIALIZING OMNI-STUDIO...</div>
+        </div>
+    </div>
   </body>
 </html>

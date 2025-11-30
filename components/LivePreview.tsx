@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, X, ChevronUp, ChevronDown, ExternalLink, Send, Download, Shield, Layers } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, FileNode, BuildSettings } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
 import JSZip from 'jszip';
 import { BuildSettingsModal } from './BuildSettingsModal';
+import { generatePreviewHtml } from '../utils/runtime';
 
 interface LivePreviewProps {
   project: Project;
@@ -13,13 +14,15 @@ interface LivePreviewProps {
   onRefresh: () => void;
   onConsoleLog?: (log: string) => void;
   files?: FileNode[];
+  currentBranch?: string;
 }
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, onRefresh, onConsoleLog, files = [] }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: propPreviewSrc, onRefresh, onConsoleLog, files = [], currentBranch = 'main' }) => {
   const isNative = project.type === ProjectType.REACT_NATIVE;
   const isIOS = project.type === ProjectType.IOS_APP;
   const isAndroid = project.type === ProjectType.ANDROID_APP;
   const isBackend = project.type === ProjectType.NODE_API;
+  const isDev = currentBranch !== 'main';
 
   const [previewMode, setPreviewMode] = useState<'web' | 'mobile'>((isNative || isIOS || isAndroid) ? 'mobile' : 'web');
   const [showQrCode, setShowQrCode] = useState(false);
@@ -46,6 +49,43 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
   const [apiResponse, setApiResponse] = useState<string>('// Click Send to test endpoint');
   const [apiStatus, setApiStatus] = useState<number | null>(null);
   const [availableRoutes, setAvailableRoutes] = useState<string[]>(['/']);
+
+  // Calculate the correct preview source based on the *Entry File* not the active file
+  const previewSrc = useMemo(() => {
+      if (!project || !files || files.length === 0) return '';
+      
+      // 1. Flatten files to search
+      const allFiles = getAllFiles(files);
+      
+      // 2. Find Entry Point
+      // Priority: App.tsx -> index.tsx -> main.tsx -> App.js -> index.js
+      let entryFile = allFiles.find(f => f.node.name === 'App.tsx')?.node;
+      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'index.tsx')?.node;
+      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'main.tsx')?.node;
+      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'App.js' || f.node.name === 'App.jsx')?.node;
+      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'index.js' || f.node.name === 'index.jsx')?.node;
+      
+      // React Native specific (expo-router)
+      if (!entryFile && project.type === ProjectType.REACT_NATIVE) {
+          entryFile = allFiles.find(f => f.path.includes('app/index.tsx') || f.path.includes('app/(tabs)/index.tsx'))?.node;
+      }
+
+      // 3. Fallback to passed prop source (usually active file) if absolutely nothing found,
+      // but usually we want to stick to the entry point to avoid "App not defined" errors.
+      const codeToRun = entryFile?.content || propPreviewSrc;
+      
+      // Only regenerate if we actually found a file content, otherwise use the prop
+      if (!codeToRun) return propPreviewSrc;
+
+      // Pass the *active* file path for asset resolution, but run the *entry* code
+      return generatePreviewHtml(
+          codeToRun, 
+          isNative || isIOS || isAndroid, 
+          files, 
+          undefined, // activeFilePath is less relevant for the entry point bundle
+          {} // env vars
+      );
+  }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid]);
 
   useEffect(() => {
       if (!isBackend || !files) return;
@@ -276,6 +316,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                 <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                     <Network size={14} className="text-green-500"/> API Console (Simulator)
                 </div>
+                {isDev && <span className="bg-purple-900/30 text-purple-400 text-[10px] px-2 py-0.5 rounded border border-purple-500/30 font-bold uppercase animate-pulse">Dev Mode</span>}
                 <Button size="sm" variant="ghost" onClick={onRefresh} title="Restart Server"><RefreshCw size={14}/></Button>
             </div>
             <div className="flex-1 p-4 overflow-y-auto flex justify-center">
@@ -332,6 +373,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc, o
                         <span className="text-blue-400 animate-pulse flex items-center gap-2"><Loader2 size={10} className="animate-spin"/> {ecosystemStep}</span>
                     ) : isIOS || isAndroid ? (isIOS ? ' iOS Simulator' : '🤖 Android Emulator') : <><Globe size={10}/> localhost:3000</>}
                 </div>
+                
+                {isDev && (
+                    <div className="hidden md:flex items-center gap-1 bg-purple-900/30 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse">
+                        <Zap size={10} fill="currentColor"/> Hot Reload
+                    </div>
+                )}
             </div>
             
             <div className="flex items-center gap-2">

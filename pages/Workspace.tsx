@@ -132,6 +132,21 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   const [isResizing, setIsResizing] = useState(false);
   const [layout, setLayout] = useState({ showSidebar: window.innerWidth >= 768, showBottom: true, showRight: window.innerWidth >= 1024 });
   const [isRightPanelMaximized, setIsRightPanelMaximized] = useState(false);
+  
+  // Zen Mode State
+  const [isZenMode, setIsZenMode] = useState(false);
+  const [preZenLayout, setPreZenLayout] = useState(layout);
+
+  const toggleZenMode = useCallback(() => {
+      if (isZenMode) {
+          setLayout(preZenLayout);
+          setIsZenMode(false);
+      } else {
+          setPreZenLayout(layout);
+          setLayout({ showSidebar: false, showBottom: false, showRight: false });
+          setIsZenMode(true);
+      }
+  }, [isZenMode, layout, preZenLayout]);
 
   const [isSplitView, setIsSplitView] = useState(false);
   const [secondaryFileId, setSecondaryFileId] = useState<string | null>(null);
@@ -171,7 +186,57 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [commits, setCommits] = useState<GitCommitType[]>(MOCK_COMMITS);
+  
+  // BRANCH MANAGEMENT
   const [currentBranch, setCurrentBranch] = useState('main');
+  const [branches, setBranches] = useState(['main']);
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const addToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
+      const id = Date.now().toString();
+      setToasts(prev => [...prev, { id, type, message }]);
+  }, []);
+  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
+
+  const handleCreateBranch = (name: string) => {
+      if (!branches.includes(name)) {
+          setBranches(prev => [...prev, name]);
+          setCurrentBranch(name);
+          addToast('success', `Created branch '${name}'`);
+          logActivity('commit', `Created Branch: ${name}`, `Branched from ${currentBranch}`, project?.id);
+      } else {
+          addToast('error', `Branch '${name}' already exists`);
+      }
+  };
+
+  const handleSwitchBranch = (name: string) => {
+      setCurrentBranch(name);
+      addToast('info', `Switched to branch '${name}'`);
+      setTerminalLogs(prev => [...prev, `> git checkout ${name}`, `Switched to branch '${name}'`]);
+  };
+
+  const handleMergeBranch = () => {
+      const prevBranch = currentBranch;
+      setCommits(prev => [{
+          id: `merge-${Date.now()}`,
+          message: `Merge branch '${prevBranch}' into main`,
+          author: 'You',
+          date: 'Now',
+          hash: Math.random().toString(36).substr(2, 7)
+      }, ...prev]);
+      
+      setTerminalLogs(prev => [
+          ...prev, 
+          `> git checkout main`, 
+          `> git merge ${prevBranch}`, 
+          `Updating ${Math.random().toString(36).substr(2, 7)}..${Math.random().toString(36).substr(2, 7)}`, 
+          `Fast-forward`
+      ]);
+      
+      setCurrentBranch('main');
+      addToast('success', `Merged ${prevBranch} into main`);
+      if (project?.id) logActivity('commit', 'Merge Executed', `Merged ${prevBranch} into main`, project.id);
+  };
 
   const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDoc[]>(() => {
       if (project?.id) {
@@ -202,13 +267,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   });
 
   const [assets, setAssets] = useState<any[]>([]);
-
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const addToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
-      const id = Date.now().toString();
-      setToasts(prev => [...prev, { id, type, message }]);
-  }, []);
-  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
   const activeModel = localStorage.getItem('omni_active_model') || 'Gemini 2.5 Flash (Fastest)';
   
@@ -302,7 +360,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   const {
       chatInput, setChatInput, chatHistory, setChatHistory, isGenerating, 
       isChatOpen, setIsChatOpen, triggerGeneration, handleChatSubmit, 
-      handleCodeAction, handleAutoFix, addSystemMessage, submitQuery
+      handleCodeAction, handleAutoFix, addSystemMessage, submitQuery,
+      attachedImage, setAttachedImage
   } = useOmniAssistant({ 
       projectId: project?.id || 'default',
       projectType: project?.type || ProjectType.REACT_WEB, 
@@ -340,6 +399,14 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
           setTerminalLogs(prev => [...prev, `> ${input}`, `[${currentBranch}] ${message}`]);
           addToast('success', 'Changes committed.');
           if(project) logActivity('commit', `Commit: ${message}`, `You committed changes to ${currentBranch}`, project.id);
+      } else if (input.startsWith('git checkout -b')) {
+          const newBranch = input.split(' ')[3];
+          if (newBranch) handleCreateBranch(newBranch);
+      } else if (input.startsWith('git checkout')) {
+          const branch = input.split(' ')[2];
+          if (branch && branches.includes(branch)) handleSwitchBranch(branch);
+      } else if (input.startsWith('git merge')) {
+          handleMergeBranch();
       } else if (input === 'npm start') {
           setActiveTab('preview');
           baseHandleCommand(input);
@@ -382,10 +449,35 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
           if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'k')) { e.preventDefault(); setShowCommandPalette(prev => !prev); }
           if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); toggleLayout('sidebar'); }
           if ((e.ctrlKey || e.metaKey) && e.key === 'j') { e.preventDefault(); toggleLayout('bottom'); }
+          // Zen Mode Shortcut
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+              // Ensure we don't block Undo
+              if (!e.shiftKey) return; 
+              // Actually 'Ctrl+K Z' is better convention but simple modifier for now
+          }
       };
+      
+      const handleChord = (e: KeyboardEvent) => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+              // Start chord
+              const nextKeyHandler = (e2: KeyboardEvent) => {
+                  if (e2.key === 'z') {
+                      e2.preventDefault();
+                      toggleZenMode();
+                  }
+                  window.removeEventListener('keydown', nextKeyHandler);
+              };
+              window.addEventListener('keydown', nextKeyHandler);
+          }
+      };
+
       window.addEventListener('keydown', handleGlobalKeyDown);
-      return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+      window.addEventListener('keydown', handleChord);
+      return () => {
+          window.removeEventListener('keydown', handleGlobalKeyDown);
+          window.removeEventListener('keydown', handleChord);
+      };
+  }, [toggleZenMode]);
 
   useEffect(() => {
       if (!searchQuery) { setSearchResults([]); return; }
@@ -552,7 +644,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   const handleCommit = (message: string) => {
       const newCommit = { id: Date.now().toString(), message, author: 'You', date: 'Now', hash: Math.random().toString(36).substr(2, 7) };
       setCommits(prev => [newCommit, ...prev]);
-      if (project) logActivity('commit', `Commit: ${message}`, `You committed changes`, project.id);
+      if (project) logActivity('commit', `Commit: ${message}`, `You committed changes to ${currentBranch}`, project.id);
       addToast('success', 'Committed');
   };
 
@@ -676,7 +768,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     onMoveNode: moveNode, 
                     onToggleDirectory: toggleDirectory 
                 }}
-                commits={commits} currentBranch={currentBranch} onCommit={handleCommit} onSwitchBranch={() => {}}
+                commits={commits} currentBranch={currentBranch} onCommit={handleCommit} onSwitchBranch={handleSwitchBranch}
+                // Branch Props
+                branches={branches} onCreateBranch={handleCreateBranch}
+                
                 searchQuery={searchQuery} onSearch={setSearchQuery} searchResults={searchResults} onResultClick={(id, line) => { onFileClickWrapper(id); setTimeout(() => editorRef.current?.scrollToLine(line), 100); }} onReplace={handleReplace} onReplaceAll={handleReplaceAll}
                 debugVariables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={(l) => setBreakpoints(p => p.filter(b => b !== l))}
                 extensions={MOCK_EXTENSIONS} onToggleExtension={() => {}}
@@ -702,6 +797,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     layout={layout} toggleLayout={toggleLayout} bottomPanelHeight={bottomPanelHeight} handleResizeStart={handleResizeStart}
                     terminalLogs={terminalLogs} onCommand={handleCommand} onAiFix={handleAiFix}
                     testResults={testResults} isRunningTests={isRunningTests} onRunTests={runTests}
+                    isZenMode={isZenMode} onToggleZenMode={toggleZenMode}
                 />
             </div>
         )}
@@ -720,6 +816,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     isMaximized={isRightPanelMaximized} onToggleMaximize={() => setIsRightPanelMaximized(!isRightPanelMaximized)} onUpdateProject={onUpdateProject} onDeleteProject={(id) => onDeleteProject?.({} as any, id)}
                     onDeploymentComplete={(url) => { onUpdateProject?.({ ...project, deploymentStatus: 'live', deploymentUrl: url }); addToast('success', 'Deployed!'); }}
                     onConsoleLog={(l) => setLiveConsoleLogs(p => [...p, l])}
+                    // Pass current branch for dev mode
+                    currentBranch={currentBranch}
+                    // Pass merge handler
+                    onMergeBranch={handleMergeBranch}
                 />
             </div>
         )}
@@ -753,6 +853,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
           onToggleVoice={() => setShowVoiceCommander(true)}
           isAutoPilot={isAutoPilot}
           onToggleAutoPilot={handleToggleAutoPilot}
+          attachedImage={attachedImage}
+          onAttachImage={setAttachedImage}
       />
     </div>
   );
