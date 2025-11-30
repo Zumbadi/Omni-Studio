@@ -38,6 +38,7 @@ interface PreviewPanelProps {
   onConsoleLog?: (log: string) => void;
   currentBranch?: string;
   onMergeBranch?: () => void;
+  onAiFix?: (error: string) => void;
 }
 
 const LoadingFallback = () => (
@@ -50,7 +51,7 @@ export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
   roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile,
   isMaximized, onToggleMaximize, onUpdateProject, onDeleteProject, onDeploymentComplete, onConsoleLog,
-  currentBranch, onMergeBranch
+  currentBranch, onMergeBranch, onAiFix
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
 
@@ -92,6 +93,7 @@ export const PreviewPanel = memo(({
                     onConsoleLog={onConsoleLog} 
                     files={files} 
                     currentBranch={currentBranch}
+                    onAiFix={onAiFix}
                 />
             )}
             {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} />}

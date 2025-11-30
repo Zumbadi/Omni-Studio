@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AppView, Project, ProjectType, FileNode } from './types';
 import { MOCK_PROJECTS } from './constants';
-import { Menu, Loader2 } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { TeamManager } from './components/TeamManager';
 import { NewProjectModal } from './components/NewProjectModal';
 import { AppSidebar } from './components/AppSidebar';
@@ -19,13 +18,17 @@ const AudioStudio = lazy(() => import('./components/AudioStudio').then(m => ({ d
 const MediaStudio = lazy(() => import('./components/MediaStudio').then(m => ({ default: m.MediaStudio })));
 const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
 
-const LoadingScreen = () => (
-    <div className="flex-1 flex flex-col items-center justify-center bg-gray-950 text-gray-500 h-full w-full absolute inset-0 z-50">
-        <div className="relative">
-            <div className="absolute inset-0 bg-primary-500/20 blur-xl rounded-full animate-pulse"></div>
-            <Loader2 size={48} className="animate-spin text-primary-500 relative z-10" />
+// Matches the visual language of the index.html loader for seamless transition
+const NeuralLoader = () => (
+    <div className="flex-1 flex flex-col items-center justify-center bg-[#0d1117] h-full w-full absolute inset-0 z-50">
+        <div className="relative mb-8">
+            <div className="w-16 h-16 rounded-full bg-[radial-gradient(circle_at_center,#6366f1_0%,transparent_60%)] animate-[pulse_2.5s_infinite_ease-in-out]"></div>
+            <div className="absolute inset-[-10px] border-2 border-primary-500/20 border-t-primary-500 rounded-full animate-[spin_3s_linear_infinite]"></div>
+            <div className="absolute inset-[-16px] border-2 border-purple-500/10 border-b-purple-400 rounded-full animate-[spin_5s_linear_infinite_reverse]"></div>
         </div>
-        <p className="text-sm font-medium animate-pulse mt-4 text-primary-400/80 font-mono tracking-wider">INITIALIZING MODULE...</p>
+        <div className="text-[10px] font-mono font-bold text-primary-400/80 tracking-[0.2em] uppercase animate-pulse">
+            Loading Module
+        </div>
     </div>
 );
 
@@ -55,13 +58,24 @@ const App: React.FC = () => {
   const [showTeamManager, setShowTeamManager] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
+  // Remove the initial loader from the DOM once React mounts
+  useEffect(() => {
+      const loader = document.getElementById('initial-loader');
+      if (loader) {
+          // Smooth fade out
+          loader.style.opacity = '0';
+          loader.style.pointerEvents = 'none';
+          setTimeout(() => loader.remove(), 600);
+      }
+  }, []);
+
   // Smart Prefetching: If user is on Dashboard, they are likely to open Workspace soon.
   useEffect(() => {
       if (currentView === AppView.DASHBOARD) {
           const timer = setTimeout(() => {
               // Prefetch the heavy Workspace chunk
               import('./pages/Workspace');
-          }, 1500); // Wait 1.5s to prioritize initial Dashboard render
+          }, 1500); 
           return () => clearTimeout(timer);
       }
   }, [currentView]);
@@ -195,13 +209,13 @@ const App: React.FC = () => {
       {/* Mobile Top Bar */}
       <div className="md:hidden h-14 border-b border-gray-800 flex items-center px-4 bg-gray-950 sticky top-0 z-40 justify-between shrink-0">
          <div className="flex items-center">
-             <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-400 -ml-2">
+             <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-400 -ml-2 hover:text-white transition-colors">
                <Menu size={24} />
              </button>
-             <span className="ml-2 font-bold text-white">Omni-Studio</span>
+             <span className="ml-2 font-bold text-white tracking-tight">Omni-Studio</span>
          </div>
          {currentView !== AppView.DASHBOARD && (
-             <span className="text-xs font-mono text-primary-400 bg-primary-900/20 px-2 py-1 rounded">{currentView}</span>
+             <span className="text-[10px] font-mono text-primary-400 bg-primary-900/20 px-2 py-1 rounded border border-primary-500/20">{currentView}</span>
          )}
       </div>
 
@@ -223,8 +237,8 @@ const App: React.FC = () => {
       {showTeamManager && <TeamManager onClose={() => setShowTeamManager(false)} />}
       {showHelp && <ShortcutsModal onClose={() => setShowHelp(false)} />}
       
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
-          <Suspense fallback={<LoadingScreen />}>
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative bg-gray-950">
+          <Suspense fallback={<NeuralLoader />}>
               {currentView === AppView.DASHBOARD && (
                   <div className="relative flex-1 flex flex-col overflow-hidden bg-gray-950">
                       <Dashboard 

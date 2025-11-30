@@ -446,6 +446,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       );
   }, [activeFileId, debouncedFiles, project, envVars, activeFilePath]);
 
+  // Handle Runtime Errors from Preview
+  const handleRuntimeErrorFix = (errorDetails: string) => {
+      // Find a likely culprit file based on error trace or default to active file
+      const activeFileNode = findFileById(files, activeFileId);
+      const targetFiles = activeFileNode ? [{ name: activeFileNode.name, status: 'pending' as const }] : [];
+      
+      // Trigger Agent Task
+      setActiveAgentTask({
+          id: `runtime-fix-${Date.now()}`,
+          type: 'custom',
+          name: `Fix Runtime Error`,
+          status: 'running',
+          totalFiles: 1,
+          processedFiles: 0,
+          logs: [`Detected Crash: ${errorDetails.substring(0, 100)}...`],
+          fileList: targetFiles
+      });
+      addToast('info', 'Agent engaged to fix runtime crash');
+  };
+
   useEffect(() => {
       const handleGlobalKeyDown = (e: KeyboardEvent) => {
           if (e.defaultPrevented) return;
@@ -820,10 +840,9 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     isMaximized={isRightPanelMaximized} onToggleMaximize={() => setIsRightPanelMaximized(!isRightPanelMaximized)} onUpdateProject={onUpdateProject} onDeleteProject={(id) => onDeleteProject?.({} as any, id)}
                     onDeploymentComplete={(url) => { onUpdateProject?.({ ...project, deploymentStatus: 'live', deploymentUrl: url }); addToast('success', 'Deployed!'); }}
                     onConsoleLog={(l) => setLiveConsoleLogs(p => [...p, l])}
-                    // Pass current branch for dev mode
                     currentBranch={currentBranch}
-                    // Pass merge handler
                     onMergeBranch={handleMergeBranch}
+                    onAiFix={handleRuntimeErrorFix}
                 />
             </div>
         )}

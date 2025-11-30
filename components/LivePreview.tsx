@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, FileNode, BuildSettings } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
@@ -15,6 +15,7 @@ interface LivePreviewProps {
   onConsoleLog?: (log: string) => void;
   files?: FileNode[];
   currentBranch?: string;
+  onAiFix?: (error: string) => void;
 }
 
 // Moved outside to prevent re-creation on every render
@@ -43,7 +44,7 @@ const SplashScreen = () => (
     </div>
 );
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: propPreviewSrc, onRefresh, onConsoleLog, files = [], currentBranch = 'main' }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: propPreviewSrc, onRefresh, onConsoleLog, files = [], currentBranch = 'main', onAiFix }) => {
   const isNative = project.type === ProjectType.REACT_NATIVE;
   const isIOS = project.type === ProjectType.IOS_APP;
   const isAndroid = project.type === ProjectType.ANDROID_APP;
@@ -55,6 +56,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const [deviceFrame, setDeviceFrame] = useState<'iphone14' | 'pixel7' | 'ipad'>('iphone14');
   const [isBuilding, setIsBuilding] = useState(false);
   const [buildStep, setBuildStep] = useState('');
+  
+  // Runtime Error State
+  const [runtimeError, setRuntimeError] = useState<{ message: string, stack: string } | null>(null);
   
   // Ecosystem Generation State
   const [isGeneratingEcosystem, setIsGeneratingEcosystem] = useState(false);
@@ -96,20 +100,16 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           entryFile = allFiles.find(f => f.path.includes('app/index.tsx') || f.path.includes('app/(tabs)/index.tsx'))?.node;
       }
 
-      // 3. Fallback to passed prop source (usually active file) if absolutely nothing found,
-      // but usually we want to stick to the entry point to avoid "App not defined" errors.
       const codeToRun = entryFile?.content || propPreviewSrc;
       
-      // Only regenerate if we actually found a file content, otherwise use the prop
       if (!codeToRun) return propPreviewSrc;
 
-      // Pass the *active* file path for asset resolution, but run the *entry* code
       return generatePreviewHtml(
           codeToRun, 
           isNative || isIOS || isAndroid, 
           files, 
-          undefined, // activeFilePath is less relevant for the entry point bundle
-          {} // env vars
+          undefined, 
+          {} 
       );
   }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid]);
 
@@ -132,20 +132,26 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
 
   useEffect(() => {
       const handleMessage = (event: MessageEvent) => {
-          if (event.data && event.data.type === 'console') {
-              const newLog = {
-                  level: event.data.level,
-                  message: event.data.message,
-                  time: new Date().toLocaleTimeString().split(' ')[0]
-              };
-              setLogs(prev => [...prev, newLog].slice(-100)); 
-              
-              if (onConsoleLog) {
-                  onConsoleLog(`[Browser Console] ${newLog.level.toUpperCase()}: ${newLog.message}`);
-              }
+          if (event.data) {
+              if (event.data.type === 'console') {
+                  const newLog = {
+                      level: event.data.level,
+                      message: event.data.message,
+                      time: new Date().toLocaleTimeString().split(' ')[0]
+                  };
+                  setLogs(prev => [...prev, newLog].slice(-100)); 
+                  
+                  if (onConsoleLog) {
+                      onConsoleLog(`[Browser Console] ${newLog.level.toUpperCase()}: ${newLog.message}`);
+                  }
 
-              if (consoleRef.current) {
-                  consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+                  if (consoleRef.current) {
+                      consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+                  }
+              } else if (event.data.type === 'runtime-error') {
+                  setRuntimeError({ message: event.data.message, stack: event.data.stack });
+                  setLogs(prev => [...prev, { level: 'error', message: event.data.message, time: new Date().toLocaleTimeString().split(' ')[0] }]);
+                  if (onConsoleLog) onConsoleLog(`[Runtime Error] ${event.data.message}`);
               }
           }
       };
@@ -155,6 +161,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
 
   useEffect(() => {
       setLogs([]);
+      setRuntimeError(null); // Clear error on new src
   }, [previewSrc]);
 
   const handleApiSend = () => {
@@ -201,7 +208,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
 
   useEffect(() => {
       setIsInitialLoading(true);
-      const t = setTimeout(() => setIsInitialLoading(false), 2500); // Extended for visual effect
+      const t = setTimeout(() => setIsInitialLoading(false), 2500); 
       return () => clearTimeout(t);
   }, [previewSrc]);
 
@@ -256,17 +263,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
       const addToZip = (nodes: any[], path = '') => { 
           nodes.forEach(n => { 
               let content = n.content;
-              
-              // Inject Configs based on settings
               if (n.name === 'Info.plist' && isIOS) {
                   content = content.replace(/<string>OmniApp<\/string>/, `<string>${settings.appName}</string>`);
                   content = content.replace('</dict>', `    <key>CFBundleIdentifier</key>\n    <string>${settings.bundleId}</string>\n    <key>CFBundleShortVersionString</key>\n    <string>${settings.version}</string>\n</dict>`);
               }
-              
               if (n.name === 'build.gradle.kts' && isAndroid) {
                    content += `\nandroid {\n    defaultConfig {\n        applicationId = "${settings.bundleId}"\n        versionName = "${settings.version}"\n    }\n}`;
               }
-
               if (n.type === 'file') zip.file(path + n.name, content); 
               if (n.children) addToZip(n.children, path + n.name + '/'); 
           }); 
@@ -307,6 +310,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           setLogs(prev => [...prev, { level: 'input', message: `> ${consoleInput}`, time: new Date().toLocaleTimeString().split(' ')[0] }]);
       }
       setConsoleInput('');
+  };
+
+  const triggerHeal = () => {
+      if (runtimeError && onAiFix) {
+          onAiFix(`Runtime Error: ${runtimeError.message}\nStack: ${runtimeError.stack}`);
+          setRuntimeError(null); // Clear overlay to see result
+      }
   };
 
   if (isBackend) {
@@ -436,6 +446,23 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                         
                         <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-black" sandbox="allow-scripts" />
                         
+                        {/* Runtime Error Overlay */}
+                        {runtimeError && (
+                            <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+                                <AlertTriangle size={48} className="text-red-400 mb-4 animate-bounce" />
+                                <h3 className="text-xl font-bold text-white mb-2">Runtime Crash</h3>
+                                <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full text-left">
+                                    {runtimeError.message}
+                                </p>
+                                <Button 
+                                    onClick={triggerHeal} 
+                                    className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"
+                                >
+                                    <Activity size={16} className="mr-2"/> Heal Codebase
+                                </Button>
+                            </div>
+                        )}
+
                         {showQrCode && (
                             <div className="absolute inset-0 bg-gray-900/95 z-30 flex flex-col items-center justify-center text-center p-6 animate-in fade-in backdrop-blur-sm">
                                 <div className="bg-white p-3 rounded-xl mb-4 shadow-lg">
@@ -487,6 +514,23 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
             ) : (
                 <div className="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-700/50 relative">
                     <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
+                    
+                    {/* Web Runtime Error Overlay */}
+                    {runtimeError && (
+                        <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+                            <AlertTriangle size={48} className="text-red-400 mb-4 animate-bounce" />
+                            <h3 className="text-xl font-bold text-white mb-2">Runtime Crash</h3>
+                            <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full max-w-lg text-left">
+                                {runtimeError.message}
+                            </p>
+                            <Button 
+                                onClick={triggerHeal} 
+                                className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"
+                            >
+                                <Activity size={16} className="mr-2"/> Heal Codebase
+                            </Button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

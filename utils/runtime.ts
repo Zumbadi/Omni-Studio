@@ -257,18 +257,22 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
             const originalWarn = console.warn;
             const originalError = console.error;
 
-            function sendToParent(type, args) {
+            function sendToParent(type, data) {
               try {
-                const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-                window.parent.postMessage({ type: 'console', level: type, message }, '*');
+                window.parent.postMessage({ type, ...data }, '*');
               } catch (e) {}
             }
 
-            console.log = (...args) => { originalLog(...args); sendToParent('info', args); };
-            console.warn = (...args) => { originalWarn(...args); sendToParent('warn', args); };
-            console.error = (...args) => { originalError(...args); sendToParent('error', args); };
+            console.log = (...args) => { originalLog(...args); sendToParent('console', { level: 'info', message: args.map(String).join(' ') }); };
+            console.warn = (...args) => { originalWarn(...args); sendToParent('console', { level: 'warn', message: args.map(String).join(' ') }); };
+            console.error = (...args) => { originalError(...args); sendToParent('console', { level: 'error', message: args.map(String).join(' ') }); };
             
-            window.onerror = (msg, url, line) => { sendToParent('error', [\`Runtime Error: \${msg} (Line \${line})\`]); };
+            window.onerror = (msg, url, line) => { sendToParent('console', { level: 'error', message: \`Runtime Error: \${msg} (Line \${line})\` }); };
+            
+            // Expose error reporting helper
+            window.reportRuntimeError = (error) => {
+                sendToParent('runtime-error', { message: error.message, stack: error.stack });
+            };
           })();
         </script>
         <script type="text/babel">
@@ -293,8 +297,11 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
           class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null }; }
             static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            componentDidCatch(error, errorInfo) {
+                if (window.reportRuntimeError) window.reportRuntimeError(error);
+            }
             render() {
-              if (this.state.hasError) return <div style={{ padding: 20, color: '#ef4444', backgroundColor: '#fee2e2' }}><h3>Runtime Error</h3><pre>{this.state.error.toString()}</pre></div>;
+              if (this.state.hasError) return <div style={{ padding: 20, color: '#ef4444', backgroundColor: '#fee2e2', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div><h3 style={{fontWeight: 'bold', marginBottom: 10}}>Runtime Error</h3><pre style={{textAlign: 'left', background: 'rgba(0,0,0,0.05)', padding: 10, borderRadius: 5, overflow: 'auto', fontSize: 12}}>{this.state.error.toString()}</pre></div></div>;
               return this.props.children;
             }
           }

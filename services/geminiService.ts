@@ -51,9 +51,11 @@ const extractCode = (rawText: string): string => {
     const priorityMatches = [...rawText.matchAll(priorityRegex)];
     
     if (priorityMatches.length > 0) {
+        // Return the largest block found, assuming it's the main file content
         return priorityMatches.reduce((a, b) => a[1].length > b[1].length ? a : b)[1].trim();
     }
 
+    // Generic fallback
     const genericRegex = /```\w*\n([\s\S]*?)```/g;
     const genericMatches = [...rawText.matchAll(genericRegex)];
     if (genericMatches.length > 0) {
@@ -61,13 +63,17 @@ const extractCode = (rawText: string): string => {
     }
 
     let cleaned = rawText.trim();
-    if (/^(import|export|const|function|class|interface|type)\s/.test(cleaned)) {
+    
+    // Heuristic: If it starts with imports or standard code patterns, assume it's code
+    if (/^(import|export|const|function|class|interface|type|\/\/)\s/.test(cleaned)) {
         return cleaned;
     }
 
+    // Strip "Here is the code:" preambles
     const preambleMatch = cleaned.match(/^(here is|sure,|certainly|below is).*?:\n/i);
     if (preambleMatch) cleaned = cleaned.substring(preambleMatch[0].length).trim();
     
+    // Remove wrapping backticks if present
     if (cleaned.startsWith('`') && cleaned.endsWith('`')) {
         cleaned = cleaned.substring(1, cleaned.length - 1);
     }

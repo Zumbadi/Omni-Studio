@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, memo } from 'react';
 import { Sparkles, MessageSquare, Zap, Wrench, Loader2 } from 'lucide-react';
 import { highlightCode } from '../utils/syntaxHighlight';
@@ -20,10 +19,8 @@ interface CodeEditorProps {
   };
   onCodeAction?: (action: string, selectedCode: string) => void;
   onSelectionChange?: (selectedText: string) => void;
-  // Debugging
   breakpoints?: number[];
   onToggleBreakpoint?: (line: number) => void;
-  // Ghost Text
   onGhostTextRequest?: (prefix: string, suffix: string) => Promise<string>;
   onSave?: () => void;
   onCursorChange?: (line: number, col: number) => void;
@@ -72,6 +69,9 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const lineNumsRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLDivElement>(null);
+  
+  // Scroll Sync Ref for Performance
+  const rafRef = useRef<number | null>(null);
 
   // Forward internal ref methods to parent
   useImperativeHandle(ref, () => ({
@@ -112,26 +112,38 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const isVim = config?.vimMode || false;
   const tabSizeVal = config?.tabSize === '4 Spaces' ? 4 : config?.tabSize === 'Tabs' ? 4 : 2;
 
+  // Optimized Scroll Handler using RequestAnimationFrame for 60fps performance
   const handleScroll = () => {
-    if (textareaRef.current) {
-      const { scrollTop, scrollLeft, scrollHeight, clientHeight } = textareaRef.current;
-      if (preRef.current) {
-        preRef.current.scrollTop = scrollTop;
-        preRef.current.scrollLeft = scrollLeft;
-      }
-      if (lineNumsRef.current) {
-        lineNumsRef.current.scrollTop = scrollTop;
-      }
-      // Sync Minimap Scroll
-      if (minimapRef.current) {
-          const percent = scrollTop / (scrollHeight - clientHeight);
-          const mapScrollHeight = minimapRef.current.scrollHeight - minimapRef.current.clientHeight;
-          minimapRef.current.scrollTop = percent * mapScrollHeight;
-      }
-      // Hide actions on scroll
-      setShowCodeActions(false);
-      setGhostText('');
-    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    
+    rafRef.current = requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          const { scrollTop, scrollLeft, scrollHeight, clientHeight } = textareaRef.current;
+          
+          if (preRef.current) {
+            preRef.current.scrollTop = scrollTop;
+            preRef.current.scrollLeft = scrollLeft;
+          }
+          
+          if (lineNumsRef.current) {
+            lineNumsRef.current.scrollTop = scrollTop;
+          }
+          
+          // Sync Minimap Scroll
+          if (minimapRef.current) {
+              const percent = scrollTop / (scrollHeight - clientHeight);
+              const mapScrollHeight = minimapRef.current.scrollHeight - minimapRef.current.clientHeight;
+              minimapRef.current.scrollTop = percent * mapScrollHeight;
+          }
+          
+          // Hide actions on scroll to prevent drift
+          if (showCodeActions) setShowCodeActions(false);
+          
+          // Force ghost text sync if visible (it's inside the container so it scrolls automatically if absolute,
+          // but if we are calculating position based on viewport we might need this.
+          // In this implementation ghost text is in the relative container, so it scrolls with flow)
+        }
+    });
   };
 
   const handleMinimapClick = (e: React.MouseEvent) => {
@@ -158,14 +170,19 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
      const rect = span.getBoundingClientRect();
      const editorRect = textareaRef.current.getBoundingClientRect();
      
-     const top = rect.top - editorRect.top;
-     const left = rect.left - editorRect.left;
+     // Calculate relative position within the scrolling container
+     // We need to account for scrollTop to place it correctly inside the relative container
+     const scrollTop = textareaRef.current.scrollTop;
+     const scrollLeft = textareaRef.current.scrollLeft;
+
+     const top = rect.top - editorRect.top + scrollTop;
+     const left = rect.left - editorRect.left + scrollLeft;
 
      if (forSelection) {
          setSelectionCoords({ top: top + 20, left: left + 10 });
      } else {
          setCursorPos({ top: top + 20, left });
-         setGhostPos({ top: top + 16, left }); // Adjust for padding
+         setGhostPos({ top: top + 16, left }); 
      }
   };
 
@@ -425,7 +442,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-300 font-mono relative" style={{ fontSize: fontSize }}>
-      {/* Hidden Mirror for Caret Positioning */}
+      {/* Hidden Mirror for Caret Positioning - Must match textarea styling exactly */}
       <div 
          ref={mirrorRef}
          className="absolute top-0 left-0 visibility-hidden pointer-events-none whitespace-pre-wrap break-words"
@@ -435,30 +452,30 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
              padding: '16px', // Match textarea padding
              width: textareaRef.current?.clientWidth || 'auto',
              opacity: 0,
-             zIndex: -1000
+             zIndex: -1000,
+             lineHeight: '24px' // Match leading-6
          }}
       ></div>
 
       {/* Editor Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 shadow-sm relative z-10">
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 shadow-sm relative z-10 select-none">
         <div className="flex items-center gap-3">
-           <div className={`text-xs font-bold uppercase tracking-wider ${langColor}`}>{ext}</div>
-           <div className="h-4 w-px bg-gray-700"></div>
-           <span className="text-sm font-medium text-gray-200 tracking-tight">{fileName}</span>
-           {readOnly && <span className="text-[10px] bg-red-900/30 text-red-400 px-2 py-0.5 rounded border border-red-900">READ ONLY</span>}
+           <div className={`text-[10px] font-black uppercase tracking-widest ${langColor}`}>{ext}</div>
+           <div className="h-4 w-px bg-gray-700/50"></div>
+           <span className="text-xs font-medium text-gray-400 tracking-tight">{fileName}</span>
+           {readOnly && <span className="text-[9px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-900/50 font-bold tracking-wider">READ ONLY</span>}
         </div>
         <div className="flex items-center gap-2">
-          {isLoadingGhost && <div className="flex items-center gap-1 text-[10px] text-primary-400 animate-pulse"><Sparkles size={10}/> AI Completing...</div>}
-          {isVim && <div className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[10px] uppercase font-bold border border-green-900 rounded">VIM NORMAL</div>}
+          {isLoadingGhost && <div className="flex items-center gap-1 text-[10px] text-primary-400 animate-pulse font-bold tracking-wider"><Sparkles size={10}/> AI THINKING...</div>}
+          {isVim && <div className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[9px] uppercase font-bold border border-green-900 rounded">VIM</div>}
           <button 
              onClick={() => setShowMinimap(!showMinimap)}
-             className={`text-[10px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded transition-colors hidden sm:block ${showMinimap ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+             className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded transition-colors hidden sm:block ${showMinimap ? 'bg-gray-800 text-white' : 'text-gray-600 hover:text-gray-400'}`}
           >
-             Minimap
+             Map
           </button>
-          <div className="w-2 h-2 rounded-full bg-green-500/50"></div>
-          <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider hidden sm:block">UTF-8</div>
-          <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider ml-1 hidden sm:block">Tab: {tabSizeVal}</div>
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500/50"></div>
+          <div className="text-[9px] text-gray-600 uppercase font-bold tracking-wider hidden sm:block">UTF-8</div>
         </div>
       </div>
 
@@ -467,7 +484,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
         {/* Line Numbers */}
         <div 
           ref={lineNumsRef}
-          className="w-12 flex-shrink-0 bg-gray-900 border-r border-gray-800 text-right pr-3 pt-4 text-gray-600 select-none overflow-hidden font-mono text-xs opacity-60 relative cursor-default"
+          className="w-12 flex-shrink-0 bg-gray-900/50 border-r border-gray-800 text-right pr-3 pt-4 text-gray-600 select-none overflow-hidden font-mono text-xs opacity-60 relative cursor-default"
         >
           {lines.map((_, i) => {
             const lineNum = i + 1;
@@ -475,23 +492,21 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
             return (
               <div 
                 key={i} 
-                className={`leading-6 relative hover:text-white cursor-pointer ${highlightedLine === lineNum ? 'text-yellow-400 font-bold bg-yellow-900/20' : ''}`}
+                className={`leading-6 relative hover:text-white cursor-pointer transition-colors ${highlightedLine === lineNum ? 'text-yellow-400 font-bold bg-yellow-900/10' : ''}`}
                 onClick={() => onToggleBreakpoint?.(lineNum)}
               >
-                 {hasBreakpoint && <div className="absolute left-2 top-1.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-red-500/50 shadow-lg z-20"></div>}
+                 {hasBreakpoint && <div className="absolute left-2 top-1.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-red-500/50 shadow-lg z-20 animate-pulse"></div>}
                  <span className={hasBreakpoint ? 'invisible' : ''}>{lineNum}</span>
-                 {i % 12 === 0 && i > 0 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div> : null}
-                 {i === 3 ? <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div> : null}
               </div>
             );
           })}
         </div>
 
         {/* Editor Container */}
-        <div className="flex-1 relative overflow-hidden bg-gray-900/50">
+        <div className="flex-1 relative overflow-hidden bg-gray-900/30">
              {highlightedLine && (
                <div 
-                 className="absolute left-0 right-0 bg-yellow-500/10 pointer-events-none z-0 transition-opacity duration-500"
+                 className="absolute left-0 right-0 bg-yellow-500/5 pointer-events-none z-0 transition-opacity duration-500"
                  style={{ top: (highlightedLine - 1) * 24 + 16, height: '24px' }} 
                ></div>
              )}
@@ -510,7 +525,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
             {/* Ghost Text */}
             {ghostText && (
                 <div 
-                    className="absolute z-20 pointer-events-none text-gray-500 font-mono leading-6 italic whitespace-pre"
+                    className="absolute z-20 pointer-events-none text-gray-500 font-mono leading-6 italic whitespace-pre animate-pulse"
                     style={{ 
                         top: ghostPos.top, 
                         left: ghostPos.left,
@@ -518,7 +533,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
                         opacity: 0.6 
                     }}
                 >
-                    {ghostText} <span className="text-[10px] not-italic bg-gray-800 px-1 rounded ml-2 border border-gray-700 text-gray-400">Tab</span>
+                    {ghostText} <span className="text-[9px] not-italic bg-gray-800 px-1 rounded ml-2 border border-gray-700 text-gray-400 font-bold uppercase tracking-wide">Tab</span>
                 </div>
             )}
 
@@ -545,7 +560,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
                  className="absolute z-50 animate-in zoom-in duration-200"
                  style={{ top: selectionCoords.top, left: selectionCoords.left }}
               >
-                <div className="flex gap-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1">
+                <div className="flex gap-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-1 backdrop-blur-md">
                    <button 
                       onClick={() => { onCodeAction?.('Explain', selectedText); setShowCodeActions(false); }}
                       className="p-1.5 hover:bg-primary-600 text-gray-300 hover:text-white rounded transition-colors" 
@@ -578,16 +593,16 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
             {/* Autocomplete */}
             {showSuggestions && !readOnly && (
                 <div 
-                   className="absolute z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden w-48 max-h-40 overflow-y-auto"
+                   className="absolute z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden w-48 max-h-40 overflow-y-auto animate-in slide-in-from-top-1 fade-in duration-100"
                    style={{ top: cursorPos.top, left: cursorPos.left }}
                 >
                    {suggestions.map((s, i) => (
                        <div 
                           key={s}
                           onClick={() => insertSuggestion(s)}
-                          className={`px-3 py-1.5 text-xs cursor-pointer flex items-center gap-2 ${i === suggestionIndex ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
+                          className={`px-3 py-1.5 text-xs cursor-pointer flex items-center gap-2 font-mono ${i === suggestionIndex ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
                        >
-                           <span className="opacity-50 font-bold text-[10px]">abc</span>
+                           <span className="opacity-50 font-bold text-[9px] w-4">abc</span>
                            {s}
                        </div>
                    ))}
@@ -599,13 +614,13 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
         {showMinimap && (
             <div 
               ref={minimapRef}
-              className="w-24 border-l border-gray-800 bg-gray-900/80 overflow-hidden select-none hidden sm:block cursor-pointer relative"
+              className="w-20 border-l border-gray-800 bg-gray-900/80 overflow-hidden select-none hidden sm:block cursor-pointer relative"
               onClick={handleMinimapClick}
             >
-                <div className="w-full text-[2px] leading-[4px] text-gray-500 p-1 opacity-50 whitespace-pre break-all pointer-events-none">
+                <div className="w-full text-[2px] leading-[4px] text-gray-500 p-1 opacity-50 whitespace-pre break-all pointer-events-none transition-opacity hover:opacity-80">
                     {code}
                 </div>
-                <div className="absolute inset-x-0 bg-white/5 pointer-events-none h-16 top-0"></div>
+                <div className="absolute inset-x-0 bg-white/5 pointer-events-none h-16 top-0 border-y border-white/10"></div>
             </div>
         )}
       </div>
