@@ -2,6 +2,7 @@
   "name": "Omni-Studio",
   "description": "A browser-based AI development environment for full-stack generation and model fine-tuning.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }

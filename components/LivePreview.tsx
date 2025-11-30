@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity } from 'lucide-react';
 import { Button } from './Button';
@@ -18,28 +17,20 @@ interface LivePreviewProps {
   onAiFix?: (error: string) => void;
 }
 
-// Moved outside to prevent re-creation on every render
+// Matches index.html loader for seamless visual transition
 const SplashScreen = () => (
-    <div className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards" style={{ animationDelay: '2s' }}>
-        <div className="relative w-48 h-48 mb-12 flex items-center justify-center">
-            {/* Orb Core */}
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-full opacity-20 blur-3xl animate-pulse"></div>
-            
-            {/* Rotating Rings */}
-            <div className="absolute w-32 h-32 border-[1px] border-blue-500/30 rounded-full animate-spin-slow" style={{ animationDuration: '8s' }}></div>
-            <div className="absolute w-40 h-40 border-[1px] border-purple-500/20 rounded-full animate-spin-reverse-slow" style={{ animationDuration: '12s' }}></div>
-            
-            {/* Center Logo */}
-            <div className="relative w-16 h-16 bg-gradient-to-tr from-white to-gray-300 rounded-xl rotate-45 shadow-[0_0_30px_rgba(255,255,255,0.3)] flex items-center justify-center overflow-hidden animate-float">
-                <div className="absolute inset-0 bg-white/20 skew-x-12 animate-shimmer"></div>
-            </div>
+    <div className="absolute inset-0 z-50 bg-[#0d1117] flex flex-col items-center justify-center animate-out fade-out duration-700 fill-mode-forwards" style={{ animationDelay: '2s' }}>
+        <div className="relative mb-8 scale-150">
+            <div className="w-20 h-20 rounded-full bg-[radial-gradient(circle_at_center,#6366f1_0%,transparent_60%)] shadow-[0_0_40px_rgba(99,102,241,0.2)] animate-[pulse_2.5s_infinite_ease-in-out]"></div>
+            <div className="absolute inset-[-5px] border-2 border-primary-500/15 border-t-primary-500 rounded-full animate-[spin_3s_linear_infinite]"></div>
+            <div className="absolute inset-[-8px] border-2 border-purple-500/10 border-b-purple-400 rounded-full animate-[spin_5s_linear_infinite_reverse]"></div>
         </div>
         
-        <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-100 to-gray-400 mb-3 tracking-tight animate-in slide-in-from-bottom-4 fade-in duration-1000">Omni Runtime</h2>
-        
-        <div className="flex gap-3 items-center text-xs text-blue-300/80 font-mono bg-blue-900/10 px-4 py-1.5 rounded-full border border-blue-500/20 animate-in slide-in-from-bottom-4 fade-in duration-1000 delay-200">
-            <Loader2 size={12} className="animate-spin"/> 
-            <span>Initializing Virtual Environment...</span>
+        <div className="text-[10px] font-mono font-bold text-primary-400/80 tracking-[0.3em] uppercase animate-pulse mb-2">
+            INITIALIZING RUNTIME
+        </div>
+        <div className="text-[9px] text-gray-600 font-mono tracking-widest">
+            Connecting to Neural Engine...
         </div>
     </div>
 );
@@ -84,31 +75,76 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const previewSrc = useMemo(() => {
       if (!project || !files || files.length === 0) return '';
       
-      // 1. Flatten files to search
       const allFiles = getAllFiles(files);
+      let entryFile: FileNode | undefined;
+      let entryPath: string | undefined;
+
+      // 1. Try standard entry points (Prioritize generic React/Web roots)
+      const entryPoints = [
+          'src/main.tsx', 'src/main.jsx', 'src/main.js',
+          'src/index.tsx', 'src/index.jsx', 'src/index.js',
+          'src/App.tsx', 'src/App.jsx', 'src/App.js',
+          'App.tsx', 'App.jsx', 'App.js',
+          'index.tsx', 'index.jsx', 'index.js',
+          'main.tsx', 'main.jsx', 'main.js'
+      ];
+
+      for (const path of entryPoints) {
+          const found = allFiles.find(f => f.path === path || f.node.name === path);
+          if (found) {
+              entryFile = found.node;
+              entryPath = found.path;
+              break;
+          }
+      }
       
-      // 2. Find Entry Point
-      // Priority: App.tsx -> index.tsx -> main.tsx -> App.js -> index.js
-      let entryFile = allFiles.find(f => f.node.name === 'App.tsx')?.node;
-      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'index.tsx')?.node;
-      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'main.tsx')?.node;
-      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'App.js' || f.node.name === 'App.jsx')?.node;
-      if (!entryFile) entryFile = allFiles.find(f => f.node.name === 'index.js' || f.node.name === 'index.jsx')?.node;
-      
-      // React Native specific (expo-router)
+      // 2. React Native specific (expo-router)
       if (!entryFile && project.type === ProjectType.REACT_NATIVE) {
-          entryFile = allFiles.find(f => f.path.includes('app/index.tsx') || f.path.includes('app/(tabs)/index.tsx'))?.node;
+          const found = allFiles.find(f => f.path.includes('app/index.tsx') || f.path.includes('app/(tabs)/index.tsx') || f.node.name === 'App.tsx');
+          entryFile = found?.node;
+          entryPath = found?.path;
       }
 
+      // 3. Native iOS/Android specific
+      if (project.type === ProjectType.IOS_APP) {
+          const found = allFiles.find(f => f.node.name === 'OmniApp.swift' || f.node.name.endsWith('App.swift') || f.node.name === 'ContentView.swift');
+          if (found) {
+              entryFile = found.node;
+              entryPath = found.path;
+          }
+      }
+      if (project.type === ProjectType.ANDROID_APP) {
+          const found = allFiles.find(f => f.node.name === 'MainActivity.kt');
+          if (found) {
+              entryFile = found.node;
+              entryPath = found.path;
+          }
+      }
+
+      // 4. Generic Fallback: Search content for entry point markers
+      if (!entryFile) {
+          const found = allFiles.find(f => f.node.content && (
+              f.node.content.includes('createRoot(') || 
+              f.node.content.includes('ReactDOM.render') ||
+              f.node.content.includes('@main') ||
+              f.node.content.includes('export default function App') ||
+              f.node.content.includes('class MainActivity')
+          ));
+          entryFile = found?.node;
+          entryPath = found?.path;
+      }
+
+      // 5. Fallback to active file prop if nothing global found (Component Preview Mode)
       const codeToRun = entryFile?.content || propPreviewSrc;
-      
-      if (!codeToRun) return propPreviewSrc;
+      const pathToRun = entryPath || 'src/App.tsx'; // Default context
+
+      if (!codeToRun) return '';
 
       return generatePreviewHtml(
           codeToRun, 
           isNative || isIOS || isAndroid, 
           files, 
-          undefined, 
+          pathToRun, 
           {} 
       );
   }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid]);
@@ -126,7 +162,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
               routes.add(match[2]);
           }
       });
-      
       setAvailableRoutes(Array.from(routes));
   }, [files, isBackend]);
 
@@ -161,13 +196,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
 
   useEffect(() => {
       setLogs([]);
-      setRuntimeError(null); // Clear error on new src
+      setRuntimeError(null); 
   }, [previewSrc]);
 
   const handleApiSend = () => {
       setApiResponse('Sending request...');
       setApiStatus(null);
-      
       setTimeout(() => {
           const isKnownRoute = availableRoutes.some(r => {
               if (r === apiPath) return true;
@@ -208,7 +242,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
 
   useEffect(() => {
       setIsInitialLoading(true);
-      const t = setTimeout(() => setIsInitialLoading(false), 2500); 
+      const t = setTimeout(() => setIsInitialLoading(false), 2200); 
       return () => clearTimeout(t);
   }, [previewSrc]);
 
@@ -217,7 +251,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
       const steps = ['Validating Project Structure...', 'Resolving Dependencies...', 'Compiling Source...', 'Linking Native Modules...', 'Signing Binary...', 'Launching Simulator...'];
       let stepIdx = 0;
       setBuildStep(steps[0]);
-      
       const interval = setInterval(() => {
           stepIdx++;
           if (stepIdx < steps.length) {
@@ -239,10 +272,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           "Compiling iOS & Android binaries...",
           "Ecosystem synchronized!"
       ];
-      
       let stepIdx = 0;
       setEcosystemStep(steps[0]);
-      
       const interval = setInterval(() => {
           stepIdx++;
           if (stepIdx < steps.length) {
@@ -259,7 +290,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const handleExportWithSettings = async (settings: BuildSettings) => {
       const zip = new JSZip();
       const folderName = isIOS ? 'OmniApp_iOS' : isAndroid ? 'OmniApp_Android' : 'OmniApp_Native';
-      
       const addToZip = (nodes: any[], path = '') => { 
           nodes.forEach(n => { 
               let content = n.content;
@@ -274,9 +304,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
               if (n.children) addToZip(n.children, path + n.name + '/'); 
           }); 
       };
-      
       addToZip(files, `${folderName}/`);
-      
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); 
@@ -303,7 +331,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const handleConsoleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       if (!consoleInput.trim()) return;
-      
       const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
       if (iframe && iframe.contentWindow) {
           iframe.contentWindow.postMessage({ type: 'eval', code: consoleInput }, '*');
@@ -315,7 +342,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const triggerHeal = () => {
       if (runtimeError && onAiFix) {
           onAiFix(`Runtime Error: ${runtimeError.message}\nStack: ${runtimeError.stack}`);
-          setRuntimeError(null); // Clear overlay to see result
+          setRuntimeError(null); 
       }
   };
 
@@ -383,36 +410,16 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                         <span className="text-blue-400 animate-pulse flex items-center gap-2"><Loader2 size={10} className="animate-spin"/> {ecosystemStep}</span>
                     ) : isIOS || isAndroid ? (isIOS ? ' iOS Simulator' : '🤖 Android Emulator') : <><Globe size={10}/> localhost:3000</>}
                 </div>
-                
-                {isDev && (
-                    <div className="hidden md:flex items-center gap-1 bg-purple-900/30 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse">
-                        <Zap size={10} fill="currentColor"/> Hot Reload
-                    </div>
-                )}
+                {isDev && <div className="hidden md:flex items-center gap-1 bg-purple-900/30 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse"><Zap size={10} fill="currentColor"/> Hot Reload</div>}
             </div>
             
             <div className="flex items-center gap-2">
                  {(isNative || isIOS || isAndroid) ? (
                     <>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={handleDownloadSource} title="Download Source for IDE">
-                            <Download size={10} className="mr-1"/> Source
-                        </Button>
-                        <Button 
-                            size="sm" 
-                            variant={isGeneratingEcosystem ? 'secondary' : 'primary'}
-                            className={`h-6 px-3 text-[10px] font-bold shadow-lg ${isGeneratingEcosystem ? 'text-blue-400 bg-blue-900/20 border border-blue-800' : 'bg-primary-600 hover:bg-primary-500 text-white'}`}
-                            onClick={handleGenerateEcosystem} 
-                            disabled={isGeneratingEcosystem}
-                            title="Auto-Generate Web, Backend, iOS & Android Apps"
-                        >
-                            {isGeneratingEcosystem ? <Loader2 size={10} className="animate-spin mr-1"/> : <Layers size={12} className="mr-1"/>}
-                            {isGeneratingEcosystem ? 'Syncing Ecosystem...' : 'Generate Ecosystem'}
-                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={handleDownloadSource} title="Download Source for IDE"><Download size={10} className="mr-1"/> Source</Button>
+                        <Button size="sm" variant={isGeneratingEcosystem ? 'secondary' : 'primary'} className={`h-6 px-3 text-[10px] font-bold shadow-lg ${isGeneratingEcosystem ? 'text-blue-400 bg-blue-900/20 border border-blue-800' : 'bg-primary-600 hover:bg-primary-500 text-white'}`} onClick={handleGenerateEcosystem} disabled={isGeneratingEcosystem} title="Auto-Generate Web, Backend, iOS & Android Apps">{isGeneratingEcosystem ? <Loader2 size={10} className="animate-spin mr-1"/> : <Layers size={12} className="mr-1"/>}{isGeneratingEcosystem ? 'Syncing Ecosystem...' : 'Generate Ecosystem'}</Button>
                         {(isIOS || isAndroid) && (
-                            <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>
-                                {isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}
-                                {isBuilding ? 'Building...' : 'Run Build'}
-                            </Button>
+                            <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>{isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}{isBuilding ? 'Building...' : 'Run Build'}</Button>
                         )}
                         <div className="flex bg-gray-700/50 rounded p-0.5 gap-0.5">
                             <button onClick={() => setPreviewMode('mobile')} className={`p-1.5 rounded transition-all ${previewMode === 'mobile' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Mobile Simulator"><Smartphone size={14}/></button>
@@ -434,40 +441,25 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
             
             {(previewMode === 'mobile') ? (
                 <div className="relative transition-all duration-500 animate-in zoom-in-95 max-w-full max-h-full">
-                    <div 
-                        className={`border-[8px] border-gray-800 rounded-[2.5rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 mx-auto transition-all
-                            ${deviceFrame === 'ipad' ? 'w-[500px] max-w-full aspect-[3/4]' : 'w-[320px] max-w-full aspect-[9/19.5]'}
-                        `}
-                        style={{ maxHeight: '85vh' }}
-                    >
+                    <div className={`border-[8px] border-gray-800 rounded-[2.5rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 mx-auto transition-all ${deviceFrame === 'ipad' ? 'w-[500px] max-w-full aspect-[3/4]' : 'w-[320px] max-w-full aspect-[9/19.5]'}`} style={{ maxHeight: '85vh' }}>
                         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-1/3 h-[4%] bg-gray-800 rounded-b-xl z-20 flex items-center justify-center">
                             <div className="w-1/3 h-1 bg-gray-700 rounded-full"></div>
                         </div>
                         
                         <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-black" sandbox="allow-scripts" />
                         
-                        {/* Runtime Error Overlay */}
                         {runtimeError && (
                             <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
                                 <AlertTriangle size={48} className="text-red-400 mb-4 animate-bounce" />
                                 <h3 className="text-xl font-bold text-white mb-2">Runtime Crash</h3>
-                                <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full text-left">
-                                    {runtimeError.message}
-                                </p>
-                                <Button 
-                                    onClick={triggerHeal} 
-                                    className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"
-                                >
-                                    <Activity size={16} className="mr-2"/> Heal Codebase
-                                </Button>
+                                <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full text-left">{runtimeError.message}</p>
+                                <Button onClick={triggerHeal} className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"><Activity size={16} className="mr-2"/> Heal Codebase</Button>
                             </div>
                         )}
 
                         {showQrCode && (
                             <div className="absolute inset-0 bg-gray-900/95 z-30 flex flex-col items-center justify-center text-center p-6 animate-in fade-in backdrop-blur-sm">
-                                <div className="bg-white p-3 rounded-xl mb-4 shadow-lg">
-                                    <QrCode size={140} className="text-black" />
-                                </div>
+                                <div className="bg-white p-3 rounded-xl mb-4 shadow-lg"><QrCode size={140} className="text-black" /></div>
                                 <h3 className="text-white font-bold mb-1 text-lg">Scan with Expo Go</h3>
                                 <p className="text-gray-400 text-xs mb-6">Open the camera on your iOS/Android device to preview live.</p>
                                 <Button size="sm" variant="secondary" onClick={() => setShowQrCode(false)}>Close</Button>
@@ -478,14 +470,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                             <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
                                 <div className="relative mb-6">
                                     <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-primary-500 animate-spin"></div>
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <Smartphone size={24} className="text-primary-500 animate-pulse" />
-                                    </div>
+                                    <div className="absolute inset-0 flex items-center justify-center"><Smartphone size={24} className="text-primary-500 animate-pulse" /></div>
                                 </div>
                                 <h3 className="text-white font-bold text-lg mb-2">Compiling Native App</h3>
-                                <div className="text-sm text-primary-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800">
-                                    {buildStep}
-                                </div>
+                                <div className="text-sm text-primary-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800">{buildStep}</div>
                             </div>
                         )}
                         
@@ -493,14 +481,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                             <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
                                 <div className="relative mb-6">
                                     <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-blue-500 animate-spin"></div>
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <Layers size={24} className="text-blue-500 animate-pulse" />
-                                    </div>
+                                    <div className="absolute inset-0 flex items-center justify-center"><Layers size={24} className="text-blue-500 animate-pulse" /></div>
                                 </div>
                                 <h3 className="text-white font-bold text-lg mb-2">Generating Ecosystem</h3>
-                                <div className="text-sm text-blue-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800 text-center max-w-[250px]">
-                                    {ecosystemStep}
-                                </div>
+                                <div className="text-sm text-blue-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800 text-center max-w-[250px]">{ecosystemStep}</div>
                             </div>
                         )}
                     </div>
@@ -514,21 +498,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
             ) : (
                 <div className="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-700/50 relative">
                     <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
-                    
-                    {/* Web Runtime Error Overlay */}
                     {runtimeError && (
                         <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
                             <AlertTriangle size={48} className="text-red-400 mb-4 animate-bounce" />
                             <h3 className="text-xl font-bold text-white mb-2">Runtime Crash</h3>
-                            <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full max-w-lg text-left">
-                                {runtimeError.message}
-                            </p>
-                            <Button 
-                                onClick={triggerHeal} 
-                                className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"
-                            >
-                                <Activity size={16} className="mr-2"/> Heal Codebase
-                            </Button>
+                            <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full max-w-lg text-left">{runtimeError.message}</p>
+                            <Button onClick={triggerHeal} className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"><Activity size={16} className="mr-2"/> Heal Codebase</Button>
                         </div>
                     )}
                 </div>
@@ -536,17 +511,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
         </div>
 
         <div className={`absolute bottom-0 left-0 right-0 bg-gray-900/95 border-t border-gray-700 transition-all duration-300 flex flex-col ${showConsole ? 'h-48' : 'h-8'}`}>
-            <div 
-                className="h-8 flex items-center justify-between px-3 cursor-pointer hover:bg-gray-800 border-b border-gray-800"
-                onClick={() => setShowConsole(!showConsole)}
-            >
+            <div className="h-8 flex items-center justify-between px-3 cursor-pointer hover:bg-gray-800 border-b border-gray-800" onClick={() => setShowConsole(!showConsole)}>
                 <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
                     <Terminal size={12} /> Live Console
                     {logs.length > 0 && <span className="bg-gray-700 text-gray-300 px-1.5 rounded-full text-[10px]">{logs.length}</span>}
                 </div>
                 {showConsole ? <ChevronDown size={14} className="text-gray-500"/> : <ChevronUp size={14} className="text-gray-500"/>}
             </div>
-            
             {showConsole && (
                 <div className="flex-1 flex flex-col">
                     <div ref={consoleRef} className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin scrollbar-thumb-gray-700">
@@ -554,25 +525,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                         {logs.map((log, i) => (
                             <div key={i} className="flex gap-2 hover:bg-white/5 px-2 rounded py-0.5 group">
                                 <span className="text-gray-600 min-w-[50px]">{log.time}</span>
-                                <span className={`flex-1 break-all whitespace-pre-wrap ${
-                                    log.level === 'error' ? 'text-red-400' : 
-                                    log.level === 'warn' ? 'text-yellow-400' : 
-                                    log.level === 'input' ? 'text-blue-400' : 'text-green-400'
-                                }`}>
-                                    {log.message}
-                                </span>
+                                <span className={`flex-1 break-all whitespace-pre-wrap ${log.level === 'error' ? 'text-red-400' : log.level === 'warn' ? 'text-yellow-400' : log.level === 'input' ? 'text-blue-400' : 'text-green-400'}`}>{log.message}</span>
                             </div>
                         ))}
                     </div>
                     <form onSubmit={handleConsoleSubmit} className="p-2 border-t border-gray-800 flex gap-2 bg-black/20">
                         <span className="text-blue-500 font-mono text-xs">{'>'}</span>
-                        <input 
-                            type="text" 
-                            value={consoleInput}
-                            onChange={e => setConsoleInput(e.target.value)}
-                            className="flex-1 bg-transparent border-none outline-none text-xs font-mono text-white"
-                            placeholder="Execute JS..."
-                        />
+                        <input type="text" value={consoleInput} onChange={e => setConsoleInput(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-xs font-mono text-white" placeholder="Execute JS..." />
                     </form>
                 </div>
             )}

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState, memo } from 'react';
-import { Terminal as TerminalIcon, ChevronRight, Zap, Sparkles, Plus, X } from 'lucide-react';
+import { Terminal as TerminalIcon, ChevronRight, Zap, Sparkles, Plus, X, Trash2 } from 'lucide-react';
 
 interface TerminalProps {
   logs: string[];
@@ -22,9 +22,9 @@ export const Terminal: React.FC<TerminalProps> = memo(({ logs, onCommand, onAiFi
 
   const isAiCommand = input.trim().startsWith('?');
 
-  // Sync incoming logs prop with the active tab (simplification for demo)
+  // Sync incoming logs prop with the active tab, limiting to last 200 items for performance
   useEffect(() => {
-      setTabs(prev => prev.map(t => t.id === 't1' ? { ...t, logs: logs } : t));
+      setTabs(prev => prev.map(t => t.id === 't1' ? { ...t, logs: logs.slice(-200) } : t));
   }, [logs]);
 
   useEffect(() => {
@@ -43,6 +43,10 @@ export const Terminal: React.FC<TerminalProps> = memo(({ logs, onCommand, onAiFi
       const newTabs = tabs.filter(t => t.id !== id);
       setTabs(newTabs);
       if (activeTabId === id) setActiveTabId(newTabs[0].id);
+  };
+
+  const handleClearLogs = () => {
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [] } : t));
   };
 
   const activeLogs = tabs.find(t => t.id === activeTabId)?.logs || [];
@@ -115,7 +119,9 @@ export const Terminal: React.FC<TerminalProps> = memo(({ logs, onCommand, onAiFi
             </div>
         ))}
         <button onClick={handleAddTab} className="px-3 text-gray-500 hover:text-white"><Plus size={12}/></button>
-        <div className="ml-auto px-2 flex gap-2">
+        <div className="ml-auto px-2 flex gap-2 items-center">
+          <button onClick={handleClearLogs} className="text-gray-500 hover:text-white p-1" title="Clear Logs"><Trash2 size={12}/></button>
+          <div className="w-px h-3 bg-gray-700 mx-1"></div>
           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
           <span className="text-[10px] text-gray-500">node v18.x</span>
         </div>

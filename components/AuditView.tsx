@@ -35,7 +35,7 @@ export const AuditView: React.FC<AuditViewProps> = ({ files }) => {
           setPerfReport(report);
       } else {
           const issues = await runSecurityAudit(struct, pkgJson);
-          setSecurityIssues(issues);
+          setSecurityIssues(Array.isArray(issues) ? issues : []);
       }
       setIsAuditing(false);
   };
@@ -87,11 +87,17 @@ export const AuditView: React.FC<AuditViewProps> = ({ files }) => {
                       </div>
                       <div className="flex-1">
                           <div className="flex justify-between mb-1">
-                              <span className="font-semibold text-sm text-gray-200">{issue.title}</span>
-                              <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${issue.severity === 'critical' ? 'bg-red-900/30 text-red-400' : 'bg-gray-700 text-gray-400'}`}>{issue.severity}</span>
+                              <span className="font-semibold text-sm text-gray-200">
+                                {typeof issue.title === 'string' ? issue.title : 'Security Issue'}
+                              </span>
+                              <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${issue.severity === 'critical' ? 'bg-red-900/30 text-red-400' : 'bg-gray-700 text-gray-400'}`}>
+                                {typeof issue.severity === 'string' ? issue.severity : 'medium'}
+                              </span>
                           </div>
-                          <p className="text-xs text-gray-400 leading-relaxed">{issue.description}</p>
-                          {issue.file && <div className="mt-2 text-[10px] font-mono text-gray-500 bg-black/30 px-2 py-1 rounded w-fit">Location: {issue.file}{issue.line ? `:${issue.line}` : ''}</div>}
+                          <p className="text-xs text-gray-400 leading-relaxed">
+                            {typeof issue.description === 'string' ? issue.description : 'No description available.'}
+                          </p>
+                          {issue.file && <div className="mt-2 text-[10px] font-mono text-gray-500 bg-black/30 px-2 py-1 rounded w-fit">Location: {typeof issue.file === 'string' ? issue.file : 'Unknown'}{issue.line ? `:${issue.line}` : ''}</div>}
                       </div>
                   </div>
               ))}

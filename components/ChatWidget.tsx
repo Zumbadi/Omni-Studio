@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal, Container, Workflow, Paperclip } from 'lucide-react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal, Container, Workflow, Paperclip, MapPin } from 'lucide-react';
 import { Button } from './Button';
 import { ChatMessage, AgentTask } from '../types';
 import { MessageRenderer } from './MessageRenderer';
@@ -31,6 +31,7 @@ interface ChatWidgetProps {
 // Explicitly ordered list for prioritization
 const SLASH_COMMANDS = [
     { cmd: '/search', desc: 'Google Search for real-time info', Icon: Globe, color: 'text-blue-400' },
+    { cmd: '/map', desc: 'Find places with Google Maps', Icon: MapPin, color: 'text-green-400' },
     { cmd: '/agent', desc: 'Delegate task to AI Agents', Icon: Bot, color: 'text-purple-400' },
     { cmd: '/image', desc: 'Generate visual assets', Icon: ImageIcon, color: 'text-pink-400' },
     { cmd: '/pipeline', desc: 'Trigger CI/CD Pipeline', Icon: Workflow, color: 'text-orange-400' },

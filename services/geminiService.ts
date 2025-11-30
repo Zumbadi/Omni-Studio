@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Modality, GenerateContentResponse, Type } from "@google/genai";
 import { ProjectType, Voice, ChatMessage, AuditIssue, PerformanceReport, ArchNode, ArchLink, AIAgent, ProjectPhase, AgentContext, TestResult } from "../types";
 
 const getApiKey = () => {
@@ -29,7 +29,22 @@ const getProviderConfig = (modelName: string) => {
 const cleanJson = (text: string): string => {
     if (!text) return '{}';
     let cleaned = text.trim();
+    // Remove markdown code blocks
     cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '');
+    // Find the first { or [ and the last } or ]
+    const firstBrace = cleaned.search(/[{[]/);
+    const lastBrace = cleaned.search(/[}\]]$/); // Search from end is harder with regex in one go, so we usually trim garbage
+    
+    if (firstBrace !== -1) {
+        cleaned = cleaned.substring(firstBrace);
+        // Find the last closing brace
+        const lastCurly = cleaned.lastIndexOf('}');
+        const lastSquare = cleaned.lastIndexOf(']');
+        const end = Math.max(lastCurly, lastSquare);
+        if (end !== -1) {
+            cleaned = cleaned.substring(0, end + 1);
+        }
+    }
     return cleaned;
 };
 
@@ -201,11 +216,20 @@ export const planAgentTask = async (agent: AIAgent, taskDescription: string, fil
     if (!getApiKey()) return { filesToEdit: [], strategy: "No API Key" };
     const ai = getAiClient();
     const systemInstruction = `${agent.systemPrompt} IDENTITY: Project Manager. CONTEXT: ${projectType} Project. TASK: Analyze request "${taskDescription}". FILE STRUCTURE:\n${fileStructure}\nOUTPUT JSON: { "filesToEdit": ["path/to/file"], "strategy": "Brief plan." }`;
+    
+    // Enable Thinking for complex planning tasks
+    const config: any = { 
+        systemInstruction, 
+        responseMimeType: 'application/json',
+        // thinkingConfig is available for gemini-2.5-flash
+        thinkingConfig: { thinkingBudget: 2048 } 
+    };
+
     try {
         const response = await retryOperation(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
+            model: 'gemini-2.5-flash',
             contents: "Plan execution.",
-            config: { systemInstruction, responseMimeType: 'application/json' }
+            config
         })) as GenerateContentResponse;
         return safeParseJSON(response.text || '', { filesToEdit: [], strategy: "Planning failed (Fallback)." });
     } catch (e) { return { filesToEdit: [], strategy: "Planning failed." }; }
@@ -321,6 +345,21 @@ export const reviewBuildTask = async (
     } catch { return { approved: true, feedback: "Critic check failed (Auto-Pass).", issues: [] }; }
 };
 
+const getCurrentLocation = async (): Promise<{latitude: number, longitude: number} | undefined> => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return undefined;
+    try {
+        const pos: GeolocationPosition = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000 });
+        });
+        return {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude
+        };
+    } catch (e) {
+        return undefined;
+    }
+};
+
 export const generateCodeResponse = async (
     prompt: string, 
     currentFileContent: string, 
@@ -331,7 +370,8 @@ export const generateCodeResponse = async (
     onComplete?: (metadata?: any) => void,
     imageData?: string, 
     chatHistory: ChatMessage[] = [],
-    useSearch: boolean = false
+    useSearch: boolean = false,
+    useMaps: boolean = false
 ) => {
     if (!getApiKey()) { onStream("Error: No API Key found."); return; }
     const ai = getAiClient();
@@ -340,11 +380,28 @@ export const generateCodeResponse = async (
         const systemInstruction = `Omni Coding Assistant. ${frameworkInstruction}. Files:\n${fileStructure}. Current File:\n\`\`\`\n${currentFileContent}\n\`\`\``;
         const history = chatHistory.filter(msg => msg.role === 'user' || msg.role === 'model').map(msg => ({ role: msg.role === 'model' ? 'model' : 'user', parts: [{ text: msg.text }] }));
         
-        const tools = useSearch ? [{ googleSearch: {} }] : undefined;
+        const tools: any[] = [];
+        if (useSearch) tools.push({ googleSearch: {} });
+        if (useMaps) tools.push({ googleMaps: {} });
+        
+        let toolConfig: any = undefined;
+        if (useMaps) {
+            const loc = await getCurrentLocation();
+            if (loc) {
+                toolConfig = {
+                    retrievalConfig: {
+                        latLng: {
+                            latitude: loc.latitude,
+                            longitude: loc.longitude
+                        }
+                    }
+                };
+            }
+        }
         
         const chat = ai.chats.create({ 
             model: 'gemini-2.5-flash',
-            config: { systemInstruction, tools }, 
+            config: { systemInstruction, tools: tools.length > 0 ? tools : undefined, toolConfig }, 
             history: history as any 
         });
         
@@ -390,7 +447,18 @@ export const analyzeCharacterFeatures = async (b64: string) => { if (!getApiKey(
 export const removeBackground = async (b64: string) => { await new Promise(r => setTimeout(r, 1000)); return b64; };
 export const generateSQL = async (d: string, s: string) => { if (!getApiKey()) return ""; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `SQL for ${d}. Schema: ${s}` }) as GenerateContentResponse; return r.text?.replace(/```sql|```/g, '').trim()||""; } catch { return ""; } };
 export const generateTerminalCommand = async (q: string, t: string) => { if (!getApiKey()) return ""; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Shell cmd for ${t}: ${q}` }) as GenerateContentResponse; return r.text?.replace(/```sh|```/g, '').trim()||""; } catch { return ""; } };
-export const runSecurityAudit = async (f: string, p: string) => { if (!getApiKey()) return []; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Audit ${f}`, config: { responseMimeType: 'application/json' } }) as GenerateContentResponse; return safeParseJSON(r.text || '[]', []); } catch { return []; } };
+export const runSecurityAudit = async (f: string, p: string) => { 
+    if (!getApiKey()) return []; 
+    const ai = getAiClient(); 
+    try { 
+        const r = await ai.models.generateContent({ 
+            model: 'gemini-2.5-flash', 
+            contents: `Audit this codebase structure for security vulnerabilities.\nFile Structure:\n${f}\n\nPackage JSON:\n${p}\n\nOutput ONLY a JSON array of objects with schema: [{ title: string, description: string, severity: "critical"|"high"|"medium"|"low", file?: string, line?: number }]`, 
+            config: { responseMimeType: 'application/json' } 
+        }) as GenerateContentResponse; 
+        return safeParseJSON(r.text || '[]', []); 
+    } catch { return []; } 
+};
 export const generatePerformanceReport = async (f: string) => { if (!getApiKey()) return {scores:{performance:0,accessibility:0,bestPractices:0,seo:0},opportunities:[]}; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Perf ${f}`, config: { responseMimeType: 'application/json' } }) as GenerateContentResponse; return safeParseJSON(r.text || '{}', {scores:{performance:0,accessibility:0,bestPractices:0,seo:0},opportunities:[]}); } catch { return {scores:{performance:0,accessibility:0,bestPractices:0,seo:0},opportunities:[]}; } };
 export const generateArchitecture = async (d: string) => { if (!getApiKey()) return {nodes:[],links:[]}; const ai = getAiClient(); try { const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `Arch ${d}`, config: { responseMimeType: 'application/json' } }) as GenerateContentResponse; return safeParseJSON(r.text || '{}', {nodes:[],links:[]}); } catch { return {nodes:[],links:[]}; } };
 export const generateVideo = async (p: string, i?: string) => { if (!getApiKey()) return null; const ai = getAiClient(); try { const r: any = { model: 'veo-3.1-fast-generate-preview', prompt: p, config: { numberOfVideos: 1 } }; if(i) { const [m,d] = i.split(','); r.image = { imageBytes: d, mimeType: m.match(/:(.*?);/)?.[1]||'image/png' }; } let op = await ai.models.generateVideos(r); while(!op.done) { await new Promise(x => setTimeout(x, 5000)); op = await ai.operations.getVideosOperation({operation: op}); } const u = op.response?.generatedVideos?.[0]?.video?.uri; if(!u) throw 0; const res = await fetch(`${u}&key=${getApiKey()}`); const b = await res.blob(); return URL.createObjectURL(b); } catch { return null; } };

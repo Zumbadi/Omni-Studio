@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download, Globe, ExternalLink, PenTool, Terminal } from 'lucide-react';
+import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download, Globe, ExternalLink, PenTool, Terminal, MapPin } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface MessageRendererProps {
@@ -81,19 +81,36 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
               </div>
               <div className="flex flex-wrap gap-2">
                   {message.groundingMetadata.groundingChunks.map((chunk: any, i: number) => {
-                      if (!chunk.web) return null;
-                      return (
-                          <a 
-                              key={i} 
-                              href={chunk.web.uri} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 bg-blue-900/20 hover:bg-blue-900/40 text-blue-300 border border-blue-800/50 rounded-full px-3 py-1 text-xs transition-colors max-w-full truncate"
-                          >
-                              <span className="truncate max-w-[150px]">{chunk.web.title || chunk.web.uri}</span>
-                              <ExternalLink size={10} className="opacity-50 flex-shrink-0" />
-                          </a>
-                      );
+                      if (chunk.web) {
+                          return (
+                              <a 
+                                  key={i} 
+                                  href={chunk.web.uri} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 bg-blue-900/20 hover:bg-blue-900/40 text-blue-300 border border-blue-800/50 rounded-full px-3 py-1 text-xs transition-colors max-w-full truncate"
+                              >
+                                  <span className="truncate max-w-[150px]">{chunk.web.title || chunk.web.uri}</span>
+                                  <ExternalLink size={10} className="opacity-50 flex-shrink-0" />
+                              </a>
+                          );
+                      }
+                      if (chunk.maps) {
+                          return (
+                              <a 
+                                  key={i} 
+                                  href={chunk.maps.uri} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 bg-green-900/20 hover:bg-green-900/40 text-green-300 border border-green-800/50 rounded-full px-3 py-1 text-xs transition-colors max-w-full truncate"
+                              >
+                                  <MapPin size={10} />
+                                  <span className="truncate max-w-[150px]">{chunk.maps.title || "Map Location"}</span>
+                                  <ExternalLink size={10} className="opacity-50 flex-shrink-0" />
+                              </a>
+                          );
+                      }
+                      return null;
                   })}
               </div>
           </div>

@@ -33,7 +33,7 @@ export const useOmniAssistant = ({
       return [{
           id: 'init-welcome',
           role: 'model',
-          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/pipeline\` to run CI/CD\n- \`/agent [task]\` to auto-assign task\n- \`/docker\` to containerize app`,
+          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/map [location]\` for geographic info\n- \`/pipeline\` to run CI/CD\n- \`/agent [task]\` to auto-assign task\n- \`/docker\` to containerize app`,
           timestamp: Date.now()
       }];
   });
@@ -70,7 +70,7 @@ export const useOmniAssistant = ({
       }
   };
 
-  const triggerGeneration = async (prompt: string, useSearch = false) => {
+  const triggerGeneration = async (prompt: string, useSearch = false, useMaps = false) => {
     setIsGenerating(true);
     const currentCode = activeFile?.content || '';
     const fileStructure = getAllFiles(files).map(f => f.path).join('\n');
@@ -88,10 +88,10 @@ export const useOmniAssistant = ({
       finalPrompt, currentCode, projectType, fileStructure, activeModel, 
       (chunk) => { responseText += chunk; setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, text: responseText } : msg)); },
       (metadata) => { if(metadata) setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, groundingMetadata: metadata } : msg)); },
-      attachedImage, chatHistory, useSearch
+      attachedImage, chatHistory, useSearch, useMaps
     );
     
-    if (enableCritic && !useSearch) runCritique(responseText, finalPrompt);
+    if (enableCritic && !useSearch && !useMaps) runCritique(responseText, finalPrompt);
     setAttachedImage(undefined);
     setEditorSelection('');
     setIsGenerating(false);
@@ -130,6 +130,13 @@ export const useOmniAssistant = ({
              setIsGenerating(true);
              addSystemMessage(`Searching web for: "${argText}"...`);
              triggerGeneration(argText, true); // useSearch = true
+             return;
+        }
+
+        if (command === '/map') {
+             setIsGenerating(true);
+             addSystemMessage(`Searching maps for: "${argText}"...`);
+             triggerGeneration(argText, true, true); // useSearch = true, useMaps = true
              return;
         }
         
@@ -322,7 +329,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
         }
         
         if (command === '/help') {
-            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/pipeline\` (CI/CD)\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
+            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/map [place]\`\n- \`/pipeline\` (CI/CD)\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
             return;
         }
     }

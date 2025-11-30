@@ -65,7 +65,16 @@ export interface ChatMessage {
       web?: {
         uri: string;
         title: string;
-      }
+      };
+      maps?: {
+        uri: string;
+        title: string;
+        placeAnswerSources?: {
+            reviewSnippets?: {
+                content: string;
+            }[];
+        }[];
+      };
     }[];
     groundingSupports?: any[];
     webSearchQueries?: string[];
