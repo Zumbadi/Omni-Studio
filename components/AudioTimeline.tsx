@@ -100,10 +100,10 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
               const x = i * (barWidth + gap);
               const y = height - barHeight;
               
-              // Draw Rect (roundRect might not be available)
-              if (typeof ctx.roundRect === 'function') {
+              // Draw Rect (roundRect might not be available, cast to any to avoid TS errors in older envs)
+              if (typeof (ctx as any).roundRect === 'function') {
                   ctx.beginPath();
-                  ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
+                  (ctx as any).roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
                   ctx.fill();
               } else {
                   ctx.fillRect(x, y, barWidth, barHeight);

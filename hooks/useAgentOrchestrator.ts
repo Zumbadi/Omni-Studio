@@ -64,6 +64,7 @@ export const useAgentOrchestrator = ({
   const abortAgentRef = useRef(false);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isAutoPilot, setIsAutoPilot] = useState(false);
+  const [agentNeedsSearch, setAgentNeedsSearch] = useState(false);
   
   const modifiedFilesRef = useRef<Record<string, string>>({});
   const preRunSnapshot = useRef<FileNode[] | null>(null);
@@ -178,6 +179,7 @@ export const useAgentOrchestrator = ({
           if (!activeAgent) setActiveAgent(manager);
 
           // --- PLANNING PHASE ---
+          let useSearch = false;
           if (!activeAgentTask.fileList || activeAgentTask.fileList.length === 0) {
               setTerminalLogs(prev => [...prev, `[${manager.name}] 🧠 Analyzing request: "${activeAgentTask.name}"...`]);
               
@@ -186,6 +188,12 @@ export const useAgentOrchestrator = ({
               
               const plan = await planAgentTask(manager, activeAgentTask.name, fileStructure, projectType);
               
+              if (plan.requiresSearch) {
+                  useSearch = true;
+                  setAgentNeedsSearch(true);
+                  setTerminalLogs(prev => [...prev, `[${manager.name}] 🌐 External knowledge required. Enabling Google Search.`]);
+              }
+
               if (plan.filesToEdit.length > 0) {
                   const plannedTargets = plan.filesToEdit.map(path => {
                       const normalized = normalizePath(path);
@@ -337,11 +345,17 @@ export const useAgentOrchestrator = ({
                   const enrichedContext = { ...context };
 
                   let buildResult;
+                  // If useSearch is active, pass it to executeBuildTask
                   if (activeAgentTask.type === 'custom' || activeAgentTask.type === 'refactor') {
-                      buildResult = await executeBuildTask(builder, fileNode.name, currentContent, instructions, enrichedContext, feedback, projectType, isNewFile);
+                      buildResult = await executeBuildTask(builder, fileNode.name, currentContent, instructions, enrichedContext, feedback, projectType, isNewFile, agentNeedsSearch || useSearch);
                   } else {
                       const resultText = await runAgentFileTask(builder, fileNode.name, currentContent, enrichedContext);
                       buildResult = { code: resultText || currentContent, logs: [] };
+                  }
+
+                  // Append builder logs (e.g. search usage)
+                  if (buildResult.logs && buildResult.logs.length > 0) {
+                      setTerminalLogs(prev => [...prev, ...buildResult.logs.map(l => `[${builder.name}] ${l}`)]);
                   }
 
                   // --- DELETION CHECK ---

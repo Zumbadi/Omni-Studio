@@ -1,4 +1,3 @@
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
@@ -11,13 +10,11 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-    this.handleRetry = this.handleRetry.bind(this);
-    this.handleHardReset = this.handleHardReset.bind(this);
-  }
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public override state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -27,17 +24,17 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     console.error('Uncaught error:', error, errorInfo);
   }
 
-  handleRetry() {
+  handleRetry = () => {
       this.setState({ hasError: false, error: null });
       window.location.reload();
-  }
+  };
 
-  handleHardReset() {
+  handleHardReset = () => {
       if (window.confirm("This will clear all local storage and reset the app. Are you sure?")) {
           localStorage.clear();
           window.location.reload();
       }
-  }
+  };
 
   render() {
     if (this.state.hasError) {

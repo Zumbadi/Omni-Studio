@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { FileText, ArrowRight, Wand2, RefreshCw, Layers, Sparkles, Loader2 } from 'lucide-react';
+import { FileText, ArrowRight, Wand2, RefreshCw, Layers, Sparkles, Loader2, Palette } from 'lucide-react';
 import { Button } from './Button';
 import { Scene } from '../types';
 import { generateSocialContent } from '../services/geminiService';
@@ -13,9 +13,12 @@ interface MediaScriptEditorProps {
   topic?: string;
 }
 
+const VISUAL_STYLES = ['Realistic', 'Cartoon', 'Animation', 'Manga', 'Documentary', 'Film', 'TV'];
+
 export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, onUpdateScript, onSyncToTimeline, platform, topic }) => {
   const [parsedScenes, setParsedScenes] = useState<Partial<Scene>[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [visualStyle, setVisualStyle] = useState('Realistic');
 
   // Auto-parse script into potential scenes
   useEffect(() => {
@@ -24,17 +27,20 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
     let currentScene: Partial<Scene> | null = null;
 
     lines.forEach((line) => {
-        const sceneMatch = line.match(/^(Scene|Shot)\s*(\d+):?\s*(.*)/i) || line.match(/^\[(.*?)\]\s*(.*)/);
+        // Updated regex to support: Scene 1, Shot 1, [Scene 1], **Scene 1**, # Scene 1
+        const sceneMatch = line.match(/^([#*]*\s*)?(Scene|Shot|Clip)\s*(\d+):?\s*[*]*\s*(.*)/i) || line.match(/^\[(.*?)\]\s*(.*)/);
         
         if (sceneMatch) {
             if (currentScene) scenes.push(currentScene);
+            // Capture description: checks match groups differently based on regex used
+            const desc = sceneMatch[4] || sceneMatch[2] || line.replace(/^[#*]*\s*(Scene|Shot|Clip)\s*\d+[:\s]*/i, '');
             currentScene = {
-                description: sceneMatch[3] || sceneMatch[2] || line,
+                description: desc.trim(),
                 duration: 5, // Default estimate
                 transition: 'cut'
             };
         } else if (currentScene) {
-            // Append to description if it's a continuation
+            // Append to description if it's a continuation and not empty
             if (line.trim()) currentScene.description += ` ${line.trim()}`;
         }
     });
@@ -45,14 +51,17 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
 
   const handleMagicWrite = async () => {
       setIsGenerating(true);
-      const prompt = script ? `Continue this script:\n${script}` : `Write a viral ${platform} script about ${topic || 'trending tech'}. Format as "Scene 1: [Visual] Description".`;
+      const styleInstruction = `Visual Style: ${visualStyle}.`;
+      const prompt = script 
+        ? `Continue this script maintaining the style:\n${script}\n\n${styleInstruction}` 
+        : `Write a viral ${platform} script about ${topic || 'trending tech'}. Format as "Scene X: [Visual] Description". ${styleInstruction} Make it detailed and cinematic.`;
       
       let newScript = script ? script + "\n" : "";
       await generateSocialContent(prompt, platform, (chunk) => {
-          newScript += chunk; // Simple accumulation, in real app better stream handling needed
+          newScript += chunk; 
           onUpdateScript(newScript);
       });
-      onUpdateScript(newScript); // Ensure final state update
+      onUpdateScript(newScript); 
       setIsGenerating(false);
   };
 
@@ -79,7 +88,19 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
         {/* Editor */}
         <div className="flex-1 flex flex-col bg-gray-900 rounded-xl border border-gray-800 shadow-lg overflow-hidden">
             <div className="p-3 border-b border-gray-800 bg-gray-850 flex justify-between items-center">
-                <h3 className="text-sm font-bold text-gray-200 flex items-center gap-2"><FileText size={16}/> Script Editor</h3>
+                <div className="flex items-center gap-4">
+                    <h3 className="text-sm font-bold text-gray-200 flex items-center gap-2"><FileText size={16}/> Script Editor</h3>
+                    <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-2 py-1 border border-gray-700">
+                        <Palette size={12} className="text-gray-400"/>
+                        <select 
+                            value={visualStyle} 
+                            onChange={(e) => setVisualStyle(e.target.value)}
+                            className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
+                        >
+                            {VISUAL_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                </div>
                 <Button size="sm" variant="secondary" onClick={handleMagicWrite} disabled={isGenerating}>
                     {isGenerating ? <Loader2 size={14} className="animate-spin mr-2"/> : <Wand2 size={14} className="mr-2"/>}
                     {isGenerating ? 'Writing...' : 'Magic Write'}
@@ -89,7 +110,7 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
                 className="flex-1 w-full bg-black/50 p-6 text-sm text-gray-300 leading-relaxed focus:outline-none font-mono resize-none"
                 value={script}
                 onChange={(e) => onUpdateScript(e.target.value)}
-                placeholder="Scene 1: Wide shot of the city..."
+                placeholder={`Scene 1: Wide shot of the city (${visualStyle} style)...`}
             />
         </div>
 

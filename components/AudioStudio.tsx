@@ -1,16 +1,26 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, FileText, LayoutTemplate } from 'lucide-react';
+import { X, FileText, LayoutTemplate, Play, Pause, Trash2 } from 'lucide-react';
 import { Button } from './Button';
 import { MOCK_VOICES } from '../constants';
 import { Voice, AudioTrack } from '../types';
-import { generateSpeech, transcribeAudio, analyzeMediaStyle } from '../services/geminiService';
+import { generateSpeech, transcribeAudio, analyzeMediaStyle, generateSong } from '../services/geminiService';
 import { AudioTimeline } from './AudioTimeline';
 import { AudioSidebar } from './AudioSidebar';
 import type { AudioTab } from './AudioSidebar';
 import { AudioBeatMaker } from './AudioBeatMaker';
 import { bufferToWav } from '../utils/audioHelpers';
 import { useDebounce } from '../hooks/useDebounce';
+
+// Helper to ensure audio is saved persistently (Data URI) vs temporary (Blob URL)
+const blobToDataUri = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
 export const AudioStudio: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AudioTab>('mixer');
@@ -21,20 +31,36 @@ export const AudioStudio: React.FC = () => {
     return saved ? JSON.parse(saved) : MOCK_VOICES;
   });
 
+  // Library of reusable assets (separate from active timeline tracks)
+  const [audioAssets, setAudioAssets] = useState<any[]>(() => {
+      const saved = localStorage.getItem('omni_audio_assets');
+      return saved ? JSON.parse(saved) : [];
+  });
+
   const [tracks, setTracks] = useState<AudioTrack[]>(() => {
     const saved = localStorage.getItem('omni_audio_tracks');
-    return saved ? JSON.parse(saved) : [
+    // Filter out potential old dead blob URLs on load
+    const parsed = saved ? JSON.parse(saved) : [
       { id: 't1', name: 'Intro Music - Lofi Chill', type: 'music', duration: 30, startOffset: 0, volume: 0.8, muted: false, solo: false },
     ];
+    return parsed.map((t: AudioTrack) => ({
+        ...t,
+        audioUrl: t.audioUrl && t.audioUrl.startsWith('blob:') ? undefined : t.audioUrl
+    }));
   });
   
   const [isPlaying, setIsPlaying] = useState(false);
+  // Previewing asset state
+  const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
 
   const [ttsInput, setTtsInput] = useState('');
   const [selectedVoice, setSelectedVoice] = useState(voices[0].id);
   const [isGenerating, setIsGenerating] = useState(false);
   const [styleReference, setStyleReference] = useState<string | undefined>(undefined);
+  const [youtubeLink, setYoutubeLink] = useState(''); 
   
   const [transcription, setTranscription] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -52,7 +78,11 @@ export const AudioStudio: React.FC = () => {
   const debouncedTracks = useDebounce(tracks, 2000);
 
   useEffect(() => {
-    const tracksToSave = debouncedTracks.map(t => ({ ...t, audioUrl: t.audioUrl?.startsWith('data:') ? t.audioUrl : undefined })); 
+    // Only save Data URIs to avoid Blob URL revocation issues
+    const tracksToSave = debouncedTracks.map(t => ({ 
+        ...t, 
+        audioUrl: t.audioUrl && t.audioUrl.startsWith('data:') ? t.audioUrl : undefined 
+    })); 
     localStorage.setItem('omni_audio_tracks', JSON.stringify(tracksToSave));
     window.dispatchEvent(new Event('omniAssetsUpdated'));
   }, [debouncedTracks]);
@@ -60,6 +90,12 @@ export const AudioStudio: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('omni_voices', JSON.stringify(voices));
   }, [voices]);
+
+  useEffect(() => {
+      // Filter out non-persistent URLs before saving assets
+      const assetsToSave = audioAssets.filter(a => a.audioUrl && a.audioUrl.startsWith('data:'));
+      localStorage.setItem('omni_audio_assets', JSON.stringify(assetsToSave));
+  }, [audioAssets]);
 
   useEffect(() => {
      if (isRecording) {
@@ -88,7 +124,7 @@ export const AudioStudio: React.FC = () => {
       Object.values(audioRefs.current).forEach(audio => {
           const audioEl = audio as HTMLAudioElement;
           if (isPlaying) {
-              audioEl.play().catch(e => console.log("Play error:", e));
+              audioEl.play().catch(e => console.log("Play error (expected if empty):", e));
           } else {
               audioEl.pause();
           }
@@ -113,16 +149,70 @@ export const AudioStudio: React.FC = () => {
   const handleGenerateTTS = async () => {
     if (!ttsInput) return;
     setIsGenerating(true);
-    const voice = voices.find(v => v.id === selectedVoice);
-    const audioDataUri = await generateSpeech(ttsInput, voice || voices[0], styleReference);
-    if (audioDataUri) {
-      const newTrack: AudioTrack = {
-        id: `t${Date.now()}`, name: `TTS: ${ttsInput.substring(0, 15)}...`, type: 'voiceover', duration: 10, startOffset: 0, audioUrl: audioDataUri, volume: 1.0, muted: false, solo: false
-      };
-      setTracks(prev => [...prev, newTrack]);
-      setTtsInput('');
+    try {
+        const voice = voices.find(v => v.id === selectedVoice);
+        const audioDataUri = await generateSpeech(ttsInput, voice || voices[0], styleReference);
+        if (audioDataUri) {
+          const name = `TTS: ${ttsInput.substring(0, 15)}...`;
+          
+          const newAsset = {
+              id: `asset-${Date.now()}`,
+              name,
+              type: 'voiceover',
+              duration: 10,
+              audioUrl: audioDataUri
+          };
+          setAudioAssets(prev => [newAsset, ...prev]);
+
+          const newTrack: AudioTrack = {
+            id: `t${Date.now()}`, name, type: 'voiceover', duration: 10, startOffset: 0, audioUrl: audioDataUri, volume: 1.0, muted: false, solo: false
+          };
+          setTracks(prev => [...prev, newTrack]);
+          setTtsInput('');
+        }
+    } catch (e) {
+        console.error("TTS Error:", e);
+        alert("Failed to generate speech. Please check your connection.");
     }
     setIsGenerating(false);
+  };
+
+  const handleGenerateSong = async () => {
+      if (!ttsInput) return; // Uses ttsInput for lyrics
+      setIsGenerating(true);
+      try {
+          const audioDataUri = await generateSong(ttsInput, styleReference, selectedVoice, youtubeLink);
+          if (audioDataUri) {
+              const name = `AI Song: ${ttsInput.substring(0, 10)}...`;
+              
+              const newAsset = {
+                  id: `asset-${Date.now()}`,
+                  name,
+                  type: 'music',
+                  duration: 30,
+                  audioUrl: audioDataUri
+              };
+              setAudioAssets(prev => [newAsset, ...prev]);
+
+              const newTrack: AudioTrack = {
+                  id: `song-${Date.now()}`,
+                  name,
+                  type: 'music',
+                  duration: 30,
+                  startOffset: 0,
+                  audioUrl: audioDataUri,
+                  volume: 1.0,
+                  muted: false,
+                  solo: false
+              };
+              setTracks(prev => [...prev, newTrack]);
+              setActiveTab('mixer');
+          }
+      } catch (e) {
+          console.error("Song Gen Error:", e);
+          alert("Failed to generate song. Please check your connection.");
+      }
+      setIsGenerating(false);
   };
   
   const handleUploadStyleRef = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,6 +228,19 @@ export const AudioStudio: React.FC = () => {
       reader.readAsDataURL(file);
   };
 
+  const handleCloneFromFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+          // Convert to persistent Data URI immediately
+          const base64Url = await blobToDataUri(file);
+          handleFinishClone(base64Url, file.name.split('.')[0]);
+      } catch (e) {
+          console.error("File Read Error:", e);
+          alert("Failed to process file.");
+      }
+  };
+
   const startRecording = async () => {
     if (!navigator.mediaDevices) { alert("Microphone access not supported."); return; }
     try {
@@ -146,9 +249,11 @@ export const AudioStudio: React.FC = () => {
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
+        // Convert to Data URI for persistence
+        const url = await blobToDataUri(blob);
+        
         if (activeTab === 'cloning') handleFinishClone(url);
         else {
             const newTrack: AudioTrack = { id: `rec-${Date.now()}`, name: 'Microphone Recording', type: 'voiceover', duration: recordingTime || 5, startOffset: 0, audioUrl: url, volume: 1.0, muted: false, solo: false };
@@ -163,12 +268,24 @@ export const AudioStudio: React.FC = () => {
 
   const stopRecording = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
 
-  const handleFinishClone = (audioUrl: string) => {
-      const name = prompt("Recording complete! Enter a name for this voice clone:");
+  const handleFinishClone = (audioUrl: string, defaultName?: string) => {
+      const name = prompt("Enter a name for this voice clone:", defaultName || "New Voice");
       if (name) {
+          // 1. Add to Voices
           const newVoice: Voice = { id: `v-clone-${Date.now()}`, name: `${name} (Cloned)`, gender: 'robot', style: 'narrative', isCloned: true };
           setVoices(prev => [...prev, newVoice]);
-          alert(`Voice "${name}" cloned successfully!`);
+          
+          // 2. Add to Assets Library
+          const newAsset = {
+              id: `asset-clone-${Date.now()}`,
+              name: `Sample: ${name}`,
+              type: 'voiceover',
+              duration: recordingTime || 5,
+              audioUrl: audioUrl
+          };
+          setAudioAssets(prev => [newAsset, ...prev]);
+
+          alert(`Voice "${name}" cloned and added to Assets!`);
       }
   };
 
@@ -189,7 +306,10 @@ export const AudioStudio: React.FC = () => {
       if (!track.audioUrl) return;
       setIsTranscribing(true);
       try {
+          // Try to fetch to verify it's valid first
           const response = await fetch(track.audioUrl);
+          if (!response.ok) throw new Error("Failed to load audio");
+          
           const blob = await response.blob();
           const reader = new FileReader();
           reader.onloadend = async () => {
@@ -200,7 +320,8 @@ export const AudioStudio: React.FC = () => {
           };
           reader.readAsDataURL(blob);
       } catch (error) {
-          console.error(error);
+          console.error("Transcription Failed:", error);
+          alert("Could not load audio for transcription. The source file may be missing or corrupted.");
           setIsTranscribing(false);
       }
   };
@@ -220,7 +341,6 @@ export const AudioStudio: React.FC = () => {
           
           let outputNode: AudioNode = offlineCtx.destination;
           
-          // Mastering Chain
           if (mastering.enabled) {
              const compressor = offlineCtx.createDynamicsCompressor();
              compressor.threshold.value = -20 - (mastering.punch / 10);
@@ -232,7 +352,14 @@ export const AudioStudio: React.FC = () => {
           for (const track of tracks) {
               if (track.audioUrl && !track.muted) { 
                   try {
+                      // Robust fetch with checks
+                      if (track.audioUrl.startsWith('blob:')) {
+                          console.warn(`Skipping dead blob URL for ${track.name}`);
+                          continue;
+                      }
                       const response = await fetch(track.audioUrl);
+                      if (!response.ok) throw new Error(`Fetch failed for ${track.id}`);
+                      
                       const arrayBuffer = await response.arrayBuffer();
                       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
                       
@@ -247,7 +374,7 @@ export const AudioStudio: React.FC = () => {
                       
                       source.start(track.startOffset);
                   } catch (e) {
-                      console.error("Failed to process track", track.id, e);
+                      console.warn(`Skipping invalid track ${track.name}`, e);
                   }
               }
           }
@@ -264,7 +391,7 @@ export const AudioStudio: React.FC = () => {
           setIsExporting(false);
       } catch (error) { 
           console.error(error); 
-          alert("Export failed. Check console for details.");
+          alert("Export failed. Please ensure all audio sources are valid.");
           setIsExporting(false); 
       }
   };
@@ -276,8 +403,51 @@ export const AudioStudio: React.FC = () => {
   };
 
   const handleAddTrack = (asset: any) => {
-      const newTrack: AudioTrack = { id: `asset-${Date.now()}`, name: asset.name, type: 'sfx', duration: 5, startOffset: 0, audioUrl: asset.url, volume: 1.0 };
+      const newTrack: AudioTrack = { 
+          id: `t-${Date.now()}`, 
+          name: asset.name, 
+          type: asset.type || 'sfx', 
+          duration: asset.duration || 5, 
+          startOffset: 0, 
+          audioUrl: asset.audioUrl, 
+          volume: 1.0, 
+          muted: false, 
+          solo: false 
+      };
       setTracks(prev => [...prev, newTrack]);
+  };
+
+  const handlePlayAsset = (e: React.MouseEvent, assetId: string, url: string) => {
+      e.stopPropagation();
+      
+      if (previewAssetId === assetId) {
+          previewAudioRef.current?.pause();
+          setPreviewAssetId(null);
+          return;
+      }
+
+      if (previewAudioRef.current) {
+          previewAudioRef.current.pause();
+      }
+
+      try {
+          const audio = new Audio(url);
+          audio.onended = () => setPreviewAssetId(null);
+          audio.onerror = () => {
+              alert("Could not play asset. File may be corrupted or missing.");
+              setPreviewAssetId(null);
+          };
+          audio.play();
+          previewAudioRef.current = audio;
+          setPreviewAssetId(assetId);
+      } catch(e) {
+          console.error("Playback error:", e);
+      }
+  };
+
+  const handleDeleteAsset = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      setAudioAssets(prev => prev.filter(a => a.id !== id));
   };
 
   return (
@@ -300,6 +470,10 @@ export const AudioStudio: React.FC = () => {
         ttsInput={ttsInput} setTtsInput={setTtsInput} styleReference={styleReference} setStyleReference={setStyleReference}
         isGenerating={isGenerating} onGenerateTTS={handleGenerateTTS} onSmartMix={handleSmartMix} mastering={mastering} setMastering={setMastering}
         onUploadStyleRef={handleUploadStyleRef} isRecording={isRecording} startRecording={startRecording} stopRecording={stopRecording} recordingTime={recordingTime} formatTime={formatTime}
+        onCloneFromFile={handleCloneFromFile}
+        onGenerateSong={handleGenerateSong}
+        youtubeLink={youtubeLink}
+        setYoutubeLink={setYoutubeLink}
       />
 
       {activeTab === 'sequencer' ? (
@@ -316,16 +490,32 @@ export const AudioStudio: React.FC = () => {
 
       {showAssets && activeTab !== 'sequencer' && (
           <div className="w-64 bg-gray-900 border-l border-gray-800 p-4 hidden md:flex flex-col transition-all">
-              <div className="flex justify-between items-center mb-4"><h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Assets</h3><button onClick={() => setShowAssets(false)} className="text-gray-500 hover:text-white"><X size={14}/></button></div>
+              <div className="flex justify-between items-center mb-4"><h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Asset Library</h3><button onClick={() => setShowAssets(false)} className="text-gray-500 hover:text-white"><X size={14}/></button></div>
               <div className="flex-1 overflow-y-auto space-y-2">
-                  <div className="text-xs text-gray-600 mb-2">Drag to Timeline</div>
-                  {tracks.filter(t => t.audioUrl).map((t, i) => (
-                      <div key={i} className="bg-gray-800 p-2 rounded border border-gray-700 cursor-grab active:cursor-grabbing hover:border-primary-500" onClick={() => handleAddTrack(t)}>
-                          <div className="text-xs font-medium text-gray-300 truncate">{t.name}</div>
-                          <div className="text-[10px] text-gray-500">{formatTime(t.duration)}</div>
+                  <div className="text-xs text-gray-600 mb-2">Click to Add • Play to Preview</div>
+                  {audioAssets.map((asset, i) => (
+                      <div key={asset.id} className="bg-gray-800 p-2 rounded border border-gray-700 cursor-grab active:cursor-grabbing hover:border-primary-500 flex items-center justify-between group" onClick={() => handleAddTrack(asset)}>
+                          <div className="min-w-0 flex-1">
+                              <div className="text-xs font-medium text-gray-300 truncate">{asset.name}</div>
+                              <div className="text-[10px] text-gray-500">{formatTime(asset.duration)}</div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                              <button 
+                                  onClick={(e) => handlePlayAsset(e, asset.id, asset.audioUrl)}
+                                  className={`p-1.5 rounded-full hover:bg-gray-700 transition-colors ${previewAssetId === asset.id ? 'text-green-400' : 'text-gray-400'}`}
+                              >
+                                  {previewAssetId === asset.id ? <Pause size={12} fill="currentColor"/> : <Play size={12} fill="currentColor"/>}
+                              </button>
+                              <button
+                                  onClick={(e) => handleDeleteAsset(e, asset.id)}
+                                  className="p-1.5 rounded-full hover:bg-red-900/30 text-gray-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                              >
+                                  <Trash2 size={12} />
+                              </button>
+                          </div>
                       </div>
                   ))}
-                  {tracks.length === 0 && <div className="text-xs text-gray-600 italic">No assets available.</div>}
+                  {audioAssets.length === 0 && <div className="text-xs text-gray-600 italic text-center py-4">Library empty.<br/>Create or record audio to save assets.</div>}
               </div>
           </div>
       )}
