@@ -1,45 +1,91 @@
 
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, Wand2, Plus, Download, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, Wand2, Plus, Download, X, Loader2, Music } from 'lucide-react';
 import { Button } from './Button';
-import { generateSpeech } from '../services/geminiService';
-import { AudioTrack, Voice } from '../types';
+import { generateSoundEffect } from '../services/geminiService';
+import { AudioTrack } from '../types';
 
 interface AudioBeatMakerProps {
   onAddTrack: (track: AudioTrack) => void;
+  genre?: string;
 }
 
 const DRUM_ROWS = ['Kick', 'Snare', 'HiHat', 'Clap', 'Bass'];
 
-export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) => {
-  const [bpm, setBpm] = useState(120);
+export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genre = 'Trap Soul' }) => {
+  const [bpm, setBpm] = useState(140);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [grid, setGrid] = useState<boolean[][]>(DRUM_ROWS.map(() => Array(16).fill(false)));
   const [isGenerating, setIsGenerating] = useState(false);
+  const [buffers, setBuffers] = useState<Record<string, AudioBuffer | null>>({});
+  
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const nextNoteTimeRef = useRef(0);
+  const timerIDRef = useRef<number | null>(null);
+  const stepRef = useRef(0);
 
+  // Initialize AudioContext
   useEffect(() => {
-    if (!isPlaying) {
-      setCurrentStep(0);
-      return;
-    }
-    const interval = setInterval(() => {
-      setCurrentStep(s => (s + 1) % 16);
-    }, (60 / bpm) * 1000 / 4); // 16th notes
-    return () => clearInterval(interval);
-  }, [isPlaying, bpm]);
-
-  // Keyboard Shortcut
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        e.preventDefault();
-        setIsPlaying(p => !p);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      audioContextRef.current = new AudioCtx();
+      return () => {
+          audioContextRef.current?.close();
+      };
   }, []);
+
+  // Scheduler Logic
+  const scheduleNote = (stepNumber: number, time: number) => {
+      // For visual sync
+      setTimeout(() => {
+          setCurrentStep(stepNumber);
+      }, (time - (audioContextRef.current?.currentTime || 0)) * 1000);
+
+      // Trigger Sounds
+      DRUM_ROWS.forEach((row, rowIndex) => {
+          if (grid[rowIndex][stepNumber] && buffers[row] && audioContextRef.current) {
+              const source = audioContextRef.current.createBufferSource();
+              source.buffer = buffers[row];
+              source.connect(audioContextRef.current.destination);
+              source.start(time);
+          }
+      });
+  };
+
+  const scheduler = () => {
+      if (!audioContextRef.current) return;
+      const lookahead = 25.0; // ms
+      const scheduleAheadTime = 0.1; // s
+
+      while (nextNoteTimeRef.current < audioContextRef.current.currentTime + scheduleAheadTime) {
+          scheduleNote(stepRef.current, nextNoteTimeRef.current);
+          
+          // Advance time
+          const secondsPerBeat = 60.0 / bpm;
+          const secondsPer16th = secondsPerBeat / 4;
+          nextNoteTimeRef.current += secondsPer16th;
+          
+          stepRef.current = (stepRef.current + 1) % 16;
+      }
+      timerIDRef.current = window.setTimeout(scheduler, lookahead);
+  };
+
+  useEffect(() => {
+      if (isPlaying) {
+          if (audioContextRef.current?.state === 'suspended') {
+              audioContextRef.current.resume();
+          }
+          stepRef.current = 0;
+          nextNoteTimeRef.current = audioContextRef.current?.currentTime || 0;
+          scheduler();
+      } else {
+          if (timerIDRef.current) window.clearTimeout(timerIDRef.current);
+          setCurrentStep(0);
+      }
+      return () => {
+          if (timerIDRef.current) window.clearTimeout(timerIDRef.current);
+      };
+  }, [isPlaying, bpm]);
 
   const toggleStep = (row: number, col: number) => {
     const newGrid = [...grid];
@@ -49,43 +95,72 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) =>
 
   const handleGeneratePattern = () => {
       const newGrid = grid.map(() => Array(16).fill(false));
-      // Simple generative logic simulation
+      // Genre-specific simple generative logic
       for (let i = 0; i < 16; i++) {
-          if (i % 4 === 0) newGrid[0][i] = true; // Kick on beats
-          if (i % 8 === 4) newGrid[1][i] = true; // Snare on backbeat
-          if (i % 2 === 0) newGrid[2][i] = true; // HiHats 8ths
-          if (Math.random() > 0.8) newGrid[3][i] = true; // Random claps
-          if (i % 8 === 0 || Math.random() > 0.9) newGrid[4][i] = true; // Bass
+          // Kick
+          if (i === 0 || i === 10) newGrid[0][i] = true; 
+          
+          // Snare (Trap style: on 3rd beat usually, index 8)
+          if (i === 8) newGrid[1][i] = true;
+          
+          // HiHats (Trap rolls: usually fast)
+          if (i % 2 === 0) newGrid[2][i] = true;
+          if (i >= 12 && i <= 15) newGrid[2][i] = true; // Roll at end
+          
+          // Clap
+          if (i === 8 || i === 15) newGrid[3][i] = true; 
+          
+          // Bass
+          if (i === 0 || i === 3 || i === 11) newGrid[4][i] = true;
       }
       setGrid(newGrid);
   };
 
-  const handleExportLoop = async () => {
+  const decodeBase64Audio = async (base64: string): Promise<AudioBuffer> => {
+      const binaryString = atob(base64.split(',')[1]);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+      }
+      return await audioContextRef.current!.decodeAudioData(bytes.buffer);
+  };
+
+  const handleGenerateKit = async () => {
+      if (!audioContextRef.current) return;
       setIsGenerating(true);
-      // Simulate "rendering" the beat by using TTS to beatbox
-      // In a real app, we'd stitch AudioBuffers. Here we ask Gemini to "Beatbox this pattern".
-      const patternDesc = grid.map((row, i) => `${DRUM_ROWS[i]}: ${row.map(x => x ? 'X' : '.').join('')}`).join('\n');
-      const prompt = `Generate a beatbox loop based on this pattern:\n${patternDesc}\nMake it sound like a drum machine at ${bpm} BPM.`;
-      
-      // Mock voice for beatboxing
-      const beatboxVoice: Voice = { id: 'v-bb', name: 'Beatboxer', gender: 'robot', style: 'energetic', isCloned: false };
-      
-      const audioUrl = await generateSpeech(prompt, beatboxVoice);
-      
-      if (audioUrl) {
-          const newTrack: AudioTrack = {
-              id: `loop-${Date.now()}`,
-              name: `Drum Loop ${bpm}BPM`,
-              type: 'music',
-              duration: (60 / bpm) * 4 * 2, // 2 bars
-              startOffset: 0,
-              audioUrl,
-              volume: 0.8
-          };
-          onAddTrack(newTrack);
-          alert("Loop added to timeline!");
+      const newBuffers: Record<string, AudioBuffer | null> = {};
+
+      try {
+          for (const row of DRUM_ROWS) {
+              const prompt = `One-shot authentic ${genre} ${row} drum sample. Clean, punchy, high quality.`;
+              const audioUrl = await generateSoundEffect(prompt); // Using SFX generation
+              if (audioUrl) {
+                  newBuffers[row] = await decodeBase64Audio(audioUrl);
+              }
+          }
+          setBuffers(newBuffers);
+          alert(`Generated Authentic ${genre} Kit!`);
+      } catch (e) {
+          console.error(e);
+          alert("Failed to generate kit");
       }
       setIsGenerating(false);
+  };
+
+  const handleExportLoop = async () => {
+      // For now, simple export simulation or adding a text representation track
+      const track: AudioTrack = {
+          id: `loop-${Date.now()}`,
+          name: `${genre} Loop ${bpm}BPM`,
+          type: 'music',
+          duration: (60 / bpm) * 4 * 2,
+          startOffset: 0,
+          audioUrl: '', // In a real app we'd render the offline context
+          volume: 0.8
+      };
+      onAddTrack(track);
+      alert("Loop structure exported to timeline. (Rendering not fully implemented)");
   };
 
   return (
@@ -93,7 +168,7 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) =>
        <div className="flex justify-between items-center mb-6">
            <div>
                <h2 className="text-xl font-bold text-white flex items-center gap-2">AI Beat Sequencer</h2>
-               <p className="text-xs text-gray-500">Generative rhythmic patterns</p>
+               <p className="text-xs text-gray-500">Genre: <span className="text-primary-400 font-bold">{genre}</span></p>
            </div>
            <div className="flex gap-4 items-center bg-gray-800 p-1 rounded-lg">
                <button onClick={() => setIsPlaying(!isPlaying)} className="p-2 rounded bg-primary-600 text-white hover:bg-primary-500 transition-colors">
@@ -114,7 +189,7 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) =>
        <div className="bg-black rounded-xl border border-gray-800 p-4 mb-6 overflow-x-auto">
            <div className="min-w-[600px]">
                {/* Header Steps */}
-               <div className="flex mb-2 ml-20">
+               <div className="flex mb-2 ml-24">
                    {[...Array(16)].map((_, i) => (
                        <div key={i} className={`flex-1 text-center text-[10px] font-mono ${i === currentStep ? 'text-primary-400 font-bold' : 'text-gray-600'}`}>
                            {i + 1}
@@ -125,8 +200,9 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) =>
                {/* Rows */}
                {DRUM_ROWS.map((row, rIdx) => (
                    <div key={row} className="flex items-center mb-2">
-                       <div className="w-20 text-xs font-bold text-gray-400 flex items-center gap-1">
+                       <div className="w-24 text-xs font-bold text-gray-400 flex items-center justify-between pr-3">
                            {row}
+                           {buffers[row] && <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm shadow-green-500/50"></div>}
                        </div>
                        <div className="flex-1 flex gap-1">
                            {grid[rIdx].map((active, cIdx) => (
@@ -147,11 +223,15 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) =>
        </div>
 
        <div className="flex gap-4 justify-end">
-           <Button variant="secondary" onClick={handleGeneratePattern}>
-               <Wand2 size={16} className="mr-2"/> AI Generate Pattern
+           <Button variant="secondary" onClick={handleGenerateKit} disabled={isGenerating}>
+               {isGenerating ? <Loader2 size={16} className="animate-spin mr-2"/> : <Music size={16} className="mr-2"/>} 
+               Generate Authentic Kit
            </Button>
-           <Button onClick={handleExportLoop} disabled={isGenerating}>
-               {isGenerating ? 'Synthesizing...' : 'Add Loop to Timeline'} <Plus size={16} className="ml-2"/>
+           <Button variant="secondary" onClick={handleGeneratePattern}>
+               <Wand2 size={16} className="mr-2"/> AI Pattern
+           </Button>
+           <Button onClick={handleExportLoop}>
+               <Plus size={16} className="ml-2"/> Add to Timeline
            </Button>
        </div>
     </div>

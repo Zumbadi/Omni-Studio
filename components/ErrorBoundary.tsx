@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -7,11 +7,11 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
+  error: any | null;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public override state: ErrorBoundaryState = {
+  public state: ErrorBoundaryState = {
     hasError: false,
     error: null
   };
@@ -20,7 +20,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
   }
 
@@ -38,6 +38,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
+      const errorMessage = this.state.error instanceof Error 
+        ? this.state.error.message 
+        : typeof this.state.error === 'object' 
+            ? JSON.stringify(this.state.error) 
+            : String(this.state.error);
+
       return (
         <div className="h-screen w-screen bg-gray-950 flex flex-col items-center justify-center text-white p-6 relative overflow-hidden">
           {/* Background Noise */}
@@ -53,8 +59,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
              <p className="text-gray-400 text-sm mb-6 leading-relaxed">
                 The neural interface encountered a critical error.
                 <br/>
-                <span className="font-mono text-red-300 text-xs mt-4 block bg-black/40 p-3 rounded border border-red-900/50 text-left overflow-x-auto whitespace-pre-wrap shadow-inner">
-                    {this.state.error?.message || "Unknown Error"}
+                <span className="font-mono text-red-300 text-xs mt-4 block bg-black/40 p-3 rounded border border-red-900/50 text-left overflow-x-auto whitespace-pre-wrap shadow-inner max-h-32">
+                    {errorMessage || "Unknown Error"}
                 </span>
              </p>
              

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Upload, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Lightbulb, Target } from 'lucide-react';
+import { Upload, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Lightbulb, Target, Clapperboard, FileText, ShoppingBag, List } from 'lucide-react';
 import { Button } from './Button';
 import { analyzeMediaStyle, generateSocialContent } from '../services/geminiService';
 import { SocialPost, Scene } from '../types';
@@ -10,12 +10,20 @@ interface MediaIdeaGeneratorProps {
   brandId: string;
 }
 
+const CONTENT_TYPES = [
+  { id: 'viral', label: 'Viral Sensation', icon: Sparkles, desc: 'High engagement hooks & trends' },
+  { id: 'script', label: 'Script Outline', icon: FileText, desc: 'Scene breakdown & dialogue' },
+  { id: 'director', label: 'Director\'s Notes', icon: Clapperboard, desc: 'Camera angles & lighting' },
+  { id: 'showcase', label: 'Product Showcase', icon: ShoppingBag, desc: 'Feature focused highlights' }
+];
+
 export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreatePost, brandId }) => {
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [generatedIdeas, setGeneratedIdeas] = useState<any[]>([]);
   const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
+  const [selectedContentType, setSelectedContentType] = useState('viral');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,9 +47,12 @@ export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreate
     setIsGeneratingIdeas(true);
     setGeneratedIdeas([]);
 
+    const typeLabel = CONTENT_TYPES.find(t => t.id === selectedContentType)?.label || 'Social Media Content';
+
     const prompt = `
       Based on the visual analysis: "${analysis}"
-      Generate 3 distinct social media content ideas for Brand ID: "${brandId}".
+      Generate 3 distinct ${typeLabel} ideas for Brand ID: "${brandId}".
+      Focus on the specific characteristics of a ${typeLabel}.
       Format ONLY as a JSON array of objects with keys: title, platform, hook, visual_desc.
       Example: [{"title": "Viral Challenge", "platform": "tiktok", "hook": "You won't believe this...", "visual_desc": "Fast paced cuts..."}]
     `;
@@ -123,6 +134,26 @@ export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreate
                     </div>
                 )}
 
+                {/* Content Type Selector */}
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-3">Content Strategy</label>
+                    <div className="grid grid-cols-2 gap-3">
+                        {CONTENT_TYPES.map(type => (
+                            <button
+                                key={type.id}
+                                onClick={() => setSelectedContentType(type.id)}
+                                className={`p-3 rounded-lg border text-left transition-all ${selectedContentType === type.id ? 'bg-primary-900/30 border-primary-500 ring-1 ring-primary-500/50' : 'bg-gray-800 border-gray-700 hover:bg-gray-750'}`}
+                            >
+                                <div className={`flex items-center gap-2 mb-1 ${selectedContentType === type.id ? 'text-primary-400' : 'text-gray-300'}`}>
+                                    <type.icon size={16} />
+                                    <span className="text-xs font-bold">{type.label}</span>
+                                </div>
+                                <div className="text-[10px] text-gray-500 leading-tight">{type.desc}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 <Button 
                     size="lg" 
                     className="w-full" 
@@ -143,7 +174,7 @@ export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreate
                 {generatedIdeas.length === 0 && !isGeneratingIdeas && (
                     <div className="h-full border border-gray-800 rounded-xl bg-gray-900/50 flex flex-col items-center justify-center text-gray-600 p-8 text-center min-h-[300px]">
                         <ImageIcon size={48} className="mb-4 opacity-20"/>
-                        <p>Upload an image to get started.</p>
+                        <p>Upload an image and select a strategy to start.</p>
                     </div>
                 )}
 
@@ -155,7 +186,7 @@ export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreate
                                 <span className="text-[10px] bg-gray-800 px-2 py-1 rounded text-gray-400 uppercase">{idea.platform}</span>
                             </div>
                             <p className="text-sm text-purple-300 mb-2 font-medium">Hook: "{idea.hook}"</p>
-                            <p className="text-xs text-gray-400 mb-4">{idea.visual_desc}</p>
+                            <p className="text-xs text-gray-400 mb-4 whitespace-pre-wrap">{idea.visual_desc}</p>
                             <Button size="sm" variant="secondary" className="w-full group-hover:bg-purple-600 group-hover:text-white transition-colors" onClick={() => convertToPost(idea)}>
                                 Create Campaign <ArrowRight size={14} className="ml-2"/>
                             </Button>

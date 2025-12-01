@@ -22,10 +22,11 @@ export const useFileSystem = (project: Project | null) => {
   useEffect(() => {
     if (!project) return;
     const storageKey = `omni_files_${project.id}`;
-    const savedFiles = localStorage.getItem(storageKey);
     const trashKey = `omni_trash_${project.id}`;
-    const savedTrash = localStorage.getItem(trashKey);
     const tabsKey = `omni_open_tabs_${project.id}`;
+    
+    const savedFiles = localStorage.getItem(storageKey);
+    const savedTrash = localStorage.getItem(trashKey);
     const savedTabs = localStorage.getItem(tabsKey);
     
     if (savedTabs) {
@@ -63,17 +64,30 @@ export const useFileSystem = (project: Project | null) => {
 
   useEffect(() => {
     if (!project) return;
-    localStorage.setItem(`omni_files_${project.id}`, JSON.stringify(debouncedFiles));
+    try {
+        localStorage.setItem(`omni_files_${project.id}`, JSON.stringify(debouncedFiles));
+    } catch (e) {
+        console.error("Failed to save project files to localStorage (Quota Exceeded)", e);
+        // Alert logic handled by component level error boundary or UI indicators ideally
+    }
   }, [debouncedFiles, project?.id]);
 
   useEffect(() => {
     if (!project) return;
-    localStorage.setItem(`omni_trash_${project.id}`, JSON.stringify(debouncedTrash));
+    try {
+        localStorage.setItem(`omni_trash_${project.id}`, JSON.stringify(debouncedTrash));
+    } catch (e) {
+        console.error("Failed to save trash", e);
+    }
   }, [debouncedTrash, project?.id]);
 
   useEffect(() => {
     if (!project) return;
-    localStorage.setItem(`omni_open_tabs_${project.id}`, JSON.stringify(debouncedTabs));
+    try {
+        localStorage.setItem(`omni_open_tabs_${project.id}`, JSON.stringify(debouncedTabs));
+    } catch (e) {
+        console.error("Failed to save open tabs", e);
+    }
   }, [debouncedTabs, project?.id]);
 
   const updateFileContent = useCallback((id: string, content: string) => {

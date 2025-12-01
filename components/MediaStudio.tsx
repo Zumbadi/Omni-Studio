@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Clapperboard, Plus, Upload, Image as ImageIcon, Wand2, X, Video, Loader2, Sparkles, Save, Calendar, LayoutGrid, FileText, Target, Scissors, Grid, Briefcase, Lightbulb } from 'lucide-react';
 import { Button } from './Button';
-import { MOCK_SOCIAL_POSTS } from '../constants';
-import { SocialPost, Scene, Character, ReferenceAsset, AudioTrack, ContentStrategy } from '../types';
-import { generateSocialContent, generateImage, generateVideo, analyzeMediaStyle, removeBackground, analyzeCharacterFeatures, editImage } from '../services/geminiService';
+import { MOCK_SOCIAL_POSTS, MOCK_VOICES } from '../constants';
+import { SocialPost, Scene, Character, ReferenceAsset, AudioTrack, ContentStrategy, Voice } from '../types';
+import { generateSocialContent, generateImage, generateVideo, analyzeMediaStyle, removeBackground, analyzeCharacterFeatures, editImage, generateSpeech, generateSoundEffect, generateSong } from '../services/geminiService';
 import { MediaKanban } from './MediaKanban';
 import { MediaCalendar } from './MediaCalendar';
 import { MediaStrategy } from './MediaStrategy';
@@ -14,16 +14,25 @@ import { MediaAssetsLibrary } from './MediaAssetsLibrary';
 import { MediaScriptEditor } from './MediaScriptEditor';
 import { MediaIdeaGenerator } from './MediaIdeaGenerator';
 import { useDebounce } from '../hooks/useDebounce';
+import JSZip from 'jszip';
 
 export const MediaStudio: React.FC = () => {
   const [posts, setPosts] = useState<SocialPost[]>(() => {
-    const saved = localStorage.getItem('omni_social_posts');
-    return saved ? JSON.parse(saved) : MOCK_SOCIAL_POSTS;
+    try {
+      const saved = localStorage.getItem('omni_social_posts');
+      return saved ? JSON.parse(saved) : MOCK_SOCIAL_POSTS;
+    } catch (e) {
+      return MOCK_SOCIAL_POSTS;
+    }
   });
   
   const [strategy, setStrategy] = useState<ContentStrategy>(() => {
-      const saved = localStorage.getItem('omni_media_strategy');
-      return saved ? JSON.parse(saved) : { targetAudience: '', primaryGoal: 'engagement', contentPillars: [], toneVoice: '', postingFrequency: 'daily' };
+      try {
+        const saved = localStorage.getItem('omni_media_strategy');
+        return saved ? JSON.parse(saved) : { targetAudience: '', primaryGoal: 'engagement', contentPillars: [], toneVoice: '', postingFrequency: 'daily' };
+      } catch (e) {
+        return { targetAudience: '', primaryGoal: 'engagement', contentPillars: [], toneVoice: '', postingFrequency: 'daily' };
+      }
   });
 
   const [activeView, setActiveView] = useState<'kanban' | 'calendar' | 'create' | 'detail' | 'strategy' | 'assets' | 'generator'>('kanban');
@@ -69,6 +78,14 @@ export const MediaStudio: React.FC = () => {
   
   // Audio Integration State
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
+  const [voices, setVoices] = useState<Voice[]>(() => {
+    try {
+        const saved = localStorage.getItem('omni_voices');
+        return saved ? JSON.parse(saved) : MOCK_VOICES;
+    } catch (e) {
+        return MOCK_VOICES;
+    }
+  });
   
   // Undo/Redo History State
   const [history, setHistory] = useState<SocialPost[]>([]);
@@ -95,42 +112,67 @@ export const MediaStudio: React.FC = () => {
             videoUrl: s.videoUrl?.startsWith('blob:') ? undefined : s.videoUrl
         }))
     }));
-    localStorage.setItem('omni_social_posts', JSON.stringify(postsToSave));
-    window.dispatchEvent(new Event('omniAssetsUpdated'));
+    try {
+        localStorage.setItem('omni_social_posts', JSON.stringify(postsToSave));
+        window.dispatchEvent(new Event('omniAssetsUpdated'));
+    } catch (e) {
+        console.error("Storage quota exceeded for social posts. Attempting to save metadata only.", e);
+        // Fallback: Strip heavy base64 assets
+        const lightPosts = postsToSave.map(p => ({
+            ...p,
+            thumbnail: p.thumbnail && p.thumbnail.length > 500 ? undefined : p.thumbnail,
+            scenes: p.scenes?.map(s => ({
+                ...s,
+                imageUrl: s.imageUrl && s.imageUrl.length > 500 ? undefined : s.imageUrl,
+                videoUrl: undefined
+            })),
+            characters: p.characters?.map(c => ({
+                ...c,
+                imageUrl: c.imageUrl && c.imageUrl.length > 500 ? '' : c.imageUrl
+            })),
+            styleReferences: p.styleReferences?.map(r => ({
+                ...r,
+                url: r.url && r.url.length > 500 ? '' : r.url
+            }))
+        }));
+        try {
+            localStorage.setItem('omni_social_posts', JSON.stringify(lightPosts));
+        } catch (retryError) {
+            console.error("Critical storage failure. Could not save posts.", retryError);
+        }
+    }
   }, [debouncedPosts]);
 
   useEffect(() => {
-      localStorage.setItem('omni_media_strategy', JSON.stringify(strategy));
+      try {
+          localStorage.setItem('omni_media_strategy', JSON.stringify(strategy));
+      } catch (e) {
+          console.error("Failed to save media strategy", e);
+      }
   }, [strategy]);
 
   useEffect(() => {
      const loadAudio = () => {
-        const saved = localStorage.getItem('omni_audio_tracks');
-        if (saved) setAudioTracks(JSON.parse(saved));
+        try {
+            const saved = localStorage.getItem('omni_audio_tracks');
+            if (saved) {
+                setAudioTracks(JSON.parse(saved));
+            }
+        } catch (e) { console.error("Failed to load audio tracks", e); }
      };
      loadAudio();
      window.addEventListener('omniAssetsUpdated', loadAudio);
      return () => window.removeEventListener('omniAssetsUpdated', loadAudio);
   }, []);
 
-  // Preview Playback Logic
-  useEffect(() => {
-    let interval: any;
-    if (isPreviewPlaying && selectedPost?.scenes) {
-        const totalDuration = selectedPost.scenes.reduce((acc, s) => acc + (s.duration || 5), 0);
-        interval = setInterval(() => {
-            setCurrentTime(prev => {
-                const next = prev + 0.1;
-                if (next >= totalDuration) {
-                    setIsPreviewPlaying(false);
-                    return 0;
-                }
-                return next;
-            });
-        }, 100);
-    }
-    return () => clearInterval(interval);
-  }, [isPreviewPlaying, selectedPost]);
+  const saveAudioTracks = (tracks: AudioTrack[]) => {
+      setAudioTracks(tracks);
+      try {
+          localStorage.setItem('omni_audio_tracks', JSON.stringify(tracks));
+      } catch (e) {
+          console.error("Failed to save audio tracks", e);
+      }
+  };
 
   // Initialize history
   useEffect(() => {
@@ -235,6 +277,14 @@ export const MediaStudio: React.FC = () => {
       pushHistory(updatedPost);
   };
 
+  const handleUpdatePost = (updates: Partial<SocialPost>) => {
+      if (!selectedPost) return;
+      const updatedPost = { ...selectedPost, ...updates };
+      setSelectedPost(updatedPost);
+      setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p));
+      pushHistory(updatedPost);
+  };
+
   const handleSyncScriptToScenes = (newScenes: Scene[]) => {
       if (!selectedPost) return;
       const updatedPost = { ...selectedPost, scenes: newScenes };
@@ -309,6 +359,71 @@ export const MediaStudio: React.FC = () => {
       else updateScene(sceneId, { status: 'pending' });
   };
 
+  // --- AUDIO GENERATION HANDLER ---
+  const handleGenerateAudio = async (sceneId: string, type: 'voice' | 'sfx' | 'music', prompt: string, voiceId?: string) => {
+      if (!selectedPost || !selectedPost.scenes) return;
+      
+      const sceneIndex = selectedPost.scenes.findIndex(s => s.id === sceneId);
+      if (sceneIndex === -1) return;
+      
+      // Calculate start time based on accumulated duration of previous scenes
+      let startTime = 0;
+      for (let i = 0; i < sceneIndex; i++) {
+          startTime += (selectedPost.scenes[i].duration || 5);
+      }
+      
+      const scene = selectedPost.scenes[sceneIndex];
+      let audioUrl = '';
+      
+      try {
+          if (type === 'voice') {
+              const selectedVoice = voices.find(v => v.id === voiceId) || voices[0];
+              audioUrl = await generateSpeech(prompt, selectedVoice);
+          } else if (type === 'sfx') {
+              audioUrl = await generateSoundEffect(prompt);
+          } else if (type === 'music') {
+              audioUrl = await generateSong(prompt, undefined, undefined, undefined, 'Cinematic'); // Default cinematic for score
+          }
+          
+          if (audioUrl) {
+              const tempAudio = new Audio(audioUrl);
+              // Wait for metadata to get duration, or default to scene duration
+              tempAudio.onloadedmetadata = () => {
+                  const duration = tempAudio.duration || scene.duration || 5;
+                  const newTrack: AudioTrack = {
+                      id: `track-${Date.now()}`,
+                      name: `${type.toUpperCase()}: ${prompt.substring(0, 15)}...`,
+                      type: type === 'music' ? 'music' : type === 'sfx' ? 'sfx' : 'voiceover',
+                      duration: duration,
+                      startOffset: startTime,
+                      audioUrl: audioUrl,
+                      volume: 1.0,
+                      muted: false
+                  };
+                  saveAudioTracks([...audioTracks, newTrack]);
+              };
+              // Trigger load
+              tempAudio.onerror = () => {
+                  // Fallback without duration check
+                  const newTrack: AudioTrack = {
+                      id: `track-${Date.now()}`,
+                      name: `${type.toUpperCase()}: ${prompt.substring(0, 15)}...`,
+                      type: type === 'music' ? 'music' : type === 'sfx' ? 'sfx' : 'voiceover',
+                      duration: scene.duration || 5,
+                      startOffset: startTime,
+                      audioUrl: audioUrl,
+                      volume: 1.0,
+                      muted: false
+                  };
+                  saveAudioTracks([...audioTracks, newTrack]);
+              };
+          }
+      } catch (e) {
+          console.error("Audio Generation Failed", e);
+          alert("Failed to generate audio.");
+      }
+  };
+
   const handleMagicEditSubmit = async () => {
       if (!editSceneId || !editPrompt || !selectedPost) return;
       const scene = selectedPost.scenes?.find(s => s.id === editSceneId);
@@ -380,10 +495,66 @@ export const MediaStudio: React.FC = () => {
       const updatedPost = { ...selectedPost, audioTrackId: trackId };
       setSelectedPost(updatedPost); setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p)); pushHistory(updatedPost);
   };
-  const handleRenderMovie = () => {
-     setIsRendering(true); setRenderProgress(0);
-     let p = 0;
-     const int = setInterval(() => { p += 2; setRenderProgress(p); if (p >= 100) { clearInterval(int); setIsRendering(false); alert("Render Complete! Downloading final cut..."); } }, 100);
+  
+  const handleRenderMovie = async () => {
+     if (!selectedPost) return;
+     setIsRendering(true);
+     setRenderProgress(10);
+     
+     try {
+         const zip = new JSZip();
+         const folder = zip.folder(selectedPost.title.replace(/\s+/g, '_') || 'project');
+         
+         // Manifest
+         folder?.file('project.json', JSON.stringify(selectedPost, null, 2));
+         
+         // Add script
+         if (selectedPost.script) {
+             folder?.file('script.txt', selectedPost.script);
+         }
+         
+         let processed = 0;
+         const total = (selectedPost.scenes?.length || 0);
+         
+         if (selectedPost.scenes) {
+             for (let i = 0; i < selectedPost.scenes.length; i++) {
+                 const scene = selectedPost.scenes[i];
+                 const fileName = `scene_${i + 1}_${scene.id.slice(0,6)}`;
+                 
+                 // Handle Images (Base64)
+                 if (scene.imageUrl?.startsWith('data:')) {
+                     const data = scene.imageUrl.split(',')[1];
+                     folder?.file(`${fileName}.png`, data, { base64: true });
+                 }
+                 
+                 // Handle Video URIs
+                 if (scene.videoUrl) {
+                      folder?.file(`${fileName}_video_link.txt`, scene.videoUrl);
+                 }
+                 
+                 processed++;
+                 setRenderProgress(10 + (processed / total) * 80);
+                 
+                 // Small delay to allow UI update
+                 await new Promise(r => setTimeout(r, 50));
+             }
+         }
+         
+         const blob = await zip.generateAsync({ type: 'blob' });
+         const url = URL.createObjectURL(blob);
+         const a = document.createElement('a');
+         a.href = url;
+         a.download = `${selectedPost.title || 'video-project'}.zip`;
+         a.click();
+         
+         setRenderProgress(100);
+         setTimeout(() => setIsRendering(false), 1000);
+         
+     } catch (e) {
+         console.error(e);
+         setIsRendering(false);
+         alert("Export failed");
+     }
   };
 
   const handleSplitScene = (index: number) => {
@@ -414,6 +585,22 @@ export const MediaStudio: React.FC = () => {
       scenes.splice(index, 1);
       const updatedPost = { ...selectedPost, scenes };
       setSelectedPost(updatedPost); setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p)); pushHistory(updatedPost);
+  };
+  
+  const handleAddScene = () => {
+      if (!selectedPost) return;
+      const newScene: Scene = {
+          id: `s-new-${Date.now()}`,
+          description: 'New Scene',
+          status: 'pending',
+          duration: 5,
+          transition: 'cut'
+      };
+      const updatedScenes = [...(selectedPost.scenes || []), newScene];
+      const updatedPost = { ...selectedPost, scenes: updatedScenes };
+      setSelectedPost(updatedPost);
+      setPosts(posts.map(p => p.id === selectedPost.id ? updatedPost : p));
+      pushHistory(updatedPost);
   };
   
   const handleReorderScenes = (fromIndex: number, toIndex: number) => {
@@ -563,6 +750,7 @@ export const MediaStudio: React.FC = () => {
                         onRenderMovie={handleRenderMovie}
                         onGenerateImage={handleGenerateImage}
                         onGenerateVideo={handleGenerateVideo}
+                        onGenerateAudio={handleGenerateAudio}
                         onSplitScene={handleSplitScene}
                         onDuplicateScene={handleDuplicateScene}
                         onDeleteScene={handleDeleteScene}
@@ -573,6 +761,8 @@ export const MediaStudio: React.FC = () => {
                         cycleTransition={cycleTransition}
                         historyIndex={historyIndex}
                         historyLength={history.length}
+                        onAddScene={handleAddScene}
+                        voices={voices}
                     />
                 ) : detailTab === 'pro' ? (
                     <MediaProTools 
@@ -582,6 +772,7 @@ export const MediaStudio: React.FC = () => {
                         isAnalyzingChar={isAnalyzingChar}
                         onUploadCharacter={handleUploadCharacter}
                         onUploadReference={handleUploadReference}
+                        onUpdatePost={handleUpdatePost}
                     />
                 ) : (
                     <MediaScriptEditor 

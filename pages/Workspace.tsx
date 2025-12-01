@@ -606,6 +606,27 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
           updateFileContent(activeFile.id, formatted);
           addToast('success', 'Document Formatted');
       }
+      if (cmd === 'toggle_theme') {
+          const html = document.documentElement;
+          const currentTheme = html.classList.contains('dark') ? 'dark' : 'light';
+          if (currentTheme === 'dark') {
+              html.classList.remove('dark');
+              localStorage.setItem('omni_theme', 'light');
+              addToast('info', 'Switched to Light Mode');
+          } else {
+              html.classList.add('dark');
+              localStorage.setItem('omni_theme', 'dark');
+              addToast('info', 'Switched to Dark Mode');
+          }
+      }
+      if (cmd === 'create_file') {
+          setNewItemModal({ isOpen: true, type: 'file' });
+          setShowCommandPalette(false);
+      }
+      if (cmd === 'create_folder') {
+          setNewItemModal({ isOpen: true, type: 'folder' });
+          setShowCommandPalette(false);
+      }
   };
 
   const handleDeleteWrapper = (id: string) => { if (onDeleteProject) onDeleteProject({ stopPropagation: () => {} } as React.MouseEvent, id); };
@@ -743,11 +764,17 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       
       {/* Modals */}
       {showConnectModal && <ConnectModal onClose={() => setShowConnectModal(false)} onConnectLocal={handleConnectLocal} onConnectGitHub={handleConnectGitHub} />}
-      <NewItemModal isOpen={newItemModal.isOpen} type={newItemModal.type} onClose={() => setNewItemModal({ ...newItemModal, isOpen: false })} onCreate={(name) => { newItemModal.type === 'file' ? addFile(name, '') : addDirectory(name); addToast('success', 'Created'); }} />
-      <RenameModal isOpen={renameModal.isOpen} currentName={renameModal.currentName} onClose={() => setRenameModal({ ...renameModal, isOpen: false })} onRename={(name) => { renameModal.fileId && renameFile(renameModal.fileId, name); addToast('success', 'Renamed'); }} />
+      <NewItemModal isOpen={newItemModal.isOpen} type={newItemModal.type} onClose={() => setNewItemModal({ ...newItemModal, isOpen: false })} onCreate={handleCreateItem} />
+      <RenameModal isOpen={renameModal.isOpen} currentName={renameModal.currentName} onClose={() => setRenameModal({ ...renameModal, isOpen: false })} onRename={handleRenameSubmit} />
       <InstallPackageModal isOpen={pkgModalOpen} onClose={() => setPkgModalOpen(false)} onInstall={(name, isDev) => { addPackage(name, isDev); addToast('success', `Installed ${name}`); }} />
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
-      <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} files={files} onOpenFile={onFileClickWrapper} onRunCommand={(cmd) => { if (cmd === 'export_project') handleExport(); else if(cmd === 'toggle_sidebar') toggleLayout('sidebar'); else if(cmd === 'format_document') handleRunCommand('format_document'); }} />
+      <CommandPalette 
+        isOpen={showCommandPalette} 
+        onClose={() => setShowCommandPalette(false)} 
+        files={files} 
+        onOpenFile={onFileClickWrapper} 
+        onRunCommand={handleRunCommand} 
+      />
       {showVoiceCommander && <VoiceCommander onClose={() => setShowVoiceCommander(false)} onProcess={submitQuery} />}
       
       {contextMenu.visible && (
@@ -844,6 +871,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     currentBranch={currentBranch}
                     onMergeBranch={handleMergeBranch}
                     onAiFix={handleRuntimeErrorFix}
+                    envVars={envVars}
                 />
             </div>
         )}

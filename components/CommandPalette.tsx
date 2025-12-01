@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Command, File, ChevronRight, Settings, Github, Moon, Sun, Monitor, Terminal, Download } from 'lucide-react';
+import { Search, Command, File, ChevronRight, Settings, Github, Moon, Sun, Monitor, Terminal, Download, FilePlus, FolderPlus } from 'lucide-react';
 import { FileNode } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
 
@@ -25,6 +25,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
       { id: 'cmd-3', label: 'Git Commit', icon: <Github size={14}/>, action: () => onRunCommand('git_commit') },
       { id: 'cmd-4', label: 'Settings', icon: <Settings size={14}/>, action: () => onRunCommand('open_settings') },
       { id: 'cmd-5', label: 'Download Project', icon: <Download size={14}/>, action: () => onRunCommand('export_project') },
+      { id: 'cmd-6', label: 'Toggle Theme', icon: <Sun size={14}/>, action: () => onRunCommand('toggle_theme') },
+      { id: 'cmd-7', label: 'New File', icon: <FilePlus size={14}/>, action: () => onRunCommand('create_file') },
+      { id: 'cmd-8', label: 'New Folder', icon: <FolderPlus size={14}/>, action: () => onRunCommand('create_folder') },
   ];
 
   const filteredFiles = allFiles.filter(f => f.node.name.toLowerCase().includes(input.toLowerCase())).slice(0, 5);

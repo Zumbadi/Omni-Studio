@@ -1,8 +1,9 @@
 
 import React, { useRef, useState } from 'react';
-import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid, Sparkles, Youtube } from 'lucide-react';
+import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid, Sparkles, Youtube, Edit2, Save, ArrowRight } from 'lucide-react';
 import { Button } from './Button';
 import { Voice } from '../types';
+import { generateLyrics } from '../services/geminiService';
 
 export type AudioTab = 'mixer' | 'cloning' | 'pro' | 'sequencer' | 'music';
 
@@ -31,16 +32,50 @@ interface AudioSidebarProps {
   onGenerateSong: () => void;
   youtubeLink?: string;
   setYoutubeLink?: (url: string) => void;
+  genre: string;
+  setGenre: (g: string) => void;
+  onUpdateVoice?: (id: string, updates: Partial<Voice>) => void;
 }
 
 export const AudioSidebar: React.FC<AudioSidebarProps> = ({
   activeTab, setActiveTab, voices, selectedVoice, setSelectedVoice,
   ttsInput, setTtsInput, styleReference, isGenerating, onGenerateTTS, onSmartMix,
   mastering, setMastering, onUploadStyleRef, isRecording, startRecording, stopRecording, recordingTime, formatTime,
-  onCloneFromFile, onGenerateSong, youtubeLink, setYoutubeLink
+  onCloneFromFile, onGenerateSong, youtubeLink, setYoutubeLink, genre, setGenre, onUpdateVoice
 }) => {
   const cloneInputRef = useRef<HTMLInputElement>(null);
   const musicRefInputRef = useRef<HTMLInputElement>(null);
+  const [editingVoiceId, setEditingVoiceId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSettings, setEditSettings] = useState({ stability: 0.5, similarity: 0.75 });
+  const [isGeneratingLyrics, setIsGeneratingLyrics] = useState(false);
+
+  const GENRES = ["Trap Soul", "Neo Soul", "R&B", "Lofi", "Hip Hop", "Jazz", "Gospel"];
+
+  const handleStartEdit = (voice: Voice) => {
+      setEditingVoiceId(voice.id);
+      setEditName(voice.name);
+      setEditSettings(voice.settings || { stability: 0.5, similarity: 0.75 });
+  };
+
+  const handleSaveVoice = () => {
+      if (editingVoiceId && onUpdateVoice) {
+          onUpdateVoice(editingVoiceId, { name: editName, settings: editSettings });
+          setEditingVoiceId(null);
+      }
+  };
+
+  const handleAiLyrics = async () => {
+      setIsGeneratingLyrics(true);
+      const isContinuation = !!ttsInput.trim();
+      const prompt = isContinuation ? ttsInput : `Generate lyrics for a ${genre} song`;
+      
+      const newLyrics = await generateLyrics(prompt, genre, isContinuation ? ttsInput : undefined);
+      
+      // Append if continuing, else set
+      setTtsInput(prev => isContinuation ? (prev.trim() + "\n" + newLyrics) : newLyrics);
+      setIsGeneratingLyrics(false);
+  };
 
   return (
       <div className="w-64 bg-gray-900 border-r border-gray-800 p-4 flex flex-col gap-4 z-10 shadow-xl h-full">
@@ -92,7 +127,17 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
                   <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Music size={14} className="text-pink-400"/> Song Generator</h3>
                   
-                  <label className="text-xs text-gray-500 mb-1 block">Lyrics</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Genre</label>
+                  <select value={genre} onChange={(e) => setGenre(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 mb-3">
+                      {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+
+                  <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs text-gray-500">Lyrics</label>
+                      <button onClick={handleAiLyrics} disabled={isGeneratingLyrics} className="text-[10px] text-primary-400 hover:text-white flex items-center gap-1">
+                          {isGeneratingLyrics ? <Loader2 size={10} className="animate-spin"/> : <Sparkles size={10}/>} {ttsInput ? 'Complete with AI' : 'Magic Write'}
+                      </button>
+                  </div>
                   <textarea 
                     className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-gray-300 focus:outline-none resize-none h-24 mb-3 focus:border-primary-500" 
                     placeholder="Verse 1:&#10;In the neon city lights..." 
@@ -140,7 +185,7 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
         )}
 
         {activeTab === 'cloning' && (
-          <div className="space-y-6">
+          <div className="space-y-6 flex-1 overflow-y-auto">
              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 flex flex-col items-center text-center shadow-sm">
                 <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mb-4 border-4 border-gray-700 relative overflow-hidden">
                     <Mic size={32} className={isRecording ? "text-red-500 relative z-10" : "text-gray-500 relative z-10"} />
@@ -158,9 +203,44 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">My Voices</h3>
                 <div className="space-y-2">
                     {voices.filter(v => v.isCloned).map(v => (
-                        <div key={v.id} className="bg-gray-800 p-3 rounded-lg flex items-center justify-between border border-gray-700">
-                            <div className="flex items-center gap-3"><div className="w-8 h-8 bg-purple-900/50 rounded-full flex items-center justify-center text-purple-400"><User size={14} /></div><div><div className="text-sm font-medium text-white">{v.name}</div><div className="text-[10px] text-gray-500 capitalize">{v.style}</div></div></div>
-                            <Check size={14} className="text-green-500" />
+                        <div key={v.id} className="bg-gray-800 p-3 rounded-lg border border-gray-700">
+                            {editingVoiceId === v.id ? (
+                                <div className="space-y-2 animate-in fade-in">
+                                    <input 
+                                        className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white" 
+                                        value={editName} 
+                                        onChange={(e) => setEditName(e.target.value)} 
+                                    />
+                                    <div className="text-[10px] text-gray-400">Stability: {editSettings.stability.toFixed(2)}</div>
+                                    <input 
+                                        type="range" 
+                                        min="0" max="1" step="0.05" 
+                                        value={editSettings.stability} 
+                                        onChange={(e) => setEditSettings({...editSettings, stability: parseFloat(e.target.value)})}
+                                        className="w-full h-1 bg-gray-600 rounded appearance-none cursor-pointer accent-primary-500"
+                                    />
+                                    <div className="text-[10px] text-gray-400">Similarity: {editSettings.similarity.toFixed(2)}</div>
+                                    <input 
+                                        type="range" 
+                                        min="0" max="1" step="0.05" 
+                                        value={editSettings.similarity} 
+                                        onChange={(e) => setEditSettings({...editSettings, similarity: parseFloat(e.target.value)})}
+                                        className="w-full h-1 bg-gray-600 rounded appearance-none cursor-pointer accent-primary-500"
+                                    />
+                                    <div className="flex gap-2 pt-1">
+                                        <Button size="sm" onClick={handleSaveVoice} className="flex-1 text-[10px] py-1 h-6">Save</Button>
+                                        <Button size="sm" variant="secondary" onClick={() => setEditingVoiceId(null)} className="flex-1 text-[10px] py-1 h-6">Cancel</Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-purple-900/50 rounded-full flex items-center justify-center text-purple-400"><User size={14} /></div>
+                                        <div><div className="text-sm font-medium text-white">{v.name}</div><div className="text-[10px] text-gray-500 capitalize">{v.style}</div></div>
+                                    </div>
+                                    <button onClick={() => handleStartEdit(v)} className="text-gray-500 hover:text-white p-1 rounded hover:bg-gray-700"><Edit2 size={12}/></button>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, GenerateContentResponse, Type, FunctionDeclaration } from "@google/genai";
 import { ProjectType, Voice, ChatMessage, AuditIssue, PerformanceReport, ArchNode, ArchLink, AIAgent, ProjectPhase, AgentContext, TestResult } from "../types";
+import { getAllFiles, findNodeByPath, normalizePath } from '../utils/fileHelpers';
 
 const getApiKey = () => {
     if (typeof localStorage !== 'undefined') {
@@ -46,7 +47,13 @@ const safeParseJSON = (jsonString: string, fallback: any = {}) => {
 
 // --- PCM to WAV Converter ---
 const pcmToWav = (base64PCM: string, sampleRate: number = 24000): string => {
-    const binaryString = atob(base64PCM);
+    let binaryString;
+    try {
+        binaryString = atob(base64PCM);
+    } catch (e) {
+        console.error("Failed to decode base64 PCM", e);
+        return "";
+    }
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
@@ -105,7 +112,7 @@ export const detectIntent = async (prompt: string): Promise<'chat' | 'task'> => 
             model: 'gemini-2.5-flash',
             contents: `Analyze this prompt: "${prompt}". 
             Is the user asking for a specific complex file modification, code refactoring, or a multi-step task? Return "task".
-            Is the user asking a general question, asking for an explanation, or chatting? Return "chat".
+            Is the user asking for a general question, asking for an explanation, or chatting? Return "chat".
             Return ONLY the word "task" or "chat".`,
         });
         const text = response.text?.trim().toLowerCase() || 'chat';
@@ -565,230 +572,420 @@ export const generateProjectScaffold = async (description: string, type: Project
     } catch { return []; }
 };
 
-export const generateSong = async (lyrics: string, style?: string, voiceId?: string, referenceUrl?: string): Promise<string> => {
-    // Mock for now as song gen is complex
-    return "data:audio/wav;base64,UklGRiQA..."; 
-};
-
-export const analyzeMediaStyle = async (base64: string, type: 'image' | 'audio' | 'video'): Promise<string> => {
-    if (!getApiKey()) return "Analysis unavailable";
+export const generateSong = async (lyrics: string, style?: string, voiceId?: string, referenceUrl?: string, genre: string = 'Trap Soul'): Promise<string> => {
+    if (!getApiKey()) return "";
     const ai = getAiClient();
     try {
-        const data = base64.includes(',') ? base64.split(',')[1] : base64;
-        const mimeType = type === 'image' ? 'image/png' : type === 'audio' ? 'audio/wav' : 'video/mp4';
+        const prompt = `Genre: ${genre}. Style: ${style || 'Soulful'}. (Singing) ${lyrics}`;
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-preview-tts',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: 'Fenrir' } 
+                    }
+                }
+            }
+        });
+        
+        const candidate = response.candidates?.[0];
+        const part = candidate?.content?.parts?.[0];
+        if (part && part.inlineData) {
+            return pcmToWav(part.inlineData.data);
+        }
+    } catch (e) {
+        console.error("Song Gen Error", e);
+    }
+    return "";
+};
+
+export const generateLyrics = async (prompt: string, genre: string, existingLyrics?: string): Promise<string> => {
+    if (!getApiKey()) return "Lyrics generation unavailable without API Key.";
+    const ai = getAiClient();
+    try {
+        let contentPrompt = `Write song lyrics for a ${genre} song about: ${prompt}.`;
+        if (existingLyrics) {
+            contentPrompt = `Continue these lyrics for a ${genre} song. Only provide the next 4-8 lines.\n\nContext:\n${existingLyrics}`;
+        }
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: contentPrompt,
+            config: {
+                maxOutputTokens: 200,
+                temperature: 0.8
+            }
+        });
+        return response.text?.trim() || "";
+    } catch (e) {
+        return "Failed to generate lyrics.";
+    }
+};
+
+export const generateSoundEffect = async (description: string): Promise<string> => {
+    if (!getApiKey()) return "";
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-preview-tts',
+            contents: { parts: [{ text: `(Beatbox Sound Effect) Make a sound of: ${description}` }] },
+            config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: 'Puck' } 
+                    }
+                }
+            }
+        });
+        
+        const candidate = response.candidates?.[0];
+        const part = candidate?.content?.parts?.[0];
+        if (part && part.inlineData) {
+            return pcmToWav(part.inlineData.data);
+        }
+    } catch (e) {
+        console.error("SFX Gen Error", e);
+    }
+    return "";
+};
+
+// --- NEWLY ADDED FUNCTIONS ---
+
+export const transcribeAudio = async (audioData: string): Promise<string> => {
+    if (!getApiKey()) return "Transcription unavailable (No API Key)";
+    const ai = getAiClient();
+    try {
+        const data = audioData.split(',')[1];
+        const mimeType = audioData.substring(audioData.indexOf(':') + 1, audioData.indexOf(';'));
         
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: {
                 parts: [
                     { inlineData: { mimeType, data } },
-                    { text: "Describe the style, mood, and technical details of this media in one concise paragraph." }
+                    { text: "Transcribe this audio." }
+                ]
+            }
+        });
+        return response.text || "";
+    } catch (e) {
+        console.error("Transcription error", e);
+        return "Failed to transcribe.";
+    }
+};
+
+export const analyzeMediaStyle = async (mediaData: string, type: 'image' | 'video' | 'audio'): Promise<string> => {
+    if (!getApiKey()) return "Analysis unavailable";
+    const ai = getAiClient();
+    try {
+        const data = mediaData.split(',')[1];
+        const mimeType = mediaData.substring(mediaData.indexOf(':') + 1, mediaData.indexOf(';'));
+        
+        const prompt = type === 'audio' 
+            ? "Analyze the style, genre, and mood of this audio."
+            : "Analyze the visual style, lighting, composition, and mood of this image/video. Provide a concise style prompt.";
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType, data } },
+                    { text: prompt }
                 ]
             }
         });
         return response.text || "Analysis failed";
-    } catch { return "Error analyzing media"; }
+    } catch (e) {
+        return "Analysis error";
+    }
 };
 
-export const generateSocialContent = async (prompt: string, platform: string, onStream: (chunk: string) => void) => {
-    if (!getApiKey()) { onStream("Error: No API Key."); return; }
+export const generateSocialContent = async (
+    prompt: string, 
+    platform: string, 
+    onStream?: (chunk: string) => void,
+    media?: string // Base64 data URI for image/video reference
+): Promise<string> => {
+    if (!getApiKey()) return "";
     const ai = getAiClient();
     try {
-        const systemInstruction = `You are a viral content creator for ${platform}. Format output as: Scene X: [Visual Style] Description.`;
-        const result = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { systemInstruction }
-        });
-        for await (const chunk of result) {
-            if (chunk.text) onStream(chunk.text);
+        const parts: any[] = [{ text: `Generate viral content for ${platform}. Prompt: ${prompt}` }];
+        
+        if (media) {
+            const data = media.split(',')[1];
+            const mimeType = media.substring(media.indexOf(':') + 1, media.indexOf(';'));
+            // Gemini supports multimodal input via inlineData for both images and video (up to size limits)
+            parts.push({ inlineData: { mimeType, data } });
         }
-    } catch (e: any) { 
-        onStream(`Error: ${e.message}`); 
+
+        const result = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash', // Supports video and image input
+            contents: { role: 'user', parts }
+        });
+        
+        let fullText = "";
+        for await (const chunk of result) {
+            const text = chunk.text;
+            if (text) {
+                fullText += text;
+                if (onStream) onStream(text);
+            }
+        }
+        return fullText;
+    } catch (e) {
+        console.error("Generate Content Error", e);
+        return "";
     }
 };
 
 export const generateVideo = async (prompt: string, image?: string): Promise<string> => {
-    if (!getApiKey()) return "";
-    const ai = getAiClient();
-    try {
-        const request: any = {
+    const win = window as any;
+    
+    // Force key selection check if available
+    if (win.aistudio && win.aistudio.hasSelectedApiKey) {
+        const hasKey = await win.aistudio.hasSelectedApiKey();
+        if (!hasKey && win.aistudio.openSelectKey) {
+            await win.aistudio.openSelectKey();
+        }
+    }
+
+    // Function to execute generation
+    const executeGen = async (apiKey: string) => {
+        const ai = new GoogleGenAI({ apiKey });
+        const payload: any = {
             model: 'veo-3.1-fast-generate-preview',
-            prompt,
-            config: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' }
+            prompt: prompt,
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: '16:9'
+            }
         };
         
         if (image) {
-            const data = image.includes(',') ? image.split(',')[1] : image;
-            request.image = { imageBytes: data, mimeType: 'image/png' };
+            const data = image.split(',')[1];
+            const mimeType = image.substring(image.indexOf(':') + 1, image.indexOf(';'));
+            payload.image = {
+                imageBytes: data,
+                mimeType: mimeType
+            };
         }
 
-        let operation = await ai.models.generateVideos(request);
+        let operation = await ai.models.generateVideos(payload);
         
-        let attempts = 0;
-        while (!operation.done && attempts < 20) {
-            await new Promise(r => setTimeout(r, 3000));
-            operation = await ai.operations.getVideosOperation({ operation: operation });
-            attempts++;
+        // Poll
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            operation = await ai.operations.getVideosOperation({operation: operation});
         }
         
-        const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
-        if (uri) {
-            return `${uri}&key=${getApiKey()}`;
+        if (operation.response?.generatedVideos?.[0]?.video?.uri) {
+             const uri = operation.response.generatedVideos[0].video.uri;
+             return `${uri}&key=${apiKey}`;
         }
-    } catch (e) {
+        return "";
+    };
+
+    // Priority: Env Key > LocalStorage Key
+    // Note: getApiKey() prioritizes LocalStorage. We invert this for Veo because usually Veo requires the injected key.
+    let activeKey = process.env.API_KEY;
+    if (!activeKey) activeKey = getApiKey(); // Fallback
+
+    try {
+        return await executeGen(activeKey);
+    } catch (e: any) {
         console.error("Video Gen Error", e);
+        const errStr = JSON.stringify(e);
+        
+        // Handle 404 (Entity Not Found) -> Likely bad key or project
+        if (errStr.includes("Requested entity was not found") || e.status === 404 || (e.error && e.error.code === 404)) {
+            if (win.aistudio && win.aistudio.openSelectKey) {
+                console.log("Veo access error. Requesting key...");
+                await win.aistudio.openSelectKey();
+                
+                // Retry with fresh env key
+                const freshKey = process.env.API_KEY || getApiKey();
+                try {
+                    return await executeGen(freshKey);
+                } catch (retryError) {
+                    console.error("Retry Video Gen Error", retryError);
+                }
+            }
+        }
+        return "";
     }
-    return "";
 };
 
-export const transcribeAudio = async (base64: string): Promise<string> => {
-    if (!getApiKey()) return "Transcription unavailable";
+export const removeBackground = async (image: string): Promise<string> => {
+    return await editImage(image, "Remove the background, make it white");
+};
+
+export const analyzeCharacterFeatures = async (image: string): Promise<string> => {
+    return await analyzeMediaStyle(image, 'image'); 
+};
+
+export const generateSQL = async (query: string, schema: string): Promise<string> => {
+    if (!getApiKey()) return "-- No API Key";
     const ai = getAiClient();
     try {
-        const data = base64.includes(',') ? base64.split(',')[1] : base64;
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [{ inlineData: { mimeType: 'audio/wav', data } }, { text: "Transcribe this audio exactly." }] }
+            contents: `Write SQL for: "${query}".\nSchema Context:\n${schema}\nReturn ONLY the SQL.`
         });
-        return response.text || "Transcription failed";
-    } catch { return "Transcription error"; }
+        return response.text || "";
+    } catch (e) { return "-- Error generating SQL"; }
 };
 
-export const analyzeCharacterFeatures = async (base64: string): Promise<string> => {
-    return analyzeMediaStyle(base64, 'image');
+export const generateArchitecture = async (description: string): Promise<{ nodes: ArchNode[], links: ArchLink[] }> => {
+    if (!getApiKey()) return { nodes: [], links: [] };
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Design a system architecture for: "${description}".
+            Return JSON with "nodes" (id, type, label, x, y, details) and "links" (id, source, target).
+            Types can be: frontend, backend, database, auth, storage, function.`,
+            config: { responseMimeType: 'application/json' }
+        });
+        return safeParseJSON(response.text || '{}', { nodes: [], links: [] });
+    } catch (e) { return { nodes: [], links: [] }; }
 };
 
-export const removeBackground = async (base64: string): Promise<string> => {
-    return base64;
+export const generatePerformanceReport = async (codeStructure: string): Promise<PerformanceReport | null> => {
+    if (!getApiKey()) return null;
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Analyze this project structure for performance:\n${codeStructure}\n\nReturn JSON report with scores (0-100) for performance, accessibility, bestPractices, seo and list of opportunities.`,
+            config: { responseMimeType: 'application/json' }
+        });
+        return safeParseJSON(response.text || '{}', null);
+    } catch (e) { return null; }
+};
+
+export const runSecurityAudit = async (codeStructure: string, packageJson: string): Promise<AuditIssue[]> => {
+    if (!getApiKey()) return [];
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Perform a security audit on this project.\nStructure:\n${codeStructure}\nDependencies:\n${packageJson}\n\nReturn JSON array of issues (id, severity, title, description, file).`,
+            config: { responseMimeType: 'application/json' }
+        });
+        return safeParseJSON(response.text || '[]', []);
+    } catch (e) { return []; }
+};
+
+export const generateCommitMessage = async (diff: string[]): Promise<string> => {
+    if (!getApiKey()) return "Update files";
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate a concise git commit message for changes in these files: ${diff.join(', ')}.`
+        });
+        return response.text?.trim() || "Update files";
+    } catch (e) { return "Update files"; }
+};
+
+export const generateSyntheticData = async (topic: string, count: number, onStream?: (chunk: string) => void): Promise<void> => {
+    if (!getApiKey()) return;
+    const ai = getAiClient();
+    try {
+        const result = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: `Generate ${count} synthetic examples for "${topic}" in JSONL format.`
+        });
+        for await (const chunk of result) {
+            if (chunk.text && onStream) onStream(chunk.text);
+        }
+    } catch (e) {}
+};
+
+export const testFineTunedModel = async (modelName: string, prompt: string, onStream: (chunk: string) => void): Promise<void> => {
+    if (!getApiKey()) { onStream("No API Key"); return; }
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash', // Fallback for demo
+            contents: `[Simulating ${modelName}] ${prompt}`
+        });
+        for await (const chunk of response) {
+            if (chunk.text) onStream(chunk.text);
+        }
+    } catch (e: any) { onStream(`Error: ${e.message}`); }
+};
+
+export const chatWithVoice = async (input: string): Promise<string> => {
+    if (!getApiKey()) return "I can't hear you without an API Key.";
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `User said: "${input}". Reply conversationally and briefly.`
+        });
+        return response.text || "I didn't catch that.";
+    } catch (e) { return "Error processing voice."; }
+};
+
+export const delegateTasks = async (phase: ProjectPhase, agents: AIAgent[]): Promise<{ assignments: any[] }> => {
+    if (!getApiKey()) return { assignments: [] };
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Phase: ${phase.title}\nGoals: ${phase.goals.join(', ')}\nAgents: ${agents.map(a => a.name + " (" + a.role + ")").join(', ')}\n\nAssign tasks to agents. Return JSON { "assignments": [{ "agentName": string, "taskDescription": string, "targetFile": string }] }`,
+            config: { responseMimeType: 'application/json' }
+        });
+        return safeParseJSON(response.text || '{}', { assignments: [] });
+    } catch (e) { return { assignments: [] }; }
+};
+
+export const generateProjectPlan = async (description: string, type: string): Promise<ProjectPhase[]> => {
+    if (!getApiKey()) return [];
+    const ai = getAiClient();
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Create a development roadmap for a ${type} project: "${description}".
+            Return JSON array of phases. Each phase has { "id": string, "title": string, "status": "pending", "goals": string[], "tasks": [{ "id": string, "text": string, "done": boolean }] }`,
+            config: { responseMimeType: 'application/json' }
+        });
+        const json = safeParseJSON(response.text || '[]', []);
+        return Array.isArray(json) ? json : [];
+    } catch (e) { return []; }
 };
 
 export const runAgentFileTask = async (agent: AIAgent, fileName: string, content: string, context: AgentContext): Promise<string> => {
-    const ai = getAiClient();
-    const prompt = `Task: Update ${fileName}.\n${context.roadmap ? `Roadmap context: ${JSON.stringify(context.roadmap)}` : ''}\n\nFile Content:\n${content}`;
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt
-    });
-    return response.text || content;
+    const { code } = await executeBuildTask(agent, fileName, content, "Improve and fix issues.", context);
+    return code;
 };
 
 export const generateChangelog = async (files: string[], taskName: string): Promise<string> => {
+    if (!getApiKey()) return `Updated ${files.length} files.`;
     const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Generate a concise markdown changelog for task "${taskName}". Modified files: ${files.join(', ')}.`
-    });
-    return response.text || "Updated files.";
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate a brief changelog for task "${taskName}". Modified files: ${files.join(', ')}.`
+        });
+        return response.text || "Updated files.";
+    } catch (e) { return "Updated files."; }
 };
 
-export const autoUpdateReadme = async (current: string, changelog: string): Promise<string> => {
+export const autoUpdateReadme = async (currentContent: string, changelog: string): Promise<string> => {
+    if (!getApiKey()) return currentContent;
     const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Append this changelog to the "Recent Updates" section of the README (create if missing). Keep existing content.\n\nREADME:\n${current}\n\nChangelog:\n${changelog}`
-    });
-    return response.text || current;
-};
-
-export const chatWithVoice = async (text: string): Promise<string> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `You are a voice assistant. Respond conversationally (short, spoken style) to: "${text}"`
-    });
-    return response.text || "I didn't catch that.";
-};
-
-export const generatePerformanceReport = async (structure: string): Promise<PerformanceReport> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Analyze this project structure for performance bottlenecks. Return JSON PerformanceReport.\n${structure}`,
-        config: { responseMimeType: 'application/json' }
-    });
-    return safeParseJSON(response.text || '{}', { scores: { performance: 0, accessibility: 0, bestPractices: 0, seo: 0 }, opportunities: [] });
-};
-
-export const runSecurityAudit = async (structure: string, pkgJson: string): Promise<AuditIssue[]> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Audit this project for security vulnerabilities. Structure:\n${structure}\nPackage.json:\n${pkgJson}\nReturn JSON array of AuditIssue.`,
-        config: { responseMimeType: 'application/json' }
-    });
-    const res = safeParseJSON(response.text || '[]', []);
-    return Array.isArray(res) ? res : [];
-};
-
-export const generateSQL = async (nl: string, schema: string): Promise<string> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Convert to SQL. Schema:\n${schema}\nRequest: ${nl}`
-    });
-    return response.text || "";
-};
-
-export const generateArchitecture = async (desc: string): Promise<{nodes: ArchNode[], links: ArchLink[]}> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Generate system architecture diagram data (nodes and links) for: "${desc}". Return JSON.`,
-        config: { responseMimeType: 'application/json' }
-    });
-    return safeParseJSON(response.text || '{}', { nodes: [], links: [] });
-};
-
-export const generateSyntheticData = async (topic: string, count: number, onStream: (chunk: string) => void) => {
-    const ai = getAiClient();
-    const result = await ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
-        contents: `Generate ${count} synthetic data examples for "${topic}" in JSONL format.`
-    });
-    for await (const chunk of result) {
-        if(chunk.text) onStream(chunk.text);
-    }
-};
-
-export const testFineTunedModel = async (model: string, prompt: string, onStream: (chunk: string) => void) => {
-    // Simulating fine-tuned model call
-    const ai = getAiClient();
-    const result = await ai.models.generateContentStream({
-        model: 'gemini-2.5-flash', 
-        contents: `[Model: ${model}] ${prompt}`
-    });
-    for await (const chunk of result) {
-        if(chunk.text) onStream(chunk.text);
-    }
-};
-
-export const generateCommitMessage = async (files: string[]): Promise<string> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Generate a conventional commit message for changes in: ${files.join(', ')}`
-    });
-    return response.text?.trim() || "Update files";
-};
-
-export const generateProjectPlan = async (desc: string, type: ProjectType): Promise<ProjectPhase[]> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: `Create a phased development roadmap for a ${type} project: "${desc}". Return JSON array of ProjectPhase.`,
-        config: { responseMimeType: 'application/json' }
-    });
-    const res = safeParseJSON(response.text || '[]', []);
-    return Array.isArray(res) ? res : [];
-};
-
-export const delegateTasks = async (phase: ProjectPhase, agents: AIAgent[]): Promise<{assignments: any[]}> => {
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: `Delegate tasks from phase "${phase.title}" to agents: ${agents.map(a=>a.name).join(', ')}. Return JSON { assignments: [{agentName, taskDescription, targetFile}] }`,
-        config: { responseMimeType: 'application/json' }
-    });
-    return safeParseJSON(response.text || '{}', { assignments: [] });
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Append this changelog to the README:\n${changelog}\n\nCurrent README:\n${currentContent}`
+        });
+        return response.text || currentContent;
+    } catch (e) { return currentContent; }
 };

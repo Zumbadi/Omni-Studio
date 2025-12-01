@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Trash2, Volume2 } from 'lucide-react';
+import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Trash2, Volume2, Check } from 'lucide-react';
 import { Button } from './Button';
 import { AudioTrack } from '../types';
 import { bufferToWav } from '../utils/audioHelpers';
@@ -42,6 +42,9 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
     originalOffset: number;
   }>({ isDragging: false, trackId: null, startX: 0, originalOffset: 0 });
 
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
   const rafRef = useRef<number | null>(null);
 
   const formatTime = (seconds: number) => {
@@ -49,6 +52,18 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
       const mins = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60);
       return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const startRenaming = (track: AudioTrack) => {
+      setEditingTrackId(track.id);
+      setEditName(track.name);
+  };
+
+  const saveRename = () => {
+      if (editingTrackId) {
+          setTracks(prev => prev.map(t => t.id === editingTrackId ? { ...t, name: editName } : t));
+          setEditingTrackId(null);
+      }
   };
 
   // Optimized Canvas Visualizer Loop
@@ -252,9 +267,29 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
             {tracks.map((track) => (
               <div key={track.id} className="flex items-center gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-300">
                  {/* Track Control Header */}
-                 <div className="w-72 bg-gray-900 border border-gray-800 rounded-lg p-3 flex flex-col gap-2 flex-shrink-0 shadow-md relative">
+                 <div className="w-72 bg-gray-900 border border-gray-800 rounded-lg p-3 flex flex-col gap-2 flex-shrink-0 shadow-md relative transition-colors hover:border-gray-700">
                     <div className="flex items-center justify-between">
-                        <div className="truncate w-32 text-sm font-medium text-gray-200">{track.name}</div>
+                        {editingTrackId === track.id ? (
+                            <div className="flex items-center gap-1 w-32">
+                                <input 
+                                    className="bg-black border border-gray-600 rounded px-1 py-0.5 text-xs text-white w-full outline-none focus:border-primary-500"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    onBlur={saveRename}
+                                    onKeyDown={(e) => e.key === 'Enter' && saveRename()}
+                                    autoFocus
+                                />
+                                <button onMouseDown={saveRename} className="text-green-500 hover:text-white p-0.5"><Check size={12}/></button>
+                            </div>
+                        ) : (
+                            <div 
+                                className="truncate w-32 text-sm font-medium text-gray-200 cursor-text hover:text-white hover:underline decoration-gray-600"
+                                onDoubleClick={() => startRenaming(track)}
+                                title="Double-click to rename"
+                            >
+                                {track.name}
+                            </div>
+                        )}
                         <div className="flex gap-1">
                             {track.audioUrl && (
                                 <button onClick={() => onTranscribe(track)} className="text-gray-600 hover:text-primary-400 p-1" title="Transcribe Audio" disabled={isTranscribing}>

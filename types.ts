@@ -107,10 +107,14 @@ export interface Voice {
   id: string;
   name: string;
   gender: 'male' | 'female' | 'robot';
-  style: 'narrative' | 'casual' | 'news' | 'energetic';
+  style: 'narrative' | 'casual' | 'news' | 'energetic' | 'custom';
   isCloned: boolean;
   apiMapping?: string;
   voiceId?: string;
+  settings?: {
+    stability: number;
+    similarity: number;
+  };
 }
 
 export interface AudioTrack {

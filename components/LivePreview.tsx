@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity, X } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, FileNode, BuildSettings } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
@@ -16,6 +15,7 @@ interface LivePreviewProps {
   files?: FileNode[];
   currentBranch?: string;
   onAiFix?: (error: string) => void;
+  envVars?: Record<string, string>;
 }
 
 // Matches index.html loader for seamless visual transition
@@ -36,7 +36,7 @@ const SplashScreen = () => (
     </div>
 );
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: propPreviewSrc, onRefresh, onConsoleLog, files = [], currentBranch = 'main', onAiFix }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: propPreviewSrc, onRefresh, onConsoleLog, files = [], currentBranch = 'main', onAiFix, envVars = {} }) => {
   const isNative = project.type === ProjectType.REACT_NATIVE;
   const isIOS = project.type === ProjectType.IOS_APP;
   const isAndroid = project.type === ProjectType.ANDROID_APP;
@@ -147,9 +147,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
           isNative || isIOS || isAndroid, 
           files, 
           pathToRun, 
-          {} 
+          envVars
       );
-  }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid]);
+  }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid, envVars]);
+
+  useEffect(() => {
+      if (Object.keys(envVars).length > 0) {
+          setLogs(prev => [...prev, { level: 'info', message: `[System] Loaded ${Object.keys(envVars).length} Environment Variables`, time: new Date().toLocaleTimeString().split(' ')[0] }]);
+      }
+  }, [envVars]);
 
   useEffect(() => {
       if (!isBackend || !files) return;
@@ -390,151 +396,175 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-900 relative overflow-hidden">
-        {showBuildModal && (
-            <BuildSettingsModal 
-                isOpen={showBuildModal} 
-                onClose={() => setShowBuildModal(false)} 
-                onExport={handleExportWithSettings}
-                projectType={project.type}
-            />
-        )}
+    <div className="flex-1 flex flex-col bg-gray-950 overflow-hidden relative group/preview">
+        {showBuildModal && <BuildSettingsModal isOpen={showBuildModal} onClose={() => setShowBuildModal(false)} onExport={handleExportWithSettings} projectType={project.type} />}
+        
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 shrink-0">
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => setPreviewMode('web')}
+                    className={`p-1.5 rounded-md transition-colors ${previewMode === 'web' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    title="Web View"
+                >
+                    <Globe size={16} />
+                </button>
+                <button 
+                    onClick={() => setPreviewMode('mobile')}
+                    className={`p-1.5 rounded-md transition-colors ${previewMode === 'mobile' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    title="Mobile View"
+                >
+                    <Smartphone size={16} />
+                </button>
+                
+                <div className="h-4 w-px bg-gray-800 mx-2"></div>
+                
+                <button onClick={onRefresh} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Reload">
+                    <RefreshCw size={14} />
+                </button>
+                
+                <button onClick={() => setShowQrCode(!showQrCode)} className={`p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md transition-colors ${showQrCode ? 'bg-gray-800 text-white' : ''}`} title="QR Code">
+                    <QrCode size={14} />
+                </button>
 
-        <div className="h-10 bg-gray-800 flex items-center px-3 gap-2 border-b border-gray-700 shrink-0 justify-between">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-                <div className="flex gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/50"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/50"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/50"></div>
-                </div>
-                <div className="flex-1 max-w-xs bg-gray-900/50 rounded text-[10px] text-gray-500 px-3 py-1 text-center font-mono truncate border border-gray-700/50 flex items-center justify-center gap-1">
-                    {isGeneratingEcosystem ? (
-                        <span className="text-blue-400 animate-pulse flex items-center gap-2"><Loader2 size={10} className="animate-spin"/> {ecosystemStep}</span>
-                    ) : isIOS || isAndroid ? (isIOS ? ' iOS Simulator' : '🤖 Android Emulator') : <><Globe size={10}/> localhost:3000</>}
-                </div>
-                {isDev && <div className="hidden md:flex items-center gap-1 bg-purple-900/30 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse"><Zap size={10} fill="currentColor"/> Hot Reload</div>}
+                <div className="h-4 w-px bg-gray-800 mx-2"></div>
+                
+                <button onClick={handleDownloadSource} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Download Source">
+                    <Download size={14} />
+                </button>
+                
+                <button onClick={handleOpenNewTab} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Open in New Tab">
+                    <ExternalLink size={14} />
+                </button>
+                
+                {(isNative || isIOS || isAndroid) && (
+                    <button onClick={handleGenerateEcosystem} className="text-[10px] bg-primary-900/30 text-primary-300 px-2 py-1 rounded border border-primary-500/30 hover:bg-primary-900/50 transition-colors ml-2 font-bold uppercase tracking-wider flex items-center gap-1">
+                       <Layers size={10}/> Sync Ecosystem
+                    </button>
+                )}
             </div>
             
             <div className="flex items-center gap-2">
-                 {(isNative || isIOS || isAndroid) ? (
-                    <>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={handleDownloadSource} title="Download Source for IDE"><Download size={10} className="mr-1"/> Source</Button>
-                        <Button size="sm" variant={isGeneratingEcosystem ? 'secondary' : 'primary'} className={`h-6 px-3 text-[10px] font-bold shadow-lg ${isGeneratingEcosystem ? 'text-blue-400 bg-blue-900/20 border border-blue-800' : 'bg-primary-600 hover:bg-primary-500 text-white'}`} onClick={handleGenerateEcosystem} disabled={isGeneratingEcosystem} title="Auto-Generate Web, Backend, iOS & Android Apps">{isGeneratingEcosystem ? <Loader2 size={10} className="animate-spin mr-1"/> : <Layers size={12} className="mr-1"/>}{isGeneratingEcosystem ? 'Syncing Ecosystem...' : 'Generate Ecosystem'}</Button>
-                        {(isIOS || isAndroid) && (
-                            <Button size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleSimulatedBuild} disabled={isBuilding}>{isBuilding ? <Loader2 size={10} className="animate-spin mr-1"/> : <Play size={10} className="mr-1"/>}{isBuilding ? 'Building...' : 'Run Build'}</Button>
-                        )}
-                        <div className="flex bg-gray-700/50 rounded p-0.5 gap-0.5">
-                            <button onClick={() => setPreviewMode('mobile')} className={`p-1.5 rounded transition-all ${previewMode === 'mobile' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Mobile Simulator"><Smartphone size={14}/></button>
-                            <button onClick={() => setPreviewMode('web')} className={`p-1.5 rounded transition-all ${previewMode === 'web' ? 'text-white bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Web Fallback" disabled={isIOS || isAndroid}><Globe size={14}/></button>
-                            <button onClick={() => setShowQrCode(!showQrCode)} className={`p-1.5 rounded transition-all ${showQrCode ? 'text-green-400 bg-gray-600 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`} title="Scan Expo QR" disabled={isIOS || isAndroid}><QrCode size={14}/></button>
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        <Button size="sm" variant="ghost" onClick={handleOpenNewTab} title="Open in New Tab"><ExternalLink size={14}/></Button>
-                        <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh Preview"><RefreshCw size={14}/></Button>
-                    </>
+                <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Live
+                </span>
+            </div>
+        </div>
+
+        {/* Console Overlay Toggle */}
+        <button 
+            onClick={() => setShowConsole(!showConsole)}
+            className={`absolute bottom-4 right-4 z-50 bg-gray-900 border border-gray-700 text-gray-400 p-2 rounded-lg shadow-lg hover:text-white hover:border-gray-500 transition-all ${showConsole ? 'bg-gray-800 text-white' : ''}`}
+        >
+            <Terminal size={16} />
+        </button>
+
+        {/* Runtime Error Overlay */}
+        {runtimeError && (
+            <div className="absolute inset-x-4 top-14 z-40 bg-red-900/90 border border-red-700 rounded-lg p-4 shadow-2xl backdrop-blur-md animate-in slide-in-from-top-4">
+                <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2 text-red-200 font-bold mb-1">
+                        <AlertTriangle size={18}/> Runtime Error Detected
+                    </div>
+                    <button onClick={() => setRuntimeError(null)} className="text-red-300 hover:text-white"><X size={16}/></button>
+                </div>
+                <div className="font-mono text-xs text-white bg-black/30 p-2 rounded border border-red-800/50 mb-3 overflow-x-auto">
+                    {runtimeError.message}
+                </div>
+                {onAiFix && (
+                    <Button size="sm" variant="secondary" className="w-full bg-red-950/50 hover:bg-red-900 text-red-200 border-red-800" onClick={triggerHeal}>
+                        <Zap size={14} className="mr-2"/> Auto-Fix with AI
+                    </Button>
                 )}
             </div>
+        )}
+
+        {/* Console Panel */}
+        <div 
+            className={`absolute bottom-0 left-0 right-0 bg-black/95 border-t border-gray-800 transition-all duration-300 ease-in-out z-40 flex flex-col ${showConsole ? 'h-48' : 'h-0'}`}
+        >
+            <div className="flex justify-between items-center px-4 py-1 bg-gray-900 border-b border-gray-800 shrink-0">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Console Output</span>
+                <button onClick={() => setLogs([])} className="text-[10px] text-gray-500 hover:text-white">Clear</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 font-mono text-xs space-y-1" ref={consoleRef}>
+                {logs.length === 0 && <div className="text-gray-600 italic px-2">No logs yet...</div>}
+                {logs.map((log, i) => (
+                    <div key={i} className={`flex gap-2 ${log.level === 'error' ? 'text-red-400 bg-red-900/10' : log.level === 'warn' ? 'text-yellow-400' : log.level === 'input' ? 'text-blue-400' : 'text-gray-300'}`}>
+                        <span className="text-gray-600 shrink-0 select-none">[{log.time}]</span>
+                        <span className="break-all">{log.message}</span>
+                    </div>
+                ))}
+            </div>
+            <form onSubmit={handleConsoleSubmit} className="border-t border-gray-800 flex shrink-0">
+                <span className="px-2 py-1 text-blue-500 font-mono">{'>'}</span>
+                <input 
+                    type="text" 
+                    className="flex-1 bg-transparent text-gray-300 font-mono text-xs focus:outline-none py-1"
+                    value={consoleInput}
+                    onChange={(e) => setConsoleInput(e.target.value)}
+                    placeholder="Evaluate JS..."
+                />
+            </form>
         </div>
 
-        <div className="flex-1 flex items-center justify-center p-4 bg-[radial-gradient(#333_1px,transparent_1px)] bg-[size:20px_20px] overflow-auto relative">
+        <div className="flex-1 bg-gray-900/50 flex items-center justify-center overflow-hidden relative">
             {isInitialLoading && <SplashScreen />}
             
-            {(previewMode === 'mobile') ? (
-                <div className="relative transition-all duration-500 animate-in zoom-in-95 max-w-full max-h-full">
-                    <div className={`border-[8px] border-gray-800 rounded-[2.5rem] overflow-hidden bg-black relative shadow-2xl ring-1 ring-white/10 mx-auto transition-all ${deviceFrame === 'ipad' ? 'w-[500px] max-w-full aspect-[3/4]' : 'w-[320px] max-w-full aspect-[9/19.5]'}`} style={{ maxHeight: '85vh' }}>
-                        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-1/3 h-[4%] bg-gray-800 rounded-b-xl z-20 flex items-center justify-center">
-                            <div className="w-1/3 h-1 bg-gray-700 rounded-full"></div>
-                        </div>
-                        
-                        <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-black" sandbox="allow-scripts" />
-                        
-                        {runtimeError && (
-                            <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
-                                <AlertTriangle size={48} className="text-red-400 mb-4 animate-bounce" />
-                                <h3 className="text-xl font-bold text-white mb-2">Runtime Crash</h3>
-                                <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full text-left">{runtimeError.message}</p>
-                                <Button onClick={triggerHeal} className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"><Activity size={16} className="mr-2"/> Heal Codebase</Button>
-                            </div>
-                        )}
-
-                        {showQrCode && (
-                            <div className="absolute inset-0 bg-gray-900/95 z-30 flex flex-col items-center justify-center text-center p-6 animate-in fade-in backdrop-blur-sm">
-                                <div className="bg-white p-3 rounded-xl mb-4 shadow-lg"><QrCode size={140} className="text-black" /></div>
-                                <h3 className="text-white font-bold mb-1 text-lg">Scan with Expo Go</h3>
-                                <p className="text-gray-400 text-xs mb-6">Open the camera on your iOS/Android device to preview live.</p>
-                                <Button size="sm" variant="secondary" onClick={() => setShowQrCode(false)}>Close</Button>
-                            </div>
-                        )}
-
-                        {isBuilding && (
-                            <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
-                                <div className="relative mb-6">
-                                    <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-primary-500 animate-spin"></div>
-                                    <div className="absolute inset-0 flex items-center justify-center"><Smartphone size={24} className="text-primary-500 animate-pulse" /></div>
-                                </div>
-                                <h3 className="text-white font-bold text-lg mb-2">Compiling Native App</h3>
-                                <div className="text-sm text-primary-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800">{buildStep}</div>
-                            </div>
-                        )}
-                        
-                        {isGeneratingEcosystem && (
-                            <div className="absolute inset-0 bg-black/90 z-40 flex flex-col items-center justify-center p-6 animate-in fade-in backdrop-blur-sm">
-                                <div className="relative mb-6">
-                                    <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-blue-500 animate-spin"></div>
-                                    <div className="absolute inset-0 flex items-center justify-center"><Layers size={24} className="text-blue-500 animate-pulse" /></div>
-                                </div>
-                                <h3 className="text-white font-bold text-lg mb-2">Generating Ecosystem</h3>
-                                <div className="text-sm text-blue-400 font-mono bg-gray-900 px-3 py-1 rounded border border-gray-800 text-center max-w-[250px]">{ecosystemStep}</div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="absolute -right-12 top-4 flex flex-col gap-2 bg-gray-800 p-1.5 rounded-xl border border-gray-700 shadow-lg hidden md:flex">
-                        <button onClick={() => setDeviceFrame('iphone14')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'iphone14' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="iPhone 14"><Smartphone size={18}/></button>
-                        <button onClick={() => setDeviceFrame('pixel7')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'pixel7' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="Pixel 7"><Smartphone size={18} className="rotate-90"/></button>
-                        <button onClick={() => setDeviceFrame('ipad')} className={`p-2 rounded-lg transition-colors ${deviceFrame === 'ipad' ? 'bg-primary-600 text-white shadow' : 'text-gray-500 hover:bg-gray-700 hover:text-white'}`} title="iPad Air"><Smartphone size={22} className="scale-110"/></button>
-                    </div>
-                </div>
-            ) : (
-                <div className="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-700/50 relative">
-                    <iframe id="preview-iframe" title="preview" srcDoc={previewSrc} className="w-full h-full border-none bg-white" sandbox="allow-scripts" />
-                    {runtimeError && (
-                        <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
-                            <AlertTriangle size={48} className="text-red-400 mb-4 animate-bounce" />
-                            <h3 className="text-xl font-bold text-white mb-2">Runtime Crash</h3>
-                            <p className="text-red-200 text-xs font-mono bg-black/30 p-3 rounded border border-red-500/30 max-h-32 overflow-y-auto mb-6 w-full max-w-lg text-left">{runtimeError.message}</p>
-                            <Button onClick={triggerHeal} className="bg-white text-red-600 hover:bg-gray-100 shadow-xl scale-110 font-bold"><Activity size={16} className="mr-2"/> Heal Codebase</Button>
-                        </div>
-                    )}
+            {showQrCode && (
+                <div className="absolute top-4 right-4 bg-white p-2 rounded-lg shadow-xl z-50 animate-in fade-in zoom-in-95">
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=omni-studio-demo`} alt="QR Code" className="w-32 h-32" />
+                    <div className="text-center text-[10px] text-black font-bold mt-1">Scan to Preview</div>
                 </div>
             )}
-        </div>
 
-        <div className={`absolute bottom-0 left-0 right-0 bg-gray-900/95 border-t border-gray-700 transition-all duration-300 flex flex-col ${showConsole ? 'h-48' : 'h-8'}`}>
-            <div className="h-8 flex items-center justify-between px-3 cursor-pointer hover:bg-gray-800 border-b border-gray-800" onClick={() => setShowConsole(!showConsole)}>
-                <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
-                    <Terminal size={12} /> Live Console
-                    {logs.length > 0 && <span className="bg-gray-700 text-gray-300 px-1.5 rounded-full text-[10px]">{logs.length}</span>}
-                </div>
-                {showConsole ? <ChevronDown size={14} className="text-gray-500"/> : <ChevronUp size={14} className="text-gray-500"/>}
-            </div>
-            {showConsole && (
-                <div className="flex-1 flex flex-col">
-                    <div ref={consoleRef} className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin scrollbar-thumb-gray-700">
-                        {logs.length === 0 && <div className="text-gray-600 italic px-2">No logs captured yet...</div>}
-                        {logs.map((log, i) => (
-                            <div key={i} className="flex gap-2 hover:bg-white/5 px-2 rounded py-0.5 group">
-                                <span className="text-gray-600 min-w-[50px]">{log.time}</span>
-                                <span className={`flex-1 break-all whitespace-pre-wrap ${log.level === 'error' ? 'text-red-400' : log.level === 'warn' ? 'text-yellow-400' : log.level === 'input' ? 'text-blue-400' : 'text-green-400'}`}>{log.message}</span>
-                            </div>
-                        ))}
+            {isGeneratingEcosystem && (
+                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center animate-in fade-in">
+                    <div className="w-64 mb-6 relative">
+                        <div className="absolute top-0 left-0 h-1 bg-gray-800 w-full rounded-full overflow-hidden">
+                            <div className="h-full bg-primary-500 animate-[shimmer_1.5s_infinite] w-1/3 rounded-full"></div>
+                        </div>
                     </div>
-                    <form onSubmit={handleConsoleSubmit} className="p-2 border-t border-gray-800 flex gap-2 bg-black/20">
-                        <span className="text-blue-500 font-mono text-xs">{'>'}</span>
-                        <input type="text" value={consoleInput} onChange={e => setConsoleInput(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-xs font-mono text-white" placeholder="Execute JS..." />
-                    </form>
+                    <div className="text-primary-400 font-bold animate-pulse text-lg mb-2">Generating Ecosystem</div>
+                    <div className="text-gray-500 text-sm font-mono">{ecosystemStep}</div>
+                </div>
+            )}
+
+            {isBuilding ? (
+                <div className="flex flex-col items-center animate-in fade-in">
+                    <div className="w-16 h-16 border-4 border-gray-800 border-t-primary-500 rounded-full animate-spin mb-4"></div>
+                    <div className="text-gray-400 font-mono text-sm">{buildStep}</div>
+                </div>
+            ) : (
+                <div className={`transition-all duration-500 ease-in-out relative ${previewMode === 'mobile' ? 'scale-[0.85] md:scale-100' : 'w-full h-full'}`}>
+                    {previewMode === 'mobile' ? (
+                        <div className="mockup-phone border-gray-800">
+                            <div className="camera"></div> 
+                            <div className="display">
+                                <div className={`artboard artboard-demo phone-1 bg-white overflow-hidden relative ${deviceFrame === 'iphone14' ? 'w-[375px] h-[812px]' : 'w-[412px] h-[915px]'}`}>
+                                    <iframe 
+                                        id="preview-iframe"
+                                        title="Preview"
+                                        srcDoc={previewSrc}
+                                        className="w-full h-full border-none bg-white"
+                                        sandbox="allow-scripts allow-modals allow-forms allow-same-origin allow-popups"
+                                    />
+                                    {/* Notch Overlay for realism */}
+                                    <div className="absolute top-0 left-0 right-0 h-8 bg-black/90 z-20 pointer-events-none"></div>
+                                    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-32 h-1 bg-black/20 rounded-full z-20 pointer-events-none"></div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="w-full h-full bg-white relative">
+                            <iframe 
+                                id="preview-iframe"
+                                title="Preview"
+                                srcDoc={previewSrc}
+                                className="w-full h-full border-none"
+                                sandbox="allow-scripts allow-modals allow-forms allow-same-origin allow-popups"
+                            />
+                        </div>
+                    )}
                 </div>
             )}
         </div>

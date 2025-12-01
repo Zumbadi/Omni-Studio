@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff, Sun, Moon, Layout } from 'lucide-react';
 import { Button } from './Button';
 
 interface ApiProvider {
@@ -28,6 +28,9 @@ export const Settings: React.FC = () => {
   const [fontSize, setFontSize] = useState('14px');
   const [tabSize, setTabSize] = useState('2 Spaces');
   const [vimMode, setVimMode] = useState(false);
+  
+  // Appearance
+  const [theme, setTheme] = useState(() => localStorage.getItem('omni_theme') || 'dark');
 
   useEffect(() => {
     // Load custom models deployed from Fine-Tuning Dashboard
@@ -57,6 +60,16 @@ export const Settings: React.FC = () => {
     return () => window.removeEventListener('modelsUpdated', loadModels);
   }, []);
 
+  useEffect(() => {
+      // Sync theme with DOM
+      const root = document.documentElement;
+      if (theme === 'dark') {
+          root.classList.add('dark');
+      } else {
+          root.classList.remove('dark');
+      }
+  }, [theme]);
+
   const handleSave = () => {
       localStorage.setItem('omni_active_model', activeModel);
       localStorage.setItem('omni_gemini_key', geminiKey);
@@ -67,6 +80,9 @@ export const Settings: React.FC = () => {
       
       // Save API Providers
       localStorage.setItem('omni_api_providers', JSON.stringify(apiProviders));
+      
+      // Save Theme
+      localStorage.setItem('omni_theme', theme);
       
       // Dispatch event for real-time sync
       window.dispatchEvent(new Event('omniSettingsChanged'));
@@ -120,6 +136,31 @@ export const Settings: React.FC = () => {
           </h1>
           <p className="text-gray-400 mt-1">Configure your AI model, editor preferences, and runtime environment.</p>
         </header>
+
+        {/* Appearance */}
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 shadow-lg">
+          <div className="flex items-center gap-2 mb-4 text-pink-400 font-semibold">
+            <Layout size={20} />
+            <h2>Appearance</h2>
+          </div>
+          <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-300">Interface Theme</span>
+              <div className="flex bg-gray-800 p-1 rounded-lg border border-gray-700">
+                  <button 
+                    onClick={() => setTheme('light')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${theme === 'light' ? 'bg-gray-200 text-gray-900 shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                  >
+                      <Sun size={14}/> Light
+                  </button>
+                  <button 
+                    onClick={() => setTheme('dark')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${theme === 'dark' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                  >
+                      <Moon size={14}/> Dark
+                  </button>
+              </div>
+          </div>
+        </section>
 
         {/* Model Configuration */}
         <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 shadow-lg">
