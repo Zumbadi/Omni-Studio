@@ -17,7 +17,7 @@ export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose, onProce
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | null>(null);
 
   // Animation Loop
   useEffect(() => {

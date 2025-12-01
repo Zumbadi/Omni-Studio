@@ -42,7 +42,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
     originalOffset: number;
   }>({ isDragging: false, trackId: null, startX: 0, originalOffset: 0 });
 
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | null>(null);
 
   const formatTime = (seconds: number) => {
       if (isNaN(seconds) || seconds < 0) return "00:00";
