@@ -34,8 +34,10 @@ interface WorkspaceSidebarProps {
   // Git Props
   commits: GitCommit[];
   currentBranch: string;
+  branches: string[];
   onCommit: (msg: string) => void;
-  onSwitchBranch: () => void;
+  onCreateBranch: (name: string) => void;
+  onSwitchBranch: (name: string) => void;
   // Search Props
   searchQuery: string;
   onSearch: (q: string) => void;
@@ -74,7 +76,7 @@ interface WorkspaceSidebarProps {
 export const WorkspaceSidebar = memo(({
   layout, sidebarWidth, activeActivity, setActiveActivity, onToggleSidebar,
   files, activeFileId, project, remoteDirName, onFileClick, onContextMenu, onFileOps,
-  commits, currentBranch, onCommit, onSwitchBranch,
+  commits, currentBranch, branches, onCommit, onCreateBranch, onSwitchBranch,
   searchQuery, onSearch, searchResults, onResultClick, onReplace, onReplaceAll,
   debugVariables, breakpoints, onRemoveBreakpoint,
   extensions, onToggleExtension,
@@ -150,7 +152,7 @@ export const WorkspaceSidebar = memo(({
                         />
                   </div>
               )}
-              {activeActivity === 'GIT' && <GitPanel files={files} commits={commits} currentBranch={currentBranch} onCommit={onCommit} onSwitchBranch={onSwitchBranch} />}
+              {activeActivity === 'GIT' && <GitPanel files={files} commits={commits} currentBranch={currentBranch} branches={branches} onCommit={onCommit} onCreateBranch={onCreateBranch} onSwitchBranch={onSwitchBranch} />}
               {activeActivity === 'SEARCH' && <SearchPanel query={searchQuery} onSearch={onSearch} results={searchResults} onResultClick={onResultClick} onReplace={onReplace} onReplaceAll={onReplaceAll} />}
               {activeActivity === 'DEBUG' && <DebugPanel variables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={onRemoveBreakpoint} />}
               {activeActivity === 'EXTENSIONS' && <ExtensionsPanel extensions={extensions} onToggle={onToggleExtension} />}

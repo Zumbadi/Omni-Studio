@@ -211,10 +211,16 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
   };
 
   const getStepStatus = (step: string) => {
-      const states = ['idle', 'linting', 'containerizing', 'testing', 'ready'];
+      const states = isDev 
+        ? ['idle', 'linting', 'containerizing', 'testing', 'ready']
+        : ['idle', 'building', 'containerizing', 'pushing', 'deploying', 'deployed'];
+      
       const currentIdx = states.indexOf(deploymentState);
       const stepIdx = states.indexOf(step);
       
+      // Handle potential mismatched states (e.g. rolling_back is not in the linear flow)
+      if (currentIdx === -1) return 'pending';
+
       if (currentIdx === stepIdx) return 'active';
       if (currentIdx > stepIdx) return 'done';
       return 'pending';
@@ -300,10 +306,10 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
                   <div className="w-full">
                       <div className="flex justify-between items-center relative mb-8">
                           <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-800 -z-10"></div>
-                          <PipelineStep label="Build" status={deploymentState === 'building' ? 'active' : deploymentState !== 'idle' ? 'done' : 'pending'} icon={Package} />
-                          <PipelineStep label="Image" status={deploymentState === 'containerizing' ? 'active' : ['pushing', 'deploying', 'deployed'].includes(deploymentState) ? 'done' : 'pending'} icon={Container} />
-                          <PipelineStep label="Registry" status={deploymentState === 'pushing' ? 'active' : ['deploying', 'deployed'].includes(deploymentState) ? 'done' : 'pending'} icon={UploadCloud} />
-                          <PipelineStep label="Deploy" status={deploymentState === 'deploying' ? 'active' : deploymentState === 'deployed' ? 'done' : 'pending'} icon={Rocket} />
+                          <PipelineStep label="Build" status={getStepStatus('building')} icon={Package} />
+                          <PipelineStep label="Image" status={getStepStatus('containerizing')} icon={Container} />
+                          <PipelineStep label="Registry" status={getStepStatus('pushing')} icon={UploadCloud} />
+                          <PipelineStep label="Deploy" status={getStepStatus('deploying')} icon={Rocket} />
                       </div>
                   </div>
               )}

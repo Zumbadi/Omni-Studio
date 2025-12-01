@@ -18,6 +18,7 @@ interface MediaDirectorViewProps {
   onRedo: () => void;
   onRenderMovie: () => void;
   onGenerateImage: (sceneId: string) => void;
+  onGenerateVideo: (sceneId: string) => void;
   onSplitScene: (index: number) => void;
   onDuplicateScene: (index: number) => void;
   onDeleteScene: (index: number) => void;
@@ -33,7 +34,7 @@ interface MediaDirectorViewProps {
 export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
   selectedPost, audioTracks, currentTime, setCurrentTime, isPreviewPlaying, setIsPreviewPlaying,
   isRendering, renderProgress, onSelectAudio, onUndo, onRedo, onRenderMovie,
-  onGenerateImage, onSplitScene, onDuplicateScene, onDeleteScene, onOpenTrim, onOpenMagicEdit, onUpdateScene, onReorderScenes, cycleTransition,
+  onGenerateImage, onGenerateVideo, onSplitScene, onDuplicateScene, onDeleteScene, onOpenTrim, onOpenMagicEdit, onUpdateScene, onReorderScenes, cycleTransition,
   historyIndex, historyLength
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -67,6 +68,21 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
           }
       }
   }, [isPreviewPlaying, activeScene]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          setIsPreviewPlaying((prev: boolean) => !prev);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setIsPreviewPlaying]);
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
       if (!timelineRef.current) return;
@@ -179,6 +195,17 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
                                       </span>
                                   </div>
                               </div>
+                              <div className="pt-2 border-t border-gray-800">
+                                  <label className="text-[10px] font-bold text-gray-500 uppercase mb-2 block">Generative Actions</label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                      <Button size="sm" variant="secondary" className="text-xs" onClick={() => onGenerateImage(activeScene.id)}>
+                                          <Wand2 size={12} className="mr-1"/> Image
+                                      </Button>
+                                      <Button size="sm" variant="secondary" className="text-xs" onClick={() => onGenerateVideo(activeScene.id)}>
+                                          <Film size={12} className="mr-1"/> Video
+                                      </Button>
+                                  </div>
+                              </div>
                           </>
                       ) : (
                           <div className="text-center text-gray-500 mt-10 text-xs">Select a scene on the timeline</div>
@@ -193,7 +220,7 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
               <div className="h-12 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-850 shrink-0">
                   <div className="flex items-center gap-2">
                       <Button size="sm" variant="secondary" onClick={() => setIsPreviewPlaying(!isPreviewPlaying)} className={isPreviewPlaying ? "border-primary-500 text-primary-400" : ""}>
-                          {isPreviewPlaying ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>}
+                          {isPreviewPlaying ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor" className="ml-1" />}
                       </Button>
                       <div className="text-lg font-mono text-white ml-2 tabular-nums">
                           {currentTime.toFixed(2)}s <span className="text-gray-600 text-xs">/ {totalDuration.toFixed(2)}s</span>

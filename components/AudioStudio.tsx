@@ -6,13 +6,13 @@ import { MOCK_VOICES } from '../constants';
 import { Voice, AudioTrack } from '../types';
 import { generateSpeech, transcribeAudio, analyzeMediaStyle } from '../services/geminiService';
 import { AudioTimeline } from './AudioTimeline';
-import { AudioSidebar } from './AudioSidebar';
+import { AudioSidebar, AudioTab } from './AudioSidebar';
 import { AudioBeatMaker } from './AudioBeatMaker';
 import { bufferToWav } from '../utils/audioHelpers';
 import { useDebounce } from '../hooks/useDebounce';
 
 export const AudioStudio: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'cloning' | 'mixer' | 'pro' | 'sequencer'>('mixer');
+  const [activeTab, setActiveTab] = useState<AudioTab>('mixer');
   const [showAssets, setShowAssets] = useState(true);
   
   const [voices, setVoices] = useState<Voice[]>(() => {
@@ -82,14 +82,32 @@ export const AudioStudio: React.FC = () => {
       });
   }, [tracks]);
 
-  const handleTogglePlay = () => {
-    const newIsPlaying = !isPlaying;
-    setIsPlaying(newIsPlaying);
-    Object.values(audioRefs.current).forEach(audio => {
-      const audioEl = audio as HTMLAudioElement;
-      if (newIsPlaying) audioEl.play().catch(e => console.log("Play error:", e)); else audioEl.pause();
-    });
-  };
+  // Sync Audio Elements with State
+  useEffect(() => {
+      Object.values(audioRefs.current).forEach(audio => {
+          const audioEl = audio as HTMLAudioElement;
+          if (isPlaying) {
+              audioEl.play().catch(e => console.log("Play error:", e));
+          } else {
+              audioEl.pause();
+          }
+      });
+  }, [isPlaying]);
+
+  const handleTogglePlay = () => setIsPlaying(p => !p);
+
+  // Keyboard Shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Only active if NOT in sequencer mode (which has its own shortcut)
+        if (activeTab !== 'sequencer' && e.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            setIsPlaying(p => !p);
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab]);
 
   const handleGenerateTTS = async () => {
     if (!ttsInput) return;
@@ -277,7 +295,7 @@ export const AudioStudio: React.FC = () => {
       )}
 
       <AudioSidebar 
-        activeTab={activeTab} setActiveTab={setActiveTab as any} voices={voices} selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice}
+        activeTab={activeTab} setActiveTab={setActiveTab} voices={voices} selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice}
         ttsInput={ttsInput} setTtsInput={setTtsInput} styleReference={styleReference} setStyleReference={setStyleReference}
         isGenerating={isGenerating} onGenerateTTS={handleGenerateTTS} onSmartMix={handleSmartMix} mastering={mastering} setMastering={setMastering}
         onUploadStyleRef={handleUploadStyleRef} isRecording={isRecording} startRecording={startRecording} stopRecording={stopRecording} recordingTime={recordingTime} formatTime={formatTime}
@@ -288,7 +306,7 @@ export const AudioStudio: React.FC = () => {
       ) : (
           <AudioTimeline 
             tracks={tracks} isPlaying={isPlaying} onTogglePlay={handleTogglePlay} onExportMix={handleExportMix} isExporting={isExporting}
-            onShowAssets={() => setShowAssets(!showAssets)} activeTab={activeTab} setActiveTab={setActiveTab as any} isRecording={isRecording}
+            onShowAssets={() => setShowAssets(!showAssets)} activeTab={activeTab} setActiveTab={setActiveTab} isRecording={isRecording}
             startRecording={startRecording} stopRecording={stopRecording} onTranscribe={handleTranscribe} isTranscribing={isTranscribing}
             onDeleteTrack={handleDeleteTrack} toggleMute={toggleMute} toggleSolo={toggleSolo} handleVolumeChange={(id, v) => setTracks(p => p.map(t => t.id === id ? {...t, volume: v} : t))}
             setTracks={setTracks} audioRefs={audioRefs}

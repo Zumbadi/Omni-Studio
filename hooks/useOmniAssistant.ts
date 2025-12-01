@@ -27,8 +27,37 @@ export const useOmniAssistant = ({
       const saved = localStorage.getItem(`omni_chat_${projectId}`);
       if (saved) {
           try {
-              return JSON.parse(saved);
-          } catch (e) { console.error("Failed to parse chat history"); }
+              const parsed = JSON.parse(saved);
+              // Sanitize history to prevent React Error #31
+              return parsed.map((msg: any) => {
+                  // Normalize critique fields if present
+                  if (msg.critique) {
+                      return {
+                          ...msg,
+                          critique: {
+                              ...msg.critique,
+                              // Ensure lists are strings, not objects (flatten if needed)
+                              issues: Array.isArray(msg.critique.issues) 
+                                  ? msg.critique.issues.map((i: any) => 
+                                      typeof i === 'object' ? (i.description || i.message || JSON.stringify(i)) : String(i)
+                                  ) : [],
+                              suggestions: Array.isArray(msg.critique.suggestions)
+                                  ? msg.critique.suggestions.map((s: any) => 
+                                      typeof s === 'object' ? (s.description || s.message || JSON.stringify(s)) : String(s)
+                                  ) : [],
+                              // Ensure fixCode is string
+                              fixCode: (typeof msg.critique.fixCode === 'object' && msg.critique.fixCode !== null) 
+                                  ? (msg.critique.fixCode.fixCode || msg.critique.fixCode.code || '') 
+                                  : (msg.critique.fixCode || undefined)
+                          }
+                      };
+                  }
+                  return msg;
+              });
+          } catch (e) { 
+              console.error("Failed to parse chat history", e); 
+              return [];
+          }
       }
       return [{
           id: 'init-welcome',
@@ -55,6 +84,26 @@ export const useOmniAssistant = ({
   const runCritique = async (code: string, task: string) => {
       const criticRes = await critiqueCode(code, task);
       if (criticRes) {
+          // Normalize fixCode if it comes back as an object
+          let fixCodeStr = criticRes.fixCode;
+          if (fixCodeStr && typeof fixCodeStr === 'object') {
+              // Try to extract content from nested object if present
+              fixCodeStr = (fixCodeStr as any).fixCode || (fixCodeStr as any).code || (fixCodeStr as any).content || '';
+          }
+          if (typeof fixCodeStr !== 'string') fixCodeStr = undefined;
+
+          // Normalize lists to ensure they are strings
+          const normalizeList = (list: any[]) => {
+              if (!Array.isArray(list)) return [];
+              return list.map(item => {
+                  if (typeof item === 'string') return item;
+                  if (item && typeof item === 'object') {
+                      return item.description || item.message || item.text || JSON.stringify(item);
+                  }
+                  return String(item);
+              });
+          };
+
           setChatHistory(prev => [...prev, {
               id: `critic-${Date.now()}`,
               role: 'critic',
@@ -62,9 +111,9 @@ export const useOmniAssistant = ({
               timestamp: Date.now(),
               critique: {
                   score: criticRes.score || 75,
-                  issues: criticRes.issues || [],
-                  suggestions: criticRes.suggestions || [],
-                  fixCode: criticRes.fixCode
+                  issues: normalizeList(criticRes.issues),
+                  suggestions: normalizeList(criticRes.suggestions),
+                  fixCode: fixCodeStr
               }
           }]);
       }

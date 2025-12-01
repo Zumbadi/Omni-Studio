@@ -182,6 +182,7 @@ export interface SocialPost {
   characters?: Character[];
   styleReferences?: ReferenceAsset[];
   audioTrackId?: string;
+  lastModified?: string;
 }
 
 export interface Extension {

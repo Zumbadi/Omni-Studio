@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal, Container, Workflow, Paperclip, MapPin } from 'lucide-react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal, Container, Workflow, Paperclip, MapPin, Trash2 } from 'lucide-react';
 import { Button } from './Button';
 import { ChatMessage, AgentTask } from '../types';
 import { MessageRenderer } from './MessageRenderer';
@@ -145,6 +145,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleClearHistory = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (confirm('Are you sure you want to clear the chat history?')) {
+          setHistory([]);
+      }
+  };
+
   if (!isOpen) {
     return (
       <div className="absolute bottom-6 right-6 z-50 pointer-events-auto">
@@ -202,14 +209,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     >
                         {isExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); setIsOpen(false); }} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-gray-800 rounded" title="Minimize">
-                        <ChevronDown size={16}/>
-                    </button>
                     <button 
-                        onClick={(e) => { e.stopPropagation(); setIsOpen(false); setHistory([]); }} 
+                        onClick={handleClearHistory}
                         className="text-gray-400 hover:text-red-400 transition-colors p-1.5 hover:bg-gray-800 rounded"
-                        title="Close & Clear"
+                        title="Clear Chat History (Frees Memory)"
                     >
+                        <Trash2 size={16}/>
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsOpen(false); }} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-gray-800 rounded" title="Close">
                         <X size={16}/>
                     </button>
                 </div>

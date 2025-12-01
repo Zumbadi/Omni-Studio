@@ -100,10 +100,14 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
               const x = i * (barWidth + gap);
               const y = height - barHeight;
               
-              // Rounded top bar
-              ctx.beginPath();
-              ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
-              ctx.fill();
+              // Draw Rect (roundRect might not be available)
+              if (typeof ctx.roundRect === 'function') {
+                  ctx.beginPath();
+                  ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
+                  ctx.fill();
+              } else {
+                  ctx.fillRect(x, y, barWidth, barHeight);
+              }
           }
 
           rafRef.current = requestAnimationFrame(renderFrame);

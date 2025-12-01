@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -10,33 +10,35 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = {
-    hasError: false,
-    error: null
-  };
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+    this.handleRetry = this.handleRetry.bind(this);
+    this.handleHardReset = this.handleHardReset.bind(this);
+  }
 
-  public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
   }
 
-  private handleRetry = () => {
+  handleRetry() {
       this.setState({ hasError: false, error: null });
       window.location.reload();
   }
 
-  private handleHardReset = () => {
+  handleHardReset() {
       if (window.confirm("This will clear all local storage and reset the app. Are you sure?")) {
           localStorage.clear();
           window.location.reload();
       }
   }
 
-  public render() {
+  render() {
     if (this.state.hasError) {
       return (
         <div className="h-screen w-screen bg-gray-950 flex flex-col items-center justify-center text-white p-6 relative overflow-hidden">

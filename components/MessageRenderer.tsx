@@ -26,6 +26,40 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
       return <XCircle size={14} />;
   };
 
+  const safeRender = (content: any): React.ReactNode => {
+      if (content === null || content === undefined) return '';
+      if (typeof content === 'string') return content;
+      if (typeof content === 'number') return String(content);
+      if (typeof content === 'boolean') return String(content);
+      
+      // Prevent React Error #31 by handling objects explicitly
+      if (typeof content === 'object') {
+          // Check for the specific problematic structure: { description, fixCode }
+          if ('description' in content && typeof content.description === 'string') {
+              return content.description;
+          }
+          if ('message' in content && typeof content.message === 'string') {
+              return content.message;
+          }
+          // Fallback: simple stringification or a placeholder
+          try {
+              const str = JSON.stringify(content);
+              return str.length > 50 ? '[Complex Data]' : str;
+          } catch {
+              return '[Object]';
+          }
+      }
+      return String(content);
+  };
+
+  const getFixCodeString = (fixCode: any): string => {
+      if (typeof fixCode === 'string') return fixCode;
+      if (fixCode && typeof fixCode === 'object') {
+          return fixCode.fixCode || fixCode.code || fixCode.content || '';
+      }
+      return '';
+  };
+
   // Detect Agent Persona
   let agentIcon = <Bot size={16} />;
   let agentColor = 'text-primary-400';
@@ -178,7 +212,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                                   <span className="text-red-400 bg-red-900/40 px-1.5 rounded-full">{issues.length}</span>
                               </h4>
                               <ul className="list-disc list-inside text-xs space-y-1 text-white/80">
-                                  {issues.map((issue, i) => <li key={i}>{issue}</li>)}
+                                  {issues.map((issue, i) => <li key={i}>{safeRender(issue)}</li>)}
                               </ul>
                           </div>
                       )}
@@ -187,7 +221,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                           <div>
                               <h4 className="text-[10px] uppercase text-white/60 font-bold mb-1">Suggestions</h4>
                               <ul className="list-disc list-inside text-xs space-y-1 text-white/80">
-                                  {suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                                  {suggestions.map((s, i) => <li key={i}>{safeRender(s)}</li>)}
                               </ul>
                           </div>
                       )}
@@ -208,7 +242,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
                               The critic has automatically generated a fix for the identified issues.
                           </div>
                           <button 
-                              onClick={() => onApplyCode(fixCode)}
+                              onClick={() => onApplyCode(getFixCodeString(fixCode))}
                               className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white text-xs font-medium py-2 rounded-lg transition-all shadow-lg"
                           >
                               <CornerDownLeft size={14} /> Apply Critic's Fix
@@ -218,7 +252,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
 
                   {!fixCode && score < 90 && onAutoFix && (
                       <button 
-                          onClick={() => onAutoFix(issues)}
+                          onClick={() => onAutoFix(issues.map(i => typeof i === 'string' ? i : String(safeRender(i))))}
                           className="mt-4 w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-medium py-2 rounded-lg transition-colors"
                       >
                           <Sparkles size={14} className="text-yellow-300"/> Auto-Fix Issues
@@ -325,11 +359,11 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
       )}
       
       <div className={`max-w-[98%] rounded-2xl rounded-tl-none p-2 overflow-hidden border ${isSystemUpdate ? 'bg-gray-900 border-gray-700 border-l-4 border-l-purple-500' : 'bg-gray-800 border-gray-700'} text-gray-200 text-sm w-full shadow-md relative group`}>
-         {/* Apply All Header */}
-         {codeBlocks.length > 1 && onApplyAll && (
+         {/* Apply All Header (Top) */}
+         {codeBlocks.length > 0 && onApplyAll && (
              <div className="flex justify-between items-center bg-gray-900/50 p-2 border-b border-gray-700/50 mb-2 rounded-t-md">
                  <span className="text-[10px] text-gray-400 font-bold uppercase flex items-center gap-1">
-                    <Sparkles size={10} className="text-primary-400"/> {codeBlocks.length} Code Snippets
+                    <Sparkles size={10} className="text-primary-400"/> {codeBlocks.length} Snippets
                  </span>
                  <button 
                     onClick={handleApplyAll}
@@ -341,6 +375,19 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
          )}
 
          {renderTextContent(message.text)}
+         
+         {/* Apply All Footer (Bottom) */}
+         {codeBlocks.length > 0 && onApplyAll && (
+             <div className="flex justify-end items-center bg-gray-900/30 p-2 border-t border-gray-700/30 mt-2 rounded-b-md">
+                 <button 
+                    onClick={handleApplyAll}
+                    className="flex items-center gap-1 text-[10px] bg-primary-600/20 hover:bg-primary-600/40 text-primary-300 border border-primary-500/30 px-2 py-1 rounded transition-colors"
+                 >
+                    <CornerDownLeft size={10}/> Apply All
+                 </button>
+             </div>
+         )}
+
          {renderAttachments()}
          {renderSources()}
       </div>

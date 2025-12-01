@@ -29,6 +29,18 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack }) =>
     return () => clearInterval(interval);
   }, [isPlaying, bpm]);
 
+  // Keyboard Shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsPlaying(p => !p);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const toggleStep = (row: number, col: number) => {
     const newGrid = [...grid];
     newGrid[row][col] = !newGrid[row][col];

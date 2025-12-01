@@ -58,7 +58,7 @@ export const useAgentOrchestrator = ({
   handleCommand
 }: UseAgentOrchestratorProps) => {
   
-  const [activeAgentTask, setActiveAgentTask] = useState<AgentTask & { fileList?: { name: string, path?: string, status: string }[] } | null>(null);
+  const [activeAgentTask, setActiveAgentTask] = useState<AgentTask | null>(null);
   const [activeAgent, setActiveAgent] = useState<AIAgent | null>(null);
   const [taskHistory, setTaskHistory] = useState<AgentTask[]>([]);
   const abortAgentRef = useRef(false);
@@ -206,15 +206,15 @@ export const useAgentOrchestrator = ({
               }
           }
 
-          const currentTaskState = await new Promise<any>(resolve => {
+          const currentTaskState = await new Promise<AgentTask | null>(resolve => {
               setActiveAgentTask(prev => {
                   resolve(prev);
                   return prev;
               });
           });
 
-          if (!currentTaskState.fileList || currentTaskState.fileList.length === 0) {
-               const completedTask = { ...currentTaskState, status: 'completed', logs: [...(currentTaskState?.logs || []), "No files targeted."] };
+          if (!currentTaskState || !currentTaskState.fileList || currentTaskState.fileList.length === 0) {
+               const completedTask: AgentTask = { ...(currentTaskState || activeAgentTask), status: 'completed', logs: [...(currentTaskState?.logs || []), "No files targeted."] };
                setActiveAgentTask(null);
                setTaskHistory(prev => [completedTask, ...prev]);
                setActiveAgent(null);
@@ -254,7 +254,7 @@ export const useAgentOrchestrator = ({
                   return;
               }
 
-              const currentTaskLoop = await new Promise<any>(resolve => {
+              const currentTaskLoop = await new Promise<AgentTask | null>(resolve => {
                   setActiveAgentTask(prev => { resolve(prev); return prev; });
               });
               
@@ -291,13 +291,13 @@ export const useAgentOrchestrator = ({
                   
                   if (!fileNode) {
                       setTerminalLogs(prev => [...prev, `[System] ⚠️ Skipping ${targetFileObj.name} (Not found)`]);
-                      setActiveAgentTask(prev => prev ? { ...prev, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'error' } : f) } : null);
+                      setActiveAgentTask(prev => prev ? { ...prev, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'error' as const } : f) } : null);
                       i++;
                       continue;
                   }
               }
 
-              setActiveAgentTask(prev => prev ? { ...prev, currentFile: fileNode.name, logs: [...prev.logs, `Processing ${fileNode.name}...`], fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'processing' } : f) } : null);
+              setActiveAgentTask(prev => prev ? { ...prev, currentFile: fileNode!.name, logs: [...prev.logs, `Processing ${fileNode!.name}...`], fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'processing' as const } : f) } : null);
               
               const instructions = activeAgentTask.name || "Improve code quality and fix bugs.";
               
@@ -308,7 +308,7 @@ export const useAgentOrchestrator = ({
 
               // Assign to Builder
               setActiveAgent(builder);
-              setTerminalLogs(prev => [...prev, `[${manager.name}] Assigned ${fileNode.name} to ${builder.name}`]);
+              setTerminalLogs(prev => [...prev, `[${manager.name}] Assigned ${fileNode!.name} to ${builder.name}`]);
 
               while (attempts < MAX_RETRIES && !success) {
                   if (abortAgentRef.current) break;
@@ -319,7 +319,7 @@ export const useAgentOrchestrator = ({
                   
                   // 0. PRE-CHECK / SCAN (Get Context)
                   if (attempts === 1) {
-                      setTerminalLogs(prev => [...prev, `[${builder.name}] 🔍 Scanning ${fileNode.name}...`]);
+                      setTerminalLogs(prev => [...prev, `[${builder.name}] 🔍 Scanning ${fileNode!.name}...`]);
                       
                       const analysis = await analyzeFile(builder, fileNode.name, currentContent, instructions, context);
                       setTerminalLogs(prev => [...prev, `[${builder.name}] 💡 Findings: ${analysis.replace(/\n/g, '; ')}`]);
@@ -346,12 +346,12 @@ export const useAgentOrchestrator = ({
 
                   // --- DELETION CHECK ---
                   if (buildResult.code.trim() === 'DELETE_FILE') {
-                      setTerminalLogs(prev => [...prev, `[System] 🗑️ ${builder.name} requested deletion of ${fileNode.name}.`]);
+                      setTerminalLogs(prev => [...prev, `[System] 🗑️ ${builder.name} requested deletion of ${fileNode!.name}.`]);
                       deleteFile(fileNode.id);
                       addSystemMessage(`**${builder.name}** deleted \`${fileNode.name}\` as requested.`);
                       success = true;
                       processedCount++;
-                      setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' } : f) } : null);
+                      setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' as const } : f) } : null);
                       break; 
                   }
 
@@ -367,10 +367,10 @@ export const useAgentOrchestrator = ({
                   }
 
                   if (buildResult.code.trim() === currentContent.trim() && attempts === 1 && !isNewFile) {
-                      setTerminalLogs(prev => [...prev, `[System] No changes required for ${fileNode.name}.`]);
+                      setTerminalLogs(prev => [...prev, `[System] No changes required for ${fileNode!.name}.`]);
                       success = true;
                       processedCount++;
-                      setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' } : f) } : null);
+                      setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' as const } : f) } : null);
                       break; 
                   }
                   
@@ -442,16 +442,16 @@ export const useAgentOrchestrator = ({
                   
                   if (success) {
                       processedCount++;
-                      setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' } : f) } : null);
+                      setActiveAgentTask(prev => prev ? { ...prev, processedFiles: prev.processedFiles + 1, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'done' as const } : f) } : null);
                   }
                   
                   await new Promise(r => setTimeout(r, 2000));
               }
 
               if (!success) {
-                  setActiveAgentTask(prev => prev ? { ...prev, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'error' } : f) } : null);
-                  addSystemMessage(`**${critic.name}** stopped updates to \`${fileNode.name}\` after ${MAX_RETRIES} failed attempts.`);
-                  setTerminalLogs(prev => [...prev, `[System] ⚠️ Skipped ${fileNode.name}.`]);
+                  setActiveAgentTask(prev => prev ? { ...prev, fileList: prev.fileList?.map((f, idx) => idx === i ? { ...f, status: 'error' as const } : f) } : null);
+                  addSystemMessage(`**${critic.name}** stopped updates to \`${fileNode!.name}\` after ${MAX_RETRIES} failed attempts.`);
+                  setTerminalLogs(prev => [...prev, `[System] ⚠️ Skipped ${fileNode!.name}.`]);
               }
               
               i++; // Next file
@@ -550,7 +550,7 @@ export const useAgentOrchestrator = ({
                   totalFiles: 1,
                   processedFiles: 0,
                   logs: [`Starting phase...`],
-                  fileList: firstTask.targetFile ? [{ name: firstTask.targetFile, status: 'pending' }] : []
+                  fileList: firstTask.targetFile ? [{ name: firstTask.targetFile, status: 'pending' as const }] : []
               });
               setActiveAgent(assignedAgent);
           } else {
