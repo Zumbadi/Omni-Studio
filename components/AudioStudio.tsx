@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, FileText, LayoutTemplate, Play, Pause, Trash2 } from 'lucide-react';
+import { X, FileText, LayoutTemplate, Play, Pause, Trash2, Menu, Music, FolderOpen } from 'lucide-react';
 import { Button } from './Button';
 import { MOCK_VOICES } from '../constants';
 import { Voice, AudioTrack } from '../types';
@@ -11,8 +11,8 @@ import type { AudioTab } from './AudioSidebar';
 import { AudioBeatMaker } from './AudioBeatMaker';
 import { bufferToWav } from '../utils/audioHelpers';
 import { useDebounce } from '../hooks/useDebounce';
+import { MediaAssetsLibrary } from './MediaAssetsLibrary';
 
-// Helper to ensure audio is saved persistently (Data URI) vs temporary (Blob URL)
 const blobToDataUri = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -24,7 +24,8 @@ const blobToDataUri = (blob: Blob): Promise<string> => {
 
 export const AudioStudio: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AudioTab>('mixer');
-  const [showAssets, setShowAssets] = useState(true);
+  const [showAssets, setShowAssets] = useState(false); 
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   const [voices, setVoices] = useState<Voice[]>(() => {
     try {
@@ -35,13 +36,11 @@ export const AudioStudio: React.FC = () => {
     }
   });
 
-  // Library of reusable assets (separate from active timeline tracks)
   const [audioAssets, setAudioAssets] = useState<any[]>(() => {
       try {
           const saved = localStorage.getItem('omni_audio_assets');
           if (saved) {
               const parsed = JSON.parse(saved);
-              // Filter out blob URLs that might be expired
               return parsed.filter((a: any) => a.audioUrl && !a.audioUrl.startsWith('blob:'));
           }
       } catch(e) {}
@@ -56,7 +55,6 @@ export const AudioStudio: React.FC = () => {
         const parsed = JSON.parse(saved);
         return parsed.map((t: AudioTrack) => ({
             ...t,
-            // If blob URL found on reload, try to clear it to avoid errors (unless we can recover it, which we can't)
             audioUrl: t.audioUrl && t.audioUrl.startsWith('blob:') ? undefined : t.audioUrl
         }));
     } catch(e) {
@@ -65,10 +63,6 @@ export const AudioStudio: React.FC = () => {
   });
   
   const [isPlaying, setIsPlaying] = useState(false);
-  // Previewing asset state
-  const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
 
   const [ttsInput, setTtsInput] = useState('');
@@ -77,6 +71,10 @@ export const AudioStudio: React.FC = () => {
   const [styleReference, setStyleReference] = useState<string | undefined>(undefined);
   const [youtubeLink, setYoutubeLink] = useState(''); 
   const [genre, setGenre] = useState('Trap Soul');
+  
+  // New Song Options State
+  const [voiceStyle, setVoiceStyle] = useState('Singing');
+  const [songStructure, setSongStructure] = useState('Intro-Verse-Chorus-Outro');
   
   const [transcription, setTranscription] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -88,30 +86,29 @@ export const AudioStudio: React.FC = () => {
   const timerRef = useRef<number | null>(null);
 
   const [isExporting, setIsExporting] = useState(false);
-
   const [mastering, setMastering] = useState({ enabled: false, warmth: 50, clarity: 50, punch: 50 });
 
   const debouncedTracks = useDebounce(tracks, 2000);
 
   useEffect(() => {
-    // Only save Data URIs to avoid Blob URL revocation issues
-    const tracksToSave = debouncedTracks.map(t => ({ 
-        ...t, 
-        audioUrl: t.audioUrl && t.audioUrl.startsWith('data:') ? t.audioUrl : undefined 
-    }));
-    try {
-        localStorage.setItem('omni_audio_tracks', JSON.stringify(tracksToSave));
-        window.dispatchEvent(new Event('omniAssetsUpdated'));
-    } catch (e) {
-        console.error("Storage quota exceeded for audio tracks.", e);
-        // Fallback: don't save tracks with large base64 data
-        const lightTracks = tracksToSave.map(t => ({...t, audioUrl: undefined}));
+    const saveTracks = () => {
         try {
-            localStorage.setItem('omni_audio_tracks', JSON.stringify(lightTracks));
-        } catch (retryError) {
-            console.error("Failed to save audio tracks metadata.", retryError);
+            localStorage.setItem('omni_audio_tracks', JSON.stringify(debouncedTracks));
+        } catch (e) {
+            console.warn("Audio track storage quota exceeded. Saving metadata only.");
+            const lightTracks = debouncedTracks.map(t => ({
+                ...t,
+                audioUrl: t.audioUrl && t.audioUrl.startsWith('data:') ? undefined : t.audioUrl
+            }));
+            try {
+                localStorage.setItem('omni_audio_tracks', JSON.stringify(lightTracks));
+            } catch (err) {
+                console.error("Critical: Failed to save audio tracks metadata.", err);
+            }
         }
-    }
+        window.dispatchEvent(new Event('omniAssetsUpdated'));
+    };
+    saveTracks();
   }, [debouncedTracks]);
 
   useEffect(() => {
@@ -123,20 +120,25 @@ export const AudioStudio: React.FC = () => {
   }, [voices]);
 
   useEffect(() => {
-      // Filter out non-persistent URLs before saving assets
-      const assetsToSave = audioAssets.filter(a => a.audioUrl && a.audioUrl.startsWith('data:'));
-      try {
-          localStorage.setItem('omni_audio_assets', JSON.stringify(assetsToSave));
-      } catch (e) {
-          console.error("Storage quota exceeded for audio assets.", e);
-          // If assets are too large, just save metadata or empty array to prevent crash loop
+      const saveAssets = () => {
           try {
-              const metaAssets = assetsToSave.map(a => ({...a, audioUrl: ''}));
-              localStorage.setItem('omni_audio_assets', JSON.stringify(metaAssets));
-          } catch(retry) {
-              console.error("Critical asset storage failure", retry);
+              localStorage.setItem('omni_audio_assets', JSON.stringify(audioAssets));
+          } catch (e) {
+              console.warn("Audio assets storage quota exceeded. Clearing heavy assets.");
+              const lightAssets = audioAssets.map(a => ({
+                  ...a,
+                  audioUrl: a.audioUrl && a.audioUrl.startsWith('data:') ? undefined : a.audioUrl
+              })).filter(a => a.audioUrl);
+              
+              try {
+                  localStorage.setItem('omni_audio_assets', JSON.stringify(lightAssets));
+              } catch (err) {
+                  console.error("Critical: Failed to save audio assets.", err);
+              }
           }
-      }
+          window.dispatchEvent(new Event('omniAssetsUpdated'));
+      };
+      saveAssets();
   }, [audioAssets]);
 
   useEffect(() => {
@@ -161,7 +163,6 @@ export const AudioStudio: React.FC = () => {
       });
   }, [tracks]);
 
-  // Sync Audio Elements with State
   useEffect(() => {
       Object.values(audioRefs.current).forEach(audio => {
           const audioEl = audio as HTMLAudioElement;
@@ -175,212 +176,197 @@ export const AudioStudio: React.FC = () => {
 
   const handleTogglePlay = () => setIsPlaying(p => !p);
 
-  // Keyboard Shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        // Only active if NOT in sequencer mode (which has its own shortcut)
-        if (activeTab !== 'sequencer' && e.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
-            e.preventDefault();
-            setIsPlaying(p => !p);
+      if (e.code === 'Space') {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          handleTogglePlay();
         }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab]);
+  }, []);
 
-  const handleGenerateTTS = async () => {
-    if (!ttsInput) return;
-    setIsGenerating(true);
-    try {
-        const voice = voices.find(v => v.id === selectedVoice);
-        const audioDataUri = await generateSpeech(ttsInput, voice || voices[0], styleReference);
-        
-        if (audioDataUri) {
-            // Get duration
-            const tempAudio = new Audio(audioDataUri);
-            tempAudio.onloadedmetadata = () => {
-                const newTrack: AudioTrack = {
-                    id: `t-${Date.now()}`,
-                    name: `TTS: ${ttsInput.substring(0, 15)}...`,
-                    type: 'voiceover',
-                    duration: tempAudio.duration || 5,
-                    startOffset: 0,
-                    audioUrl: audioDataUri,
-                    volume: 1.0
-                };
-                setTracks(prev => [...prev, newTrack]);
-                setAudioAssets(prev => [...prev, { id: newTrack.id, type: 'audio', url: audioDataUri, name: newTrack.name }]);
-            };
-            // Fallback if metadata fails
-            tempAudio.onerror = () => {
-                 const newTrack: AudioTrack = {
-                    id: `t-${Date.now()}`,
-                    name: `TTS: ${ttsInput.substring(0, 15)}...`,
-                    type: 'voiceover',
-                    duration: 5,
-                    startOffset: 0,
-                    audioUrl: audioDataUri,
-                    volume: 1.0
-                };
-                setTracks(prev => [...prev, newTrack]);
-            };
-        }
-    } catch (error) {
-        console.error(error);
-    }
-    setIsGenerating(false);
+  const addAsset = (track: AudioTrack) => {
+      const newAsset = {
+          id: track.id,
+          name: track.name,
+          audioUrl: track.audioUrl,
+          created: new Date().toISOString()
+      };
+      setAudioAssets(prev => [...prev, newAsset]);
   };
 
-  const handleGenerateSong = async () => {
-      if (!ttsInput) return;
+  const handleGenerateTTS = async () => {
+      if (!ttsInput.trim()) return;
       setIsGenerating(true);
-      try {
-          const audioDataUri = await generateSong(ttsInput, styleReference, selectedVoice, youtubeLink, genre);
-          if (audioDataUri) {
-              const tempAudio = new Audio(audioDataUri);
-              tempAudio.onloadedmetadata = () => {
-                  const newTrack: AudioTrack = {
-                      id: `song-${Date.now()}`,
-                      name: `AI Song: ${genre}`,
-                      type: 'music',
-                      duration: tempAudio.duration || 15,
-                      startOffset: 0,
-                      audioUrl: audioDataUri,
-                      volume: 0.8
-                  };
-                  setTracks(prev => [...prev, newTrack]);
-                  setAudioAssets(prev => [...prev, { id: newTrack.id, type: 'audio', url: audioDataUri, name: newTrack.name }]);
-              };
-          }
-      } catch (e) {
-          console.error(e);
+      
+      const voice = voices.find(v => v.id === selectedVoice) || voices[0];
+      const audioUrl = await generateSpeech(ttsInput, voice, styleReference);
+      
+      if (audioUrl) {
+          const newTrack: AudioTrack = {
+              id: `tts-${Date.now()}`,
+              name: `TTS: ${ttsInput.substring(0, 10)}... (${voice.name})`,
+              type: 'voiceover',
+              duration: 10,
+              startOffset: 0,
+              audioUrl,
+              volume: 1.0,
+              muted: false
+          };
+          setTracks(prev => [...prev, newTrack]);
+          addAsset(newTrack);
       }
       setIsGenerating(false);
   };
 
-  const handleUploadReferenceTrack = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-              const base64 = ev.target?.result as string;
-              setStyleReference(base64); // Keep as style ref
-              
-              // Also add as a separate track on timeline
-              const tempAudio = new Audio(base64);
-              const addTrack = (duration: number) => {
-                  const newTrack: AudioTrack = {
-                      id: `ref-${Date.now()}`,
-                      name: `Ref: ${file.name}`,
-                      type: 'music',
-                      duration: duration,
-                      startOffset: 0,
-                      audioUrl: base64,
-                      volume: 0.5,
-                      muted: false
-                  };
-                  setTracks(prev => [...prev, newTrack]);
-              };
+  const handleGenerateSong = async () => {
+      setIsGenerating(true);
+      const voice = voices.find(v => v.id === selectedVoice);
+      const isInstrumental = !selectedVoice;
 
-              tempAudio.onloadedmetadata = () => {
-                  // Fix for Chrome bug with some base64 audio reporting Infinity
-                  if (tempAudio.duration === Infinity) {
-                      tempAudio.currentTime = 1e101;
-                      tempAudio.ontimeupdate = () => {
-                          tempAudio.ontimeupdate = null;
-                          addTrack(tempAudio.duration);
-                      };
-                  } else {
-                      addTrack(tempAudio.duration);
-                  }
-              };
-              tempAudio.onerror = () => addTrack(30); // Fallback
+      // 1. Generate Instrumental Track
+      const mainAudioUrl = await generateSong(
+          ttsInput, 
+          styleReference, 
+          selectedVoice, 
+          youtubeLink, 
+          genre,
+          voiceStyle,
+          songStructure
+      );
+
+      if (mainAudioUrl) {
+          const mainTrack: AudioTrack = {
+              id: `song-${Date.now()}`,
+              name: `${genre} Instrumental (${songStructure || 'Standard'})`,
+              type: 'music',
+              duration: 30, // Mock duration
+              startOffset: 0,
+              audioUrl: mainAudioUrl,
+              volume: 0.8,
+              muted: false
           };
-          reader.readAsDataURL(file);
+          setTracks(prev => [...prev, mainTrack]);
+          addAsset(mainTrack);
+
+          // 2. Generate Vocal Track (if voice selected and lyrics present)
+          if (!isInstrumental && selectedVoice && ttsInput.trim()) {
+               // Clone or use standard voice for singing
+               const vocalPrompt = `(Singing in ${genre} style, vocal style: ${voiceStyle}) ${ttsInput}`;
+               // We pass styleReference if available to influence vocal tone as well
+               const vocalUrl = await generateSpeech(vocalPrompt, voice!, styleReference);
+               
+               if (vocalUrl) {
+                   const vocalTrack: AudioTrack = {
+                       id: `voc-${Date.now()}`,
+                       name: `${voice.name} Vocals`,
+                       type: 'voiceover',
+                       duration: 30, // Should ideally match instrumental, mock for now
+                       startOffset: 0, // Aligned with music
+                       audioUrl: vocalUrl,
+                       volume: 1.0,
+                       muted: false
+                   };
+                   setTracks(prev => [...prev, vocalTrack]);
+                   addAsset(vocalTrack);
+               }
+          }
       }
+      setIsGenerating(false);
   };
 
-  const handleCloneFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCloneFromFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      setIsGenerating(true);
       
       const reader = new FileReader();
       reader.onload = async (ev) => {
           const base64 = ev.target?.result as string;
-          // Analyze style for description
+          // Analyze audio style to get a description
           const analysis = await analyzeMediaStyle(base64, 'audio');
           
           const newVoice: Voice = {
-              id: `v-${Date.now()}`,
-              name: `Cloned (${file.name})`,
-              gender: 'robot', // Default until analysis determines
+              id: `voice-${Date.now()}`,
+              name: file.name.replace(/\.[^/.]+$/, ""),
+              gender: 'robot', // Default, will be overridden by style usage
               style: 'custom',
               isCloned: true,
-              apiMapping: 'Kore', // Fallback mapping for the API
+              apiMapping: 'cloned_voice_id', // Placeholder for actual API reference
               settings: { stability: 0.5, similarity: 0.75 }
           };
           
           setVoices(prev => [...prev, newVoice]);
           setSelectedVoice(newVoice.id);
-          setIsGenerating(false);
-          alert(`Voice Cloned Successfully! Profile: ${analysis}`);
+          setStyleReference(analysis); // Set the analyzed style as the current reference
+          alert(`Voice "${newVoice.name}" cloned successfully! Style Analysis: ${analysis}`);
+          
+          // Reset input target value so the same file can be selected again if needed
+          e.target.value = '';
       };
       reader.readAsDataURL(file);
   };
 
   const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      chunksRef.current = [];
-      mediaRecorderRef.current.ondataavailable = (e) => chunksRef.current.push(e.data);
-      mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        const dataUri = await blobToDataUri(blob);
-        
-        // If we are in 'cloning' mode, add to voices
-        if (activeTab === 'cloning') {
-             const analysis = await analyzeMediaStyle(dataUri, 'audio');
-             const newVoice: Voice = {
-                  id: `v-rec-${Date.now()}`,
-                  name: `Cloned Recording`,
-                  gender: 'robot', 
-                  style: 'custom',
-                  isCloned: true,
-                  apiMapping: 'Fenrir',
-                  settings: { stability: 0.5, similarity: 0.75 }
-             };
-             setVoices(prev => [...prev, newVoice]);
-             setSelectedVoice(newVoice.id);
-             alert(`Voice Cloned from Mic! Profile: ${analysis}`);
-        } else {
-            // Add as track
-            const newTrack: AudioTrack = {
-              id: `rec-${Date.now()}`,
-              name: 'Microphone Recording',
-              type: 'voiceover',
-              duration: recordingTime,
-              startOffset: 0,
-              audioUrl: dataUri,
-              volume: 1.0
-            };
-            setTracks(prev => [...prev, newTrack]);
-        }
-      };
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Mic error:", err);
-    }
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          chunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+              if (e.data.size > 0) chunksRef.current.push(e.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+              const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+              const url = URL.createObjectURL(blob);
+              
+              if (activeTab === 'cloning') {
+                  const newVoice: Voice = {
+                      id: `clone-${Date.now()}`,
+                      name: 'My Voice Clone',
+                      gender: 'male',
+                      style: 'custom',
+                      isCloned: true
+                  };
+                  setVoices(prev => [...prev, newVoice]);
+                  setSelectedVoice(newVoice.id);
+                  alert('Voice cloned from recording!');
+              } else {
+                  const newTrack: AudioTrack = {
+                      id: `rec-${Date.now()}`,
+                      name: 'Microphone Recording',
+                      type: 'voiceover',
+                      duration: recordingTime,
+                      startOffset: 0,
+                      audioUrl: url,
+                      volume: 1.0,
+                      muted: false
+                  };
+                  setTracks(prev => [...prev, newTrack]);
+                  addAsset(newTrack);
+              }
+              
+              stream.getTracks().forEach(track => track.stop());
+          };
+
+          mediaRecorder.start();
+          setIsRecording(true);
+      } catch (e) {
+          console.error("Mic Error", e);
+          alert("Could not access microphone.");
+      }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
+      if (mediaRecorderRef.current && isRecording) {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+      }
   };
 
   const handleTranscribe = async (track: AudioTrack) => {
@@ -389,77 +375,137 @@ export const AudioStudio: React.FC = () => {
       const text = await transcribeAudio(track.audioUrl);
       setTranscription(text);
       setIsTranscribing(false);
-      alert(`Transcription: ${text}`);
+      alert(`Transcription for ${track.name}:\n\n${text}`);
   };
 
-  const handleUpdateVoice = (id: string, updates: Partial<Voice>) => {
-      setVoices(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
+  const handleSmartMix = () => {
+      const hasVoice = tracks.some(t => t.type === 'voiceover');
+      if (hasVoice) {
+          setTracks(prev => prev.map(t => t.type === 'music' ? { ...t, volume: 0.3 } : t));
+          alert("Smart Mix: Ducked music tracks under voiceover.");
+      } else {
+          alert("No voiceover tracks found to duck against.");
+      }
   };
 
-  const toggleMute = (id: string) => setTracks(prev => prev.map(t => t.id === id ? { ...t, muted: !t.muted } : t));
-  const toggleSolo = (id: string) => setTracks(prev => prev.map(t => t.id === id ? { ...t, solo: !t.solo } : { ...t, solo: false }));
-  const handleVolumeChange = (id: string, val: number) => setTracks(prev => prev.map(t => t.id === id ? { ...t, volume: val } : t));
-  const handleDeleteTrack = (id: string) => setTracks(prev => prev.filter(t => t.id !== id));
+  const handleAddTrackFromAsset = (asset: any) => {
+      const newTrack: AudioTrack = {
+          id: `asset-${Date.now()}`,
+          name: asset.description || asset.name || 'Imported Asset',
+          type: 'music',
+          duration: 10, // Default for imported assets without metadata
+          startOffset: 0,
+          audioUrl: asset.url || asset.audioUrl,
+          volume: 1.0,
+          muted: false
+      };
+      setTracks(prev => [...prev, newTrack]);
+  };
 
   return (
-    <div className="flex h-full bg-gray-950 text-white overflow-hidden">
-        <AudioSidebar 
-            activeTab={activeTab} 
-            setActiveTab={setActiveTab} 
-            voices={voices} 
-            selectedVoice={selectedVoice} 
-            setSelectedVoice={setSelectedVoice}
-            ttsInput={ttsInput}
-            setTtsInput={setTtsInput}
-            styleReference={styleReference}
-            setStyleReference={setStyleReference}
-            isGenerating={isGenerating}
-            onGenerateTTS={handleGenerateTTS}
-            onSmartMix={() => {}}
-            mastering={mastering}
-            setMastering={setMastering}
-            onUploadStyleRef={handleUploadReferenceTrack}
-            isRecording={isRecording}
-            startRecording={startRecording}
-            stopRecording={stopRecording}
-            recordingTime={recordingTime}
-            formatTime={(s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`}
-            onCloneFromFile={handleCloneFromFile}
-            onGenerateSong={handleGenerateSong}
-            youtubeLink={youtubeLink}
-            setYoutubeLink={setYoutubeLink}
-            genre={genre}
-            setGenre={setGenre}
-            onUpdateVoice={handleUpdateVoice}
-        />
+    <div className="flex h-full bg-gray-950 text-white overflow-hidden relative">
+       {isSidebarOpen && (
+           <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)}></div>
+       )}
 
-        <div className="flex-1 flex flex-col min-w-0">
-            {activeTab === 'sequencer' ? (
-                <AudioBeatMaker onAddTrack={(t) => setTracks(prev => [...prev, t])} genre={genre} />
-            ) : (
-                <AudioTimeline 
-                    tracks={tracks}
-                    isPlaying={isPlaying}
-                    onTogglePlay={handleTogglePlay}
-                    onExportMix={() => setIsExporting(true)}
-                    isExporting={isExporting}
-                    onShowAssets={() => setShowAssets(!showAssets)}
-                    activeTab={activeTab}
-                    setActiveTab={setActiveTab}
-                    isRecording={isRecording}
-                    startRecording={startRecording}
-                    stopRecording={stopRecording}
-                    onTranscribe={handleTranscribe}
-                    isTranscribing={isTranscribing}
-                    onDeleteTrack={handleDeleteTrack}
-                    toggleMute={toggleMute}
-                    toggleSolo={toggleSolo}
-                    handleVolumeChange={handleVolumeChange}
-                    setTracks={setTracks}
-                    audioRefs={audioRefs}
-                />
-            )}
-        </div>
+       <div className={`
+           fixed inset-y-0 left-0 z-40 bg-gray-900 border-r border-gray-800 w-80 transform transition-transform duration-300 md:relative md:translate-x-0
+           ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+       `}>
+           <AudioSidebar 
+              activeTab={activeTab} 
+              setActiveTab={setActiveTab}
+              voices={voices}
+              selectedVoice={selectedVoice}
+              setSelectedVoice={setSelectedVoice}
+              ttsInput={ttsInput}
+              setTtsInput={setTtsInput}
+              styleReference={styleReference}
+              setStyleReference={setStyleReference}
+              isGenerating={isGenerating}
+              onGenerateTTS={handleGenerateTTS}
+              onSmartMix={handleSmartMix}
+              mastering={mastering}
+              setMastering={setMastering}
+              onUploadStyleRef={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setStyleReference(file.name);
+              }}
+              isRecording={isRecording}
+              startRecording={startRecording}
+              stopRecording={stopRecording}
+              recordingTime={recordingTime}
+              formatTime={(s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`}
+              onCloneFromFile={handleCloneFromFile}
+              onGenerateSong={handleGenerateSong}
+              youtubeLink={youtubeLink}
+              setYoutubeLink={setYoutubeLink}
+              genre={genre}
+              setGenre={setGenre}
+              onUpdateVoice={(id, updates) => setVoices(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v))}
+              voiceStyle={voiceStyle}
+              setVoiceStyle={setVoiceStyle}
+              songStructure={songStructure}
+              setSongStructure={setSongStructure}
+           />
+       </div>
+
+       {showAssets && (
+           <div className="absolute top-0 right-0 bottom-0 w-80 bg-gray-900 border-l border-gray-800 z-30 shadow-2xl animate-in slide-in-from-right-10 flex flex-col">
+               <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-850">
+                   <h3 className="font-bold flex items-center gap-2"><FolderOpen size={16}/> Asset Library</h3>
+                   <button onClick={() => setShowAssets(false)}><X size={16}/></button>
+               </div>
+               <div className="flex-1 overflow-y-auto p-2">
+                   {audioAssets.map((asset, i) => (
+                       <div key={i} className="p-3 mb-2 bg-gray-800 rounded border border-gray-700 hover:border-primary-500 cursor-pointer group" onClick={() => handleAddTrackFromAsset(asset)}>
+                           <div className="text-xs font-bold text-white mb-1 truncate">{asset.description || asset.name}</div>
+                           <div className="flex justify-between items-center">
+                               <span className="text-[10px] text-gray-500">Audio • {new Date(asset.date || asset.created || Date.now()).toLocaleDateString()}</span>
+                               <Play size={12} className="text-gray-400 group-hover:text-primary-400"/>
+                           </div>
+                       </div>
+                   ))}
+                   {audioAssets.length === 0 && <div className="text-center text-gray-500 text-xs mt-10">No audio assets found.</div>}
+               </div>
+           </div>
+       )}
+
+       <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
+           <div className="md:hidden p-4 border-b border-gray-800 flex items-center bg-gray-900">
+               <button onClick={() => setIsSidebarOpen(true)} className="text-gray-400 hover:text-white mr-4">
+                   <Menu size={24} />
+               </button>
+               <h2 className="font-bold">Audio Studio</h2>
+           </div>
+
+           {activeTab === 'sequencer' ? (
+               <AudioBeatMaker onAddTrack={(t) => { setTracks(p => [...p, t]); addAsset(t); }} genre={genre} />
+           ) : (
+               <AudioTimeline 
+                  tracks={tracks}
+                  setTracks={setTracks}
+                  isPlaying={isPlaying}
+                  onTogglePlay={handleTogglePlay}
+                  onExportMix={() => { /* Handled in timeline */ }}
+                  isExporting={isExporting}
+                  onShowAssets={() => setShowAssets(!showAssets)}
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                  isRecording={isRecording}
+                  startRecording={startRecording}
+                  stopRecording={stopRecording}
+                  onTranscribe={handleTranscribe}
+                  isTranscribing={isTranscribing}
+                  onDeleteTrack={(id) => setTracks(prev => prev.filter(t => t.id !== id))}
+                  toggleMute={(id) => setTracks(prev => prev.map(t => t.id === id ? { ...t, muted: !t.muted } : t))}
+                  toggleSolo={(id) => setTracks(prev => prev.map(t => t.id === id ? { ...t, solo: !t.solo } : t))}
+                  handleVolumeChange={(id, val) => setTracks(prev => prev.map(t => t.id === id ? { ...t, volume: val } : t))}
+                  audioRefs={audioRefs}
+                  mastering={mastering}
+               />
+           )}
+       </div>
     </div>
   );
 };

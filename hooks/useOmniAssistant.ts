@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage, ProjectType, FileNode } from '../types';
 import { generateCodeResponse, critiqueCode, generateImage, generateSpeech, detectIntent, editImage } from '../services/geminiService';
 import { findRelevantContext } from '../utils/projectAnalysis';
-import { getAllFiles } from '../utils/fileHelpers';
+import { getAllFiles, findNodeByPath, normalizePath } from '../utils/fileHelpers';
 import { useDebounce } from './useDebounce';
 
 interface UseOmniAssistantProps {
@@ -16,10 +16,11 @@ interface UseOmniAssistantProps {
   setEditorSelection: (sel: string) => void;
   onStartAgentTask?: (taskDescription: string) => void;
   runTests?: (files?: string[]) => Promise<any>;
+  mcpContext?: string;
 }
 
 export const useOmniAssistant = ({ 
-  projectId, projectType, files, activeFile, activeModel, editorSelection, setEditorSelection, onStartAgentTask, runTests
+  projectId, projectType, files, activeFile, activeModel, editorSelection, setEditorSelection, onStartAgentTask, runTests, mcpContext
 }: UseOmniAssistantProps) => {
   const [chatInput, setChatInput] = useState('');
   
@@ -30,13 +31,11 @@ export const useOmniAssistant = ({
               const parsed = JSON.parse(saved);
               // Sanitize history to prevent React Error #31
               return parsed.map((msg: any) => {
-                  // Normalize critique fields if present
                   if (msg.critique) {
                       return {
                           ...msg,
                           critique: {
                               ...msg.critique,
-                              // Ensure lists are strings, not objects (flatten if needed)
                               issues: Array.isArray(msg.critique.issues) 
                                   ? msg.critique.issues.map((i: any) => 
                                       typeof i === 'object' ? (i.description || i.message || JSON.stringify(i)) : String(i)
@@ -45,7 +44,6 @@ export const useOmniAssistant = ({
                                   ? msg.critique.suggestions.map((s: any) => 
                                       typeof s === 'object' ? (s.description || s.message || JSON.stringify(s)) : String(s)
                                   ) : [],
-                              // Ensure fixCode is string
                               fixCode: (typeof msg.critique.fixCode === 'object' && msg.critique.fixCode !== null) 
                                   ? (msg.critique.fixCode.fixCode || msg.critique.fixCode.code || '') 
                                   : (msg.critique.fixCode || undefined)
@@ -62,12 +60,11 @@ export const useOmniAssistant = ({
       return [{
           id: 'init-welcome',
           role: 'model',
-          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/map [location]\` for geographic info\n- \`/pipeline\` to run CI/CD\n- \`/agent [task]\` to auto-assign task\n- \`/docker\` to containerize app`,
+          text: `Hello! I am Omni-Studio. I've loaded your ${projectType} project. Active Model: ${activeModel}.\n\nI can help you generate code, refactor files, or run tests.\n\n**Try Slash Commands:**\n- \`/image [prompt]\` to generate assets\n- \`/search [query]\` for real-time answers\n- \`/map [location]\` for geographic info\n- \`/pipeline\` to run CI/CD\n- \`/agent [task]\` to auto-assign task\n- \`/docker\` to containerize app\n- **@Filename** to reference specific files`,
           timestamp: Date.now()
       }];
   });
 
-  // Debounce history saving to prevent blocking UI during streaming updates
   const debouncedHistory = useDebounce(chatHistory, 2000);
 
   useEffect(() => {
@@ -84,15 +81,12 @@ export const useOmniAssistant = ({
   const runCritique = async (code: string, task: string) => {
       const criticRes = await critiqueCode(code, task);
       if (criticRes) {
-          // Normalize fixCode if it comes back as an object
           let fixCodeStr = criticRes.fixCode;
           if (fixCodeStr && typeof fixCodeStr === 'object') {
-              // Try to extract content from nested object if present
               fixCodeStr = (fixCodeStr as any).fixCode || (fixCodeStr as any).code || (fixCodeStr as any).content || '';
           }
           if (typeof fixCodeStr !== 'string') fixCodeStr = undefined;
 
-          // Normalize lists to ensure they are strings
           const normalizeList = (list: any[]) => {
               if (!Array.isArray(list)) return [];
               return list.map(item => {
@@ -126,9 +120,38 @@ export const useOmniAssistant = ({
     let responseText = '';
     
     let finalPrompt = prompt;
-    if (editorSelection) finalPrompt += `\n\n[Referenced Code Selection]:\n\`\`\`\n${editorSelection}\n\`\`\`\n`;
+    
+    // --- CONTEXT INJECTION START ---
+    
+    // 1. Referenced Code Selection
+    if (editorSelection) {
+        finalPrompt += `\n\n[Referenced Code Selection]:\n\`\`\`\n${editorSelection}\n\`\`\`\n`;
+    }
+
+    // 2. Explicit File Mentions (@src/App.tsx)
+    const fileMentionRegex = /@\[([\w\-\/\.]*)\]/g;
+    let match;
+    const mentionedFiles = new Set<string>();
+    
+    while ((match = fileMentionRegex.exec(prompt)) !== null) {
+        const path = match[1];
+        const node = findNodeByPath(files, path);
+        if (node && node.content && !mentionedFiles.has(node.id)) {
+            mentionedFiles.add(node.id);
+            finalPrompt += `\n\n[Context: ${node.name}]:\n\`\`\`${node.name.split('.').pop()}\n${node.content}\n\`\`\`\n`;
+        }
+    }
+
+    // 3. Relevant Context (Auto-Discovery)
     const extraContext = findRelevantContext(files, prompt);
     if (extraContext) finalPrompt += `\n\n[Relevant Context]:${extraContext}`;
+
+    // 4. Knowledge Base / MCP Context
+    if (mcpContext) {
+        finalPrompt += `\n\n[Knowledge Base / Project Rules]:\n${mcpContext}\n`;
+    }
+
+    // --- CONTEXT INJECTION END ---
 
     const tempId = 'temp-' + Date.now();
     setChatHistory(prev => [...prev, { id: tempId, role: 'model', text: '', timestamp: Date.now() }]);
@@ -151,7 +174,7 @@ export const useOmniAssistant = ({
     
     setChatHistory(prev => [...prev, { id: Date.now().toString(), role: 'user' as const, text, timestamp: Date.now() }]);
 
-    // Slash Commands
+    // Slash Commands logic
     if (text.startsWith('/')) {
         const [command, ...args] = text.split(' ');
         const argText = args.join(' ');
@@ -178,14 +201,14 @@ export const useOmniAssistant = ({
         if (command === '/search') {
              setIsGenerating(true);
              addSystemMessage(`Searching web for: "${argText}"...`);
-             triggerGeneration(argText, true); // useSearch = true
+             triggerGeneration(argText, true); 
              return;
         }
 
         if (command === '/map') {
              setIsGenerating(true);
              addSystemMessage(`Searching maps for: "${argText}"...`);
-             triggerGeneration(argText, true, true); // useSearch = true, useMaps = true
+             triggerGeneration(argText, true, true);
              return;
         }
         
@@ -378,14 +401,13 @@ CMD ["nginx", "-g", "daemon off;"]`;
         }
         
         if (command === '/help') {
-            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/map [place]\`\n- \`/pipeline\` (CI/CD)\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\``);
+            addSystemMessage(`**Available Commands:**\n- \`/image [prompt]\`\n- \`/search [query]\`\n- \`/map [place]\`\n- \`/pipeline\` (CI/CD)\n- \`/test\`\n- \`/docker\` (Containerize)\n- \`/refactor [notes]\`\n- \`/fix [notes]\`\n- \`/agent [task]\`: Delegate to AI Team\n- \`/clear\`\n- **@Filename**: Reference a file in context`);
             return;
         }
     }
 
-    // Smart Intent Detection
     if (onStartAgentTask) {
-        setIsGenerating(true); // Temporary spinner while thinking
+        setIsGenerating(true); 
         const intent = await detectIntent(text);
         setIsGenerating(false);
         
@@ -438,7 +460,7 @@ CMD ["nginx", "-g", "daemon off;"]`;
       attachedImage, setAttachedImage,
       triggerGeneration,
       handleChatSubmit,
-      submitQuery, // Exposed for Voice
+      submitQuery,
       handleCodeAction,
       handleAutoFix,
       addSystemMessage

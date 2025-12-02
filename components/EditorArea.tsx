@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal, Maximize2, Minimize2, Save } from 'lucide-react';
 import { CodeEditor, CodeEditorHandle } from './CodeEditor';
 import { DiffEditor } from './DiffEditor';
@@ -8,7 +8,7 @@ import { TestRunnerPanel } from './TestRunnerPanel';
 import { ProblemsPanel } from './ProblemsPanel';
 import { FileNode, TestResult } from '../types';
 import { generateGhostText } from '../services/geminiService';
-import { getAllFiles } from '../utils/fileHelpers';
+import { getAllFiles, getFilePath } from '../utils/fileHelpers';
 
 interface EditorAreaProps {
   files: FileNode[];
@@ -90,6 +90,9 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
       }
       return undefined;
   };
+
+  const activeFilePath = useMemo(() => activeFile ? getFilePath(files, activeFile.id) : undefined, [activeFile, files]);
+  const secondaryFilePath = useMemo(() => secondaryFile ? getFilePath(files, secondaryFile.id) : undefined, [secondaryFile, files]);
 
   const handleOpenFile = (id: string, line?: number) => {
       setActiveFileId(id);
@@ -319,6 +322,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                                 code={activeFile.content || ''} 
                                 onChange={(val) => updateFileContent(activeFile.id, val)} 
                                 fileName={activeFile.name} 
+                                filePath={activeFilePath || activeFile.name}
                                 config={editorConfig} 
                                 onCodeAction={handleCodeAction} 
                                 onSelectionChange={setEditorSelection} 
@@ -347,6 +351,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                                     code={secondaryFile.content || ''} 
                                     onChange={() => {}} 
                                     fileName={secondaryFile.name} 
+                                    filePath={secondaryFilePath || secondaryFile.name}
                                 />
                             ) : (
                                 <div className="flex items-center justify-center h-full text-gray-600 text-xs">

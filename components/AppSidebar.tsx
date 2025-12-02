@@ -34,14 +34,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ currentView, onNavigate,
         {/* Mobile Overlay */}
         {isOpen && (
             <div 
-                className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
+                className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm"
                 onClick={() => setIsOpen(false)}
             />
         )}
 
         <div className={`
             fixed md:relative top-0 left-0 h-full w-64 md:w-16 bg-gray-950 border-r border-gray-800 
-            flex flex-col items-center py-4 gap-4 z-50 transition-transform duration-300 flex-shrink-0
+            flex flex-col items-center py-4 gap-4 z-[70] transition-transform duration-300 flex-shrink-0
             ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}>
             <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg mb-4 flex-shrink-0">

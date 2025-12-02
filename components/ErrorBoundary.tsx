@@ -1,4 +1,4 @@
-import React, { Component, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -10,17 +10,21 @@ interface ErrorBoundaryState {
   error: any | null;
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
     error: null
   };
 
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
+
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
   }
 
@@ -38,9 +42,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
+      // Safely stringify error to avoid [object Object]
       const errorMessage = this.state.error instanceof Error 
         ? this.state.error.message 
-        : typeof this.state.error === 'object' 
+        : typeof this.state.error === 'object' && this.state.error !== null
             ? JSON.stringify(this.state.error) 
             : String(this.state.error);
 

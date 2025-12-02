@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Film, Music, RotateCcw, RotateCw, Pause, Play, Loader2, Download, Scissors, Copy, Trash2, Clock, Sliders, Wand2, Layers, ArrowRightLeft, Plus, Volume2, Monitor, Clapperboard, FileText, Image as ImageIcon, Mic } from 'lucide-react';
+import { Film, Music, RotateCcw, RotateCw, Pause, Play, Loader2, Download, Scissors, Copy, Trash2, Clock, Sliders, Wand2, Layers, ArrowRightLeft, Plus, Volume2, Monitor, Clapperboard, FileText, Image as ImageIcon, Mic, Video, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from './Button';
 import { SocialPost, AudioTrack, Scene, Voice } from '../types';
 
@@ -32,34 +32,27 @@ interface MediaDirectorViewProps {
   historyLength: number;
   onAddScene: () => void;
   voices: Voice[];
+  onAutoGenerateAudioPrompt?: (type: 'voice' | 'sfx' | 'music', sceneId: string) => Promise<string>;
+  onUpdateAudioTrack?: (trackId: string, updates: Partial<AudioTrack>) => void;
+  onDeleteAudioTrack?: (trackId: string) => void;
 }
-
-const GENERATION_MESSAGES = [
-  "Initializing Veo neural engine...",
-  "Analyzing scene composition...",
-  "Generating geometry and textures...",
-  "Calculating light physics...",
-  "Rendering frames...",
-  "Applying cinematic motion...",
-  "Finalizing video encoding..."
-];
 
 export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
   selectedPost, audioTracks, currentTime, setCurrentTime, isPreviewPlaying, setIsPreviewPlaying,
   isRendering, renderProgress, onSelectAudio, onUndo, onRedo, onRenderMovie,
   onGenerateImage, onGenerateVideo, onGenerateAudio, onSplitScene, onDuplicateScene, onDeleteScene, onOpenTrim, onOpenMagicEdit, onUpdateScene, onReorderScenes, cycleTransition,
-  historyIndex, historyLength, onAddScene, voices
+  historyIndex, historyLength, onAddScene, voices, onAutoGenerateAudioPrompt, onUpdateAudioTrack, onDeleteAudioTrack
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRefs = useRef<HTMLAudioElement[]>([]); // Array for multi-track
+  const audioRefs = useRef<HTMLAudioElement[]>([]);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const PIXELS_PER_SECOND = 40;
   
-  const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
+  // Drag State for Audio
+  const [dragAudio, setDragAudio] = useState<{ id: string, startX: number, startOffset: number } | null>(null);
   
-  // Audio Gen State
   const [audioPrompt, setAudioPrompt] = useState('');
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioMode, setAudioMode] = useState<'voice' | 'sfx' | 'music'>('voice');
@@ -73,499 +66,342 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
       accumulatedTime += (s.duration || 5);
       return { ...s, startTime: start, endTime: accumulatedTime };
   });
-  const totalDuration = accumulatedTime || 10;
+  
+  // Calculate max duration including audio tracks to expand timeline if needed
+  const maxAudioDuration = audioTracks.reduce((acc, t) => Math.max(acc, t.startOffset + t.duration), 0);
+  const totalDuration = Math.max(accumulatedTime || 10, maxAudioDuration);
   const totalWidth = totalDuration * PIXELS_PER_SECOND;
 
   // Determine Active Scene for Player
   const activeScene = sceneMetrics.find(s => currentTime >= s.startTime && currentTime < s.endTime) || sceneMetrics[sceneMetrics.length - 1];
   
-  // Update prompt when active scene changes
   useEffect(() => {
       if (activeScene) {
-          // If the description starts with "[Audio]", try to extract it, else default to description
-          // But usually description is visual. Let's just default to description for context.
-          setAudioPrompt(activeScene.description || '');
+          if (audioMode === 'voice' && activeScene.audioScript) {
+              setAudioPrompt(activeScene.audioScript);
+          } else if (audioMode === 'voice') {
+              setAudioPrompt('');
+          } else {
+              setAudioPrompt(''); 
+          }
       }
-  }, [activeScene?.id]);
+  }, [activeScene?.id, audioMode]);
 
   // Sync Video Element if video asset
   useEffect(() => {
-      if (activeScene?.videoUrl && videoRef.current) {
-          if (isPreviewPlaying) {
-              videoRef.current.play().catch(() => {});
-          } else {
-              videoRef.current.pause();
+      if (videoRef.current && activeScene?.videoUrl) {
+          const sceneRelativeTime = currentTime - activeScene.startTime;
+          if (Math.abs(videoRef.current.currentTime - sceneRelativeTime) > 0.5) {
+              videoRef.current.currentTime = sceneRelativeTime;
           }
+          if (isPreviewPlaying && videoRef.current.paused) videoRef.current.play().catch(() => {});
+          else if (!isPreviewPlaying && !videoRef.current.paused) videoRef.current.pause();
       }
-  }, [isPreviewPlaying, activeScene]);
+  }, [currentTime, isPreviewPlaying, activeScene]);
 
-  // Sync All Audio Elements
+  // Handle Audio Dragging
   useEffect(() => {
-      audioRefs.current.forEach((audio) => {
-          if (!audio) return;
-          // Simple sync check to prevent stuttering
-          if (Math.abs(audio.currentTime - currentTime) > 0.3) {
-              audio.currentTime = currentTime;
-          }
-          
-          if (isPreviewPlaying) {
-              // Only play if within track range
-              const start = parseFloat(audio.dataset.start || '0');
-              const duration = parseFloat(audio.dataset.duration || '0');
-              const end = start + duration;
-              
-              if (currentTime >= start && currentTime < end) {
-                  audio.play().catch(() => {});
-              } else {
-                  audio.pause();
-              }
-          } else {
-              audio.pause();
-          }
-      });
-  }, [isPreviewPlaying, currentTime, audioTracks]);
-
-  // Loading Message Loop
-  useEffect(() => {
-    let interval: any;
-    if (activeScene?.status === 'generating') {
-        setLoadingMsgIndex(0);
-        interval = setInterval(() => {
-            setLoadingMsgIndex(prev => (prev + 1) % GENERATION_MESSAGES.length);
-        }, 4000);
-    }
-    return () => clearInterval(interval);
-  }, [activeScene?.status]);
-
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
-          e.preventDefault();
-          setIsPreviewPlaying((prev: boolean) => !prev);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setIsPreviewPlaying]);
-
-  // Timeline Scrubbing Logic
-  const handleRulerMouseDown = (e: React.MouseEvent) => {
-      setIsScrubbing(true);
-      handleTimelineClick(e);
-  };
-
-  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!timelineRef.current) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const clickX = e.clientX - rect.left + timelineRef.current.scrollLeft;
-      const newTime = Math.max(0, Math.min((clickX - 24) / PIXELS_PER_SECOND, totalDuration));
-      setCurrentTime(newTime);
-  };
-
-  useEffect(() => {
-      const handleWindowMouseMove = (e: MouseEvent) => {
-          if (isScrubbing && timelineRef.current) {
-               const rect = timelineRef.current.getBoundingClientRect();
-               const clickX = e.clientX - rect.left + timelineRef.current.scrollLeft;
-               const newTime = Math.max(0, Math.min((clickX - 24) / PIXELS_PER_SECOND, totalDuration));
-               setCurrentTime(newTime);
-          }
+      const handleMouseMove = (e: MouseEvent) => {
+          if (!dragAudio || !onUpdateAudioTrack) return;
+          const deltaX = e.clientX - dragAudio.startX;
+          const deltaSeconds = deltaX / PIXELS_PER_SECOND;
+          const newOffset = Math.max(0, dragAudio.startOffset + deltaSeconds);
+          onUpdateAudioTrack(dragAudio.id, { startOffset: newOffset });
       };
-      const handleWindowMouseUp = () => setIsScrubbing(false);
-      
-      if (isScrubbing) {
-          window.addEventListener('mousemove', handleWindowMouseMove);
-          window.addEventListener('mouseup', handleWindowMouseUp);
+
+      const handleMouseUp = () => {
+          setDragAudio(null);
+      };
+
+      if (dragAudio) {
+          window.addEventListener('mousemove', handleMouseMove);
+          window.addEventListener('mouseup', handleMouseUp);
       }
       return () => {
-          window.removeEventListener('mousemove', handleWindowMouseMove);
-          window.removeEventListener('mouseup', handleWindowMouseUp);
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseup', handleMouseUp);
       };
-  }, [isScrubbing, totalDuration, PIXELS_PER_SECOND, setCurrentTime]);
+  }, [dragAudio, onUpdateAudioTrack]);
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-      e.dataTransfer.setData('text/plain', index.toString());
-      e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-      e.preventDefault();
-      setDragOverIndex(index);
-  };
-
-  const handleDrop = (e: React.DragEvent, index: number) => {
-      e.preventDefault();
-      const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
-      if (!isNaN(fromIndex) && fromIndex !== index) {
-          onReorderScenes(fromIndex, index);
-      }
-      setDragOverIndex(null);
-  };
-
-  const handleClipClick = (e: React.MouseEvent, startTime: number) => {
-      e.stopPropagation();
-      setCurrentTime(startTime);
-  };
-
-  const handleGenAudioSubmit = async () => {
-      if (!activeScene || !audioPrompt) return;
+  const handleAudioGen = async () => {
+      if (!activeScene) return;
       setIsGeneratingAudio(true);
       await onGenerateAudio(activeScene.id, audioMode, audioPrompt, selectedVoiceId);
       setIsGeneratingAudio(false);
   };
 
+  const handleAutoPrompt = async () => {
+      if (onAutoGenerateAudioPrompt && activeScene) {
+          const prompt = await onAutoGenerateAudioPrompt(audioMode, activeScene.id);
+          setAudioPrompt(prompt);
+      }
+  };
+
+  const formatTime = (time: number) => {
+      const mins = Math.floor(time / 60);
+      const secs = Math.floor(time % 60);
+      const ms = Math.floor((time % 1) * 10);
+      return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
+  };
+
+  const getAudioColor = (type: string) => {
+      if (type === 'voiceover') return 'bg-purple-900/60 border-purple-700/50';
+      if (type === 'music') return 'bg-blue-900/60 border-blue-700/50';
+      return 'bg-orange-900/60 border-orange-700/50';
+  };
+
   return (
-      <div className="flex-1 flex flex-col bg-gray-950 h-full overflow-hidden">
-          {/* Hidden Audio Elements for Timeline Tracks */}
-          {audioTracks.map((track, i) => (
-              track.audioUrl && !track.muted && (
-                  <audio 
-                    key={track.id}
-                    ref={el => { if(el) audioRefs.current[i] = el; }} 
-                    src={track.audioUrl} 
-                    loop={track.type === 'music'}
-                    data-start={track.startOffset}
-                    data-duration={track.duration}
-                    volume={track.volume ?? 1.0}
-                  />
-              )
-          ))}
+    <div className="flex flex-col h-full bg-black/80 text-white overflow-hidden">
+        {/* Top: Player & Inspector */}
+        <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
+            {/* Player */}
+            <div className="flex-1 bg-black relative flex items-center justify-center p-4 border-b lg:border-b-0 lg:border-r border-gray-800 min-h-[300px]">
+                <div className="aspect-video w-full max-w-4xl bg-gray-900 rounded-lg overflow-hidden shadow-2xl relative group">
+                    {activeScene?.videoUrl ? (
+                        <video 
+                            ref={videoRef}
+                            src={activeScene.videoUrl} 
+                            className="w-full h-full object-contain"
+                            muted
+                        />
+                    ) : activeScene?.imageUrl ? (
+                        <img src={activeScene.imageUrl} className="w-full h-full object-contain" />
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-700">
+                            {activeScene?.status === 'generating' ? (
+                                <>
+                                    <Loader2 size={48} className="animate-spin mb-4 text-purple-500" />
+                                    <div className="text-sm font-mono animate-pulse text-purple-300">Generating Media...</div>
+                                </>
+                            ) : (
+                                <>
+                                    <Film size={48} className="mb-4" />
+                                    <p className="text-sm">No Media</p>
+                                </>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* Scene Text Overlay */}
+                    <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded text-xs font-mono text-white/90 backdrop-blur-sm pointer-events-none">
+                        Scene {scenes.findIndex(s => s.id === activeScene?.id) + 1} • {formatTime(currentTime)} / {formatTime(totalDuration)}
+                    </div>
+                    
+                    {/* Play Overlay */}
+                    {!isPreviewPlaying && (
+                        <div 
+                            className="absolute inset-0 flex items-center justify-center bg-black/20 cursor-pointer"
+                            onClick={() => setIsPreviewPlaying(true)}
+                        >
+                            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center hover:scale-110 transition-transform">
+                                <Play size={32} fill="currentColor" className="ml-1"/>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
 
-          {/* TOP SECTION: PLAYER & TOOLS */}
-          <div className="h-[55%] flex border-b border-gray-800">
-              
-              {/* MAIN PLAYER */}
-              <div className="flex-1 bg-black relative flex items-center justify-center p-4">
-                  {/* Player Canvas */}
-                  <div className="relative aspect-video h-full max-w-full bg-gray-900 border border-gray-800 shadow-2xl flex items-center justify-center overflow-hidden rounded-lg group/player">
-                      {activeScene ? (
-                          <>
-                              {activeScene.videoUrl ? (
-                                  <video 
-                                    ref={videoRef}
-                                    src={activeScene.videoUrl} 
-                                    className="w-full h-full object-contain" 
-                                    loop 
-                                    muted 
-                                  />
-                              ) : activeScene.imageUrl ? (
-                                  <img 
-                                    src={activeScene.imageUrl} 
-                                    className={`w-full h-full ${activeScene.bgRemoved ? 'object-contain' : 'object-cover'}`} 
-                                    alt="Scene Preview" 
-                                  />
-                              ) : (
-                                  <div className="flex flex-col items-center text-gray-600 gap-4">
-                                      <Clapperboard size={48} />
-                                      <div className="flex gap-2">
-                                          <Button size="sm" onClick={() => onGenerateImage(activeScene.id)}>
-                                              <Wand2 size={14} className="mr-2"/> Generate Image
-                                          </Button>
-                                          <Button size="sm" variant="secondary" onClick={() => onGenerateVideo(activeScene.id)}>
-                                              <Film size={14} className="mr-2"/> Generate Video
-                                          </Button>
-                                      </div>
-                                      <button onClick={() => onOpenMagicEdit(activeScene.id)} className="text-xs text-blue-400 hover:underline flex items-center gap-1">
-                                          <FileText size={10}/> Edit Prompt
-                                      </button>
-                                  </div>
-                              )}
-                              
-                              {/* Overlay Info */}
-                              <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded border border-white/10 text-white text-xs font-mono z-10 pointer-events-none">
-                                  <div className="font-bold text-primary-400">SCENE {scenes.indexOf(activeScene) + 1}</div>
-                                  <div className="opacity-70 truncate max-w-[200px]">{activeScene.description}</div>
-                              </div>
-
-                              {/* Generating Overlay */}
-                              {activeScene.status === 'generating' && (
-                                  <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50 animate-in fade-in duration-500">
-                                      <div className="relative mb-6">
-                                          <div className="w-16 h-16 rounded-full border-4 border-gray-800 border-t-purple-500 animate-spin"></div>
-                                          <div className="absolute inset-0 flex items-center justify-center">
-                                              <Loader2 size={24} className="text-purple-400 animate-pulse"/>
-                                          </div>
-                                      </div>
-                                      <div className="text-white font-bold text-lg animate-pulse transition-all duration-500 text-center px-4">
-                                          {GENERATION_MESSAGES[loadingMsgIndex]}
-                                      </div>
-                                      <div className="text-gray-500 text-xs mt-3 font-mono">This operation can take a few minutes (Veo Model)</div>
-                                  </div>
-                              )}
-                          </>
-                      ) : (
-                          <div className="text-gray-500 text-sm">Timeline Empty</div>
-                      )}
-
-                      {/* Render Overlay */}
-                      {isRendering && (
-                          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
-                              <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden mb-4">
-                                  <div className="h-full bg-red-500 transition-all duration-300" style={{ width: `${renderProgress}%` }}></div>
-                              </div>
-                              <div className="text-red-500 font-bold animate-pulse flex items-center gap-2">
-                                  <div className="w-3 h-3 bg-red-500 rounded-full animate-ping"></div>
-                                  RENDERING FINAL CUT
-                              </div>
-                              <div className="text-gray-500 text-xs font-mono mt-2">{Math.round(renderProgress)}% COMPLETE</div>
-                          </div>
-                      )}
-                  </div>
-              </div>
-
-              {/* RIGHT PANEL: SCRIPT & METADATA & AUDIO GEN */}
-              <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col hidden lg:flex">
-                  <div className="p-3 border-b border-gray-800 font-bold text-xs text-gray-400 uppercase flex items-center gap-2 bg-gray-850">
-                      <Monitor size={14} /> Scene Details
-                  </div>
-                  <div className="p-4 flex-1 overflow-y-auto space-y-6">
-                      {activeScene ? (
-                          <>
-                              {/* Metadata */}
-                              <div className="space-y-3">
-                                  <div className="flex justify-between items-center">
-                                      <span className="text-[10px] font-bold text-gray-500 uppercase">Duration</span>
-                                      <span className="text-sm font-mono text-white bg-black/50 px-2 rounded border border-gray-700">{activeScene.duration?.toFixed(2)}s</span>
-                                  </div>
-                                  <div>
-                                      <label className="text-[10px] font-bold text-gray-500 uppercase">Transition</label>
-                                      <div className="flex items-center gap-2 mt-1">
-                                          <span className="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs rounded border border-purple-800 uppercase">
-                                              {activeScene.transition || 'Cut'}
-                                          </span>
-                                      </div>
-                                  </div>
-                              </div>
-
-                              <div className="h-px bg-gray-800 w-full"></div>
-
-                              {/* Audio Production */}
-                              <div>
-                                  <label className="text-[10px] font-bold text-gray-500 uppercase mb-2 block flex items-center gap-2"><Volume2 size={12}/> Audio Production</label>
-                                  
-                                  <div className="flex bg-gray-800 rounded p-1 mb-2">
-                                      <button onClick={() => setAudioMode('voice')} className={`flex-1 py-1 text-[10px] rounded ${audioMode === 'voice' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Voice</button>
-                                      <button onClick={() => setAudioMode('sfx')} className={`flex-1 py-1 text-[10px] rounded ${audioMode === 'sfx' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>SFX</button>
-                                      <button onClick={() => setAudioMode('music')} className={`flex-1 py-1 text-[10px] rounded ${audioMode === 'music' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Music</button>
-                                  </div>
-
-                                  {audioMode === 'voice' && (
-                                      <select 
-                                          className="w-full bg-gray-800 border border-gray-700 rounded p-1 mb-2 text-xs text-white outline-none focus:border-primary-500"
-                                          value={selectedVoiceId}
-                                          onChange={e => setSelectedVoiceId(e.target.value)}
-                                      >
-                                          {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                                      </select>
-                                  )}
-
-                                  <textarea 
-                                      className="w-full bg-black/30 border border-gray-700 rounded p-2 text-xs text-gray-300 focus:outline-none focus:border-primary-500 resize-none h-20 mb-2"
-                                      value={audioPrompt}
-                                      onChange={(e) => setAudioPrompt(e.target.value)}
-                                      placeholder={audioMode === 'voice' ? "Dialogue line..." : audioMode === 'sfx' ? "Sound description..." : "Music mood..."}
-                                  />
-                                  
-                                  <Button size="sm" className="w-full" onClick={handleGenAudioSubmit} disabled={isGeneratingAudio || !audioPrompt}>
-                                      {isGeneratingAudio ? <Loader2 size={12} className="animate-spin mr-2"/> : audioMode === 'voice' ? <Mic size={12} className="mr-2"/> : <Music size={12} className="mr-2"/>}
-                                      Generate {audioMode === 'voice' ? 'Voiceover' : audioMode === 'sfx' ? 'SFX' : 'Score'}
-                                  </Button>
-                              </div>
-
-                              <div className="h-px bg-gray-800 w-full"></div>
-
-                              {/* Visual Actions */}
-                              <div>
-                                  <label className="text-[10px] font-bold text-gray-500 uppercase mb-2 block">Visuals</label>
-                                  <div className="grid grid-cols-2 gap-2">
-                                      <Button size="sm" variant="secondary" className="text-xs" onClick={() => onGenerateImage(activeScene.id)}>
-                                          <Wand2 size={12} className="mr-1"/> Image
-                                      </Button>
-                                      <Button size="sm" variant="secondary" className="text-xs" onClick={() => onGenerateVideo(activeScene.id)}>
-                                          <Film size={12} className="mr-1"/> Video
-                                      </Button>
-                                  </div>
-                              </div>
-                          </>
-                      ) : (
-                          <div className="text-center text-gray-500 mt-10 text-xs">Select a scene on the timeline</div>
-                      )}
-                  </div>
-              </div>
-          </div>
-
-          {/* BOTTOM SECTION: TIMELINE CONTROLS */}
-          <div className="flex-1 flex flex-col min-h-0 bg-gray-900">
-              {/* Toolbar */}
-              <div className="h-12 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-850 shrink-0">
-                  <div className="flex items-center gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => setIsPreviewPlaying(!isPreviewPlaying)} className={isPreviewPlaying ? "border-primary-500 text-primary-400" : ""}>
-                          {isPreviewPlaying ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor" className="ml-1" />}
-                      </Button>
-                      <div className="text-lg font-mono text-white ml-2 tabular-nums">
-                          {currentTime.toFixed(2)}s <span className="text-gray-600 text-xs">/ {totalDuration.toFixed(2)}s</span>
-                      </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                       <Button size="sm" variant="ghost" onClick={onUndo} disabled={historyIndex <= 0} title="Undo"><RotateCcw size={14}/></Button>
-                       <Button size="sm" variant="ghost" onClick={onRedo} disabled={historyIndex >= historyLength - 1} title="Redo"><RotateCw size={14}/></Button>
-                       <div className="h-4 w-px bg-gray-700 mx-2"></div>
-                       <Button size="sm" onClick={onRenderMovie} disabled={isRendering}>
-                           {isRendering ? <Loader2 size={14} className="animate-spin mr-2"/> : <Download size={14} className="mr-2"/>}
-                           Export Project
-                       </Button>
-                  </div>
-              </div>
-
-              {/* Timeline Track Area */}
-              <div className="flex-1 overflow-x-auto relative p-6 select-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-5" ref={timelineRef}>
-                  
-                  {/* Ruler */}
-                  <div className="absolute top-0 left-0 right-0 h-6 border-b border-gray-800 flex items-end cursor-pointer z-20 min-w-max" onMouseDown={handleRulerMouseDown} style={{ width: Math.max(1000, totalWidth + 100) }}>
-                      {[...Array(Math.ceil(totalDuration) + 2)].map((_, i) => (
-                          <div key={i} className="absolute bottom-0 border-l border-gray-600 h-2 text-[9px] text-gray-500 pl-1 font-mono pointer-events-none" style={{ left: i * PIXELS_PER_SECOND + 24 }}>
-                              {i}s
-                          </div>
-                      ))}
-                  </div>
-
-                  {/* Playhead */}
-                  <div className="absolute top-0 bottom-0 w-px bg-red-500 z-40 pointer-events-none transition-transform duration-75 will-change-transform" style={{ transform: `translateX(${currentTime * PIXELS_PER_SECOND + 24}px)` }}>
-                      <div className="absolute -top-0 -left-1.5 w-3 h-3 bg-red-500 rotate-45 transform origin-center"></div>
-                  </div>
-
-                  {/* Tracks Container */}
-                  <div className="flex flex-col gap-4 pt-10 min-w-max pl-6 pb-6">
-                      
-                      {/* Video Track */}
-                      <div className="flex items-center h-28 relative">
-                          {/* Track Background Line */}
-                          <div className="absolute inset-0 flex items-center h-px bg-gray-800 z-0"></div>
-                          
-                          {sceneMetrics.map((scene, idx) => (
-                              <React.Fragment key={scene.id}>
-                                  <div 
-                                      className={`relative z-10 group transition-all duration-200 ${dragOverIndex === idx ? 'scale-105 z-30' : 'hover:scale-[1.02]'}`}
-                                      draggable 
-                                      onDragStart={(e) => handleDragStart(e, idx)}
-                                      onDragOver={(e) => handleDragOver(e, idx)}
-                                      onDrop={(e) => handleDrop(e, idx)}
-                                      onDragLeave={() => setDragOverIndex(null)}
-                                      onClick={(e) => handleClipClick(e, scene.startTime)}
-                                      style={{ width: (scene.duration || 5) * PIXELS_PER_SECOND }}
-                                  >
-                                      {/* Context Menu / Actions on Hover */}
-                                      <div className="absolute -top-8 left-0 w-full flex justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20">
-                                          <button onClick={(e) => { e.stopPropagation(); onSplitScene(idx); }} className="bg-gray-800 p-1.5 rounded hover:bg-primary-600 text-gray-400 hover:text-white shadow-lg border border-gray-700" title="Split"><Scissors size={10} /></button>
-                                          <button onClick={(e) => { e.stopPropagation(); onDuplicateScene(idx); }} className="bg-gray-800 p-1.5 rounded hover:bg-primary-600 text-gray-400 hover:text-white shadow-lg border border-gray-700" title="Duplicate"><Copy size={10} /></button>
-                                          <button onClick={(e) => { e.stopPropagation(); onDeleteScene(idx); }} className="bg-gray-800 p-1.5 rounded hover:bg-red-600 text-gray-400 hover:text-white shadow-lg border border-gray-700" title="Delete"><Trash2 size={10} /></button>
-                                      </div>
-
-                                      {/* Clip Block */}
-                                      <div className={`w-full h-full bg-gray-800 rounded-lg border overflow-hidden relative shadow-lg transition-colors flex-shrink-0 cursor-pointer ${activeScene?.id === scene.id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-700'} ${dragOverIndex === idx ? 'border-yellow-500' : ''}`}>
-                                          
-                                          {/* Thumbnail */}
-                                          {scene.imageUrl ? (
-                                              <img src={scene.imageUrl} className={`w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity ${scene.bgRemoved ? 'object-contain bg-gray-900' : ''}`} draggable={false} />
-                                          ) : (
-                                              <div className="w-full h-full flex flex-col items-center justify-center text-gray-700 gap-1 bg-gray-900">
-                                                  <Film size={16} />
-                                                  <span className="text-[9px]">Empty</span>
-                                              </div>
-                                          )}
-                                          
-                                          {/* Type Icon Overlay */}
-                                          {scene.videoUrl && (
-                                              <div className="absolute top-1 left-1 bg-black/50 rounded p-0.5 text-white/80">
-                                                  <Film size={10} />
-                                              </div>
-                                          )}
-                                          {!scene.videoUrl && scene.imageUrl && (
-                                              <div className="absolute top-1 left-1 bg-black/50 rounded p-0.5 text-white/80">
-                                                  <ImageIcon size={10} />
-                                              </div>
-                                          )}
-                                          
-                                          {/* Duration Badge */}
-                                          <div className="absolute top-1 right-1 bg-black/70 text-white text-[9px] font-mono px-1 rounded z-10 backdrop-blur-sm">
-                                              {scene.duration?.toFixed(1)}s
-                                          </div>
-                                          
-                                          {/* Status Badge */}
-                                          {scene.status === 'generating' && (
-                                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
-                                                  <Loader2 size={16} className="text-purple-500 animate-spin"/>
-                                              </div>
-                                          )}
-                                          
-                                          {/* In-Clip Actions */}
-                                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                              <button onClick={(e) => { e.stopPropagation(); onOpenTrim(scene.id); }} className="p-1.5 bg-blue-600 rounded-full text-white hover:scale-110 transition-transform" title="Trim"><Sliders size={12} /></button>
-                                              <button onClick={(e) => { e.stopPropagation(); onOpenMagicEdit(scene.id); }} className="p-1.5 bg-purple-600 rounded-full text-white hover:scale-110 transition-transform" title="AI Edit"><Wand2 size={12} /></button>
-                                          </div>
-                                      </div>
-                                      
-                                      {/* Clip Label */}
-                                      <div className="mt-1 text-[9px] text-gray-500 truncate w-full text-center px-1 font-mono">
-                                          {idx + 1}. {scene.description.substring(0, 15)}...
-                                      </div>
-                                  </div>
-
-                                  {/* Transition Connector */}
-                                  {idx < scenes.length - 1 && (
-                                      <div 
-                                        className="relative z-10 w-6 flex flex-col items-center justify-center cursor-pointer -ml-3 -mr-3" 
-                                        onClick={(e) => { e.stopPropagation(); onUpdateScene(scene.id, { transition: cycleTransition(scene.transition) }); }} 
-                                        style={{ zIndex: 20 }}
-                                        title={`Transition: ${scene.transition || 'Cut'}`}
-                                      >
-                                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center bg-gray-900 transition-all hover:scale-125 ${scene.transition && scene.transition !== 'cut' ? 'border-purple-500 text-purple-500' : 'border-gray-600 text-gray-600'}`}>
-                                              {scene.transition && scene.transition !== 'cut' ? <Layers size={8} /> : <ArrowRightLeft size={8} />}
-                                          </div>
-                                      </div>
-                                  )}
-                              </React.Fragment>
-                          ))}
-                          
-                          {/* Add Button */}
-                          <div 
-                            className="w-10 h-28 rounded-lg border-2 border-dashed border-gray-800 flex items-center justify-center text-gray-700 hover:text-gray-400 hover:border-gray-600 cursor-pointer ml-2 transition-colors bg-gray-900/50" 
-                            onClick={onAddScene}
-                            title="Add Scene"
-                          >
-                              <Plus size={16} />
-                          </div>
-                      </div>
-
-                      {/* Audio Tracks Visual */}
-                      <div className="flex flex-col gap-1 mt-4">
-                         {audioTracks.map((track) => (
-                             <div key={track.id} className="flex items-center h-8 relative group/track">
-                                <div className="absolute left-0 -ml-24 w-20 text-xs font-bold text-gray-600 flex items-center gap-2 justify-end pr-2">
-                                    {track.type === 'music' ? <Music size={10}/> : <Volume2 size={10}/>} {track.type}
+            {/* Inspector */}
+            <div className="w-full lg:w-80 bg-gray-900 border-l border-gray-800 flex flex-col overflow-hidden shrink-0">
+                <div className="p-3 border-b border-gray-800 font-bold text-xs uppercase text-gray-500">Inspector</div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-20 lg:pb-4">
+                    {activeScene ? (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-xs font-medium text-gray-400">Scene Description</label>
+                                <textarea 
+                                    className="w-full bg-black/50 border border-gray-700 rounded-lg p-2 text-xs text-white h-24 focus:outline-none focus:border-purple-500 resize-none"
+                                    value={activeScene.description}
+                                    onChange={(e) => onUpdateScene(activeScene.id, { description: e.target.value })}
+                                />
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="secondary" onClick={() => onGenerateImage(activeScene.id)} disabled={activeScene.status === 'generating'} className="flex-1 text-[10px]">
+                                        <ImageIcon size={12} className="mr-1"/> Image
+                                    </Button>
+                                    <Button size="sm" onClick={() => onGenerateVideo(activeScene.id)} disabled={activeScene.status === 'generating'} className="flex-1 text-[10px] bg-purple-600 hover:bg-purple-500">
+                                        <Video size={12} className="mr-1"/> Veo Video
+                                    </Button>
                                 </div>
-                                <div 
-                                    className={`h-full rounded border flex items-center px-2 relative overflow-hidden ${track.type === 'voiceover' ? 'bg-orange-900/20 border-orange-800/50' : 'bg-blue-900/20 border-blue-800/50'}`} 
-                                    style={{ width: track.duration * PIXELS_PER_SECOND, marginLeft: track.startOffset * PIXELS_PER_SECOND }}
-                                >
-                                    <div className="absolute inset-0 opacity-30 flex items-center gap-0.5">
-                                        {[...Array(Math.floor(track.duration * 4))].map((_, i) => (
-                                            <div key={i} className={`w-1 rounded-full ${track.type === 'voiceover' ? 'bg-orange-400' : 'bg-blue-400'}`} style={{ height: `${20 + Math.random() * 60}%` }}></div>
-                                        ))}
+                            </div>
+
+                            <div className="border-t border-gray-800 pt-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-medium text-gray-400">Audio Generation</label>
+                                    <div className="flex bg-black/50 rounded p-0.5">
+                                        <button onClick={() => setAudioMode('voice')} className={`px-2 py-0.5 rounded text-[10px] ${audioMode === 'voice' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}><Mic size={10}/></button>
+                                        <button onClick={() => setAudioMode('sfx')} className={`px-2 py-0.5 rounded text-[10px] ${audioMode === 'sfx' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}><Volume2 size={10}/></button>
+                                        <button onClick={() => setAudioMode('music')} className={`px-2 py-0.5 rounded text-[10px] ${audioMode === 'music' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}><Music size={10}/></button>
                                     </div>
-                                    <div className={`relative z-10 text-[9px] font-mono truncate ${track.type === 'voiceover' ? 'text-orange-300' : 'text-blue-300'}`}>{track.name}</div>
                                 </div>
-                             </div>
-                         ))}
-                      </div>
-                  </div>
-              </div>
-          </div>
-      </div>
+                                
+                                {audioMode === 'voice' && (
+                                    <select 
+                                        className="w-full bg-black/50 border border-gray-700 rounded p-1.5 text-xs text-white outline-none"
+                                        value={selectedVoiceId}
+                                        onChange={(e) => setSelectedVoiceId(e.target.value)}
+                                    >
+                                        {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                    </select>
+                                )}
+
+                                <div className="relative">
+                                    <textarea 
+                                        className="w-full bg-black/50 border border-gray-700 rounded-lg p-2 text-xs text-white h-16 focus:outline-none focus:border-purple-500 resize-none pr-6"
+                                        placeholder={audioMode === 'voice' ? "Script to speak..." : "Sound description..."}
+                                        value={audioPrompt}
+                                        onChange={(e) => setAudioPrompt(e.target.value)}
+                                    />
+                                    <button onClick={handleAutoPrompt} className="absolute top-2 right-2 text-gray-500 hover:text-purple-400" title="Auto-Generate Prompt"><Wand2 size={12}/></button>
+                                </div>
+                                
+                                <Button size="sm" className="w-full" onClick={handleAudioGen} disabled={isGeneratingAudio || !audioPrompt}>
+                                    {isGeneratingAudio ? <Loader2 size={12} className="animate-spin mr-2"/> : <Volume2 size={12} className="mr-2"/>} Generate Audio
+                                </Button>
+                            </div>
+
+                            <div className="border-t border-gray-800 pt-4 grid grid-cols-2 gap-2">
+                                <button onClick={() => onOpenMagicEdit(activeScene.id)} className="flex items-center justify-center gap-1 bg-gray-800 hover:bg-gray-700 p-2 rounded text-[10px] text-gray-300">
+                                    <Wand2 size={12}/> Magic Edit
+                                </button>
+                                <button onClick={() => onOpenTrim(activeScene.id)} className="flex items-center justify-center gap-1 bg-gray-800 hover:bg-gray-700 p-2 rounded text-[10px] text-gray-300">
+                                    <Scissors size={12}/> Trim
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="text-center text-gray-500 text-xs py-10">Select a scene on the timeline to edit.</div>
+                    )}
+                </div>
+            </div>
+        </div>
+
+        {/* Bottom: Timeline */}
+        <div className="h-72 bg-gray-900 border-t border-gray-800 flex flex-col shrink-0">
+            {/* Timeline Tools */}
+            <div className="h-10 bg-gray-850 border-b border-gray-800 flex items-center px-4 justify-between">
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setIsPreviewPlaying(!isPreviewPlaying)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-black hover:scale-105 transition-transform">
+                        {isPreviewPlaying ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor" className="ml-0.5"/>}
+                    </button>
+                    <span className="font-mono text-sm ml-2 text-gray-300">{formatTime(currentTime)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button className="p-1.5 hover:bg-gray-700 rounded text-gray-400"><Scissors size={14}/></button>
+                    <button className="p-1.5 hover:bg-gray-700 rounded text-gray-400" onClick={onAddScene} title="Add Scene"><Plus size={14}/></button>
+                    <div className="h-4 w-px bg-gray-700 mx-1"></div>
+                    <button className="p-1.5 hover:bg-gray-700 rounded text-gray-400" onClick={onUndo} disabled={historyIndex <= 0}><RotateCcw size={14}/></button>
+                    <button className="p-1.5 hover:bg-gray-700 rounded text-gray-400" onClick={onRedo} disabled={historyIndex >= historyLength - 1}><RotateCw size={14}/></button>
+                    
+                    <div className="h-4 w-px bg-gray-700 mx-1"></div>
+                    <button 
+                        className="flex items-center gap-1 bg-primary-600 hover:bg-primary-500 text-white px-2 py-1 rounded text-xs font-bold transition-colors"
+                        onClick={onRenderMovie}
+                        disabled={isRendering}
+                    >
+                        {isRendering ? <Loader2 size={12} className="animate-spin"/> : <Download size={12}/>} Render
+                    </button>
+                </div>
+            </div>
+
+            {/* Tracks Container */}
+            <div className="flex-1 overflow-x-auto overflow-y-hidden relative bg-gray-900" ref={timelineRef}>
+                <div className="relative h-full" style={{ width: Math.max(1000, totalWidth + 400) }}>
+                    
+                    {/* Time Ruler */}
+                    <div className="h-6 border-b border-gray-800 flex items-end select-none">
+                        {[...Array(Math.ceil(totalDuration) + 5)].map((_, i) => (
+                            <div key={i} className="absolute bottom-0 text-[9px] text-gray-500 border-l border-gray-800 pl-1 h-3" style={{ left: i * PIXELS_PER_SECOND }}>
+                                {i}s
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Playhead */}
+                    <div 
+                        className="absolute top-0 bottom-0 w-px bg-red-500 z-30 pointer-events-none"
+                        style={{ left: currentTime * PIXELS_PER_SECOND }}
+                    >
+                        <div className="absolute -top-0 -left-1.5 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                    </div>
+
+                    {/* Scene Track */}
+                    <div className="h-20 mt-2 relative border-b border-gray-800">
+                        {sceneMetrics.map((scene, index) => (
+                            <div 
+                                key={scene.id}
+                                className={`absolute top-1 bottom-1 bg-gray-800 border rounded-md overflow-hidden group cursor-pointer transition-all ${activeScene?.id === scene.id ? 'border-purple-500 ring-1 ring-purple-500/50 z-10' : 'border-gray-600 hover:border-gray-400'}`}
+                                style={{ 
+                                    left: scene.startTime * PIXELS_PER_SECOND, 
+                                    width: scene.duration ? scene.duration * PIXELS_PER_SECOND : 5 * PIXELS_PER_SECOND 
+                                }}
+                                onClick={() => {
+                                    setCurrentTime(scene.startTime);
+                                }}
+                            >
+                                {/* Thumbnail Strip */}
+                                <div className="absolute inset-0 flex opacity-50">
+                                    {scene.imageUrl && <img src={scene.imageUrl} className="h-full w-auto object-cover" />}
+                                    {!scene.imageUrl && <div className="w-full h-full bg-gray-800 flex items-center justify-center"><Film size={16} className="text-gray-600"/></div>}
+                                </div>
+                                
+                                <div className="absolute top-1 left-2 text-[10px] font-bold text-white drop-shadow-md truncate max-w-full">
+                                    Scene {index + 1}
+                                </div>
+
+                                {/* Transition Handle */}
+                                {index < sceneMetrics.length - 1 && (
+                                    <div 
+                                        className="absolute right-0 top-0 bottom-0 w-4 hover:bg-white/20 cursor-pointer flex items-center justify-center"
+                                        onClick={(e) => { e.stopPropagation(); onUpdateScene(scene.id, { transition: cycleTransition(scene.transition || 'cut') }); }}
+                                    >
+                                        {scene.transition === 'fade' ? <div className="w-0 h-0 border-l-[4px] border-l-transparent border-b-[8px] border-b-white/50"></div> : 
+                                         scene.transition === 'dissolve' ? <div className="w-2 h-2 rounded-full bg-white/30"></div> : 
+                                         <div className="w-px h-full bg-black/50"></div>}
+                                    </div>
+                                )}
+
+                                {/* Context Actions */}
+                                <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 flex gap-1">
+                                    <button onClick={(e) => { e.stopPropagation(); onReorderScenes(index, index - 1); }} className="p-1 bg-black/50 rounded hover:bg-black/80 text-white" title="Move Left" disabled={index === 0}><ArrowLeft size={10}/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); onReorderScenes(index, index + 1); }} className="p-1 bg-black/50 rounded hover:bg-black/80 text-white" title="Move Right" disabled={index === sceneMetrics.length - 1}><ArrowRight size={10}/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); onSplitScene(index); }} className="p-1 bg-black/50 rounded hover:bg-black/80 text-white" title="Split"><Scissors size={10}/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); onDuplicateScene(index); }} className="p-1 bg-black/50 rounded hover:bg-black/80 text-white" title="Duplicate"><Copy size={10}/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); onDeleteScene(index); }} className="p-1 bg-black/50 rounded hover:bg-red-900/80 text-red-300" title="Delete"><Trash2 size={10}/></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Audio Tracks */}
+                    <div className="flex-1 relative pt-2">
+                        {audioTracks.map((track) => (
+                            <div
+                                key={track.id}
+                                className={`absolute top-0 h-8 rounded border flex items-center px-2 cursor-grab active:cursor-grabbing ${getAudioColor(track.type)}`}
+                                style={{
+                                    left: track.startOffset * PIXELS_PER_SECOND,
+                                    width: Math.max(20, track.duration * PIXELS_PER_SECOND),
+                                    top: (['voiceover', 'music', 'sfx'].indexOf(track.type) * 36) + 'px'
+                                }}
+                                onMouseDown={(e) => {
+                                    setDragAudio({ id: track.id, startX: e.clientX, startOffset: track.startOffset });
+                                }}
+                            >
+                                <div className="truncate text-[10px] text-white/80 font-mono w-full">{track.name}</div>
+                                {onDeleteAudioTrack && (
+                                    <button 
+                                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 hover:text-red-300 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => { e.stopPropagation(); onDeleteAudioTrack(track.id); }}
+                                    >
+                                        <Trash2 size={10} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
   );
 };

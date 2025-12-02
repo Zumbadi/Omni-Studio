@@ -23,7 +23,7 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({ roadmap, isGenerating,
             </Button>
         </div>
         
-        <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex-1 p-6 overflow-y-auto relative">
             {roadmap.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-4">
                     <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-2">
@@ -33,67 +33,77 @@ export const RoadmapView: React.FC<RoadmapViewProps> = ({ roadmap, isGenerating,
                     <p className="text-xs opacity-60 max-w-xs text-center">Click generate to have Omni-Studio create a phased execution plan for your project.</p>
                 </div>
             ) : (
-                <div className="space-y-6 max-w-3xl mx-auto">
+                <div className="space-y-8 max-w-3xl mx-auto relative pl-8">
+                    {/* Vertical Timeline Line */}
+                    <div className="absolute left-[47px] top-0 bottom-0 w-0.5 bg-gray-800 -z-0"></div>
+
                     {roadmap.map((phase, i) => (
-                        <div key={phase.id} className={`bg-gray-800 rounded-xl border p-5 shadow-lg transition-colors relative overflow-hidden group ${phase.status === 'completed' ? 'border-green-600/50 shadow-green-900/10' : 'border-gray-700 hover:border-gray-600'}`}>
-                            {/* Progress Bar Background */}
-                            <div className="absolute top-0 left-0 h-1 bg-gray-700 w-full">
-                                <div 
-                                    className={`h-full transition-all duration-500 ${phase.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`} 
-                                    style={{ width: `${(phase.tasks.filter(t => t.done).length / phase.tasks.length) * 100}%` }}
-                                ></div>
+                        <div key={phase.id} className="relative z-10">
+                            {/* Phase Connector Node */}
+                            <div className={`absolute -left-[27px] top-6 w-6 h-6 rounded-full border-4 border-gray-900 flex items-center justify-center transition-colors ${phase.status === 'completed' ? 'bg-green-500' : phase.status === 'active' ? 'bg-blue-500 animate-pulse' : 'bg-gray-700'}`}>
+                                {phase.status === 'completed' && <Check size={12} className="text-black stroke-[3]"/>}
                             </div>
 
-                            {/* Completed Overlay Pattern */}
-                            {phase.status === 'completed' && (
-                                <div className="absolute top-0 right-0 p-2">
-                                    <Trophy size={64} className="text-green-500/10 rotate-12"/>
-                                </div>
-                            )}
-
-                            <div className="flex justify-between items-center mb-4 relative z-10">
-                                <div>
-                                    <h3 className="font-bold text-gray-200 text-base flex items-center gap-2">
-                                        {phase.title}
-                                        {phase.status === 'completed' && <span className="text-[10px] bg-green-500 text-black px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 animate-in zoom-in"><Trophy size={10} fill="currentColor"/> Milestone</span>}
-                                    </h3>
-                                    <span className="text-[10px] text-gray-500">Phase {i + 1}</span>
-                                </div>
-                                <span className={`text-[10px] px-2.5 py-1 rounded-full uppercase font-bold border ${phase.status === 'completed' ? 'bg-green-900/30 text-green-400 border-green-800 animate-pulse' : phase.status === 'active' ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-gray-700/30 text-gray-400 border-gray-600'}`}>
-                                    {phase.status}
-                                </span>
-                            </div>
-
-                            <div className="space-y-2 mb-5 relative z-10">
-                                {phase.goals.map((g, idx) => (
-                                    <div key={idx} className="flex items-center gap-2 text-xs text-gray-400">
-                                        <Flag size={12} className={phase.status === 'completed' ? 'text-green-500' : 'text-yellow-500'} /> {g}
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="bg-black/20 rounded-lg p-1 mb-4 border border-gray-700/50 relative z-10">
-                                {phase.tasks.map(task => (
+                            <div className={`bg-gray-800 rounded-xl border p-5 shadow-lg transition-colors relative overflow-hidden group ${phase.status === 'completed' ? 'border-green-600/50 shadow-green-900/10' : phase.status === 'active' ? 'border-blue-500/50 shadow-blue-900/10' : 'border-gray-700 hover:border-gray-600'}`}>
+                                {/* Progress Bar Background */}
+                                <div className="absolute top-0 left-0 h-1 bg-gray-700 w-full">
                                     <div 
-                                        key={task.id} 
-                                        className="flex items-center gap-3 p-2 rounded hover:bg-gray-700/50 cursor-pointer transition-colors group/task" 
-                                        onClick={() => onToggleTask(phase.id, task.id)}
-                                    >
-                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${task.done ? 'bg-green-500 border-green-500' : 'border-gray-600 bg-gray-800 group-hover/task:border-gray-500'}`}>
-                                            {task.done && <Check size={10} className="text-black font-bold"/>}
-                                        </div>
-                                        <span className={`text-xs ${task.done ? 'text-gray-500 line-through decoration-gray-600' : 'text-gray-300'}`}>{task.text}</span>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {phase.status !== 'completed' && (
-                                <div className="flex justify-end relative z-10">
-                                    <Button size="sm" variant="secondary" onClick={() => onExecutePhase(phase)} className="text-xs group-hover:border-primary-500/50 group-hover:text-white transition-all">
-                                        Execute with AI <ArrowRight size={12} className="ml-2 group-hover:translate-x-1 transition-transform"/>
-                                    </Button>
+                                        className={`h-full transition-all duration-500 ${phase.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`} 
+                                        style={{ width: `${(phase.tasks.filter(t => t.done).length / phase.tasks.length) * 100}%` }}
+                                    ></div>
                                 </div>
-                            )}
+
+                                {/* Completed Overlay Pattern */}
+                                {phase.status === 'completed' && (
+                                    <div className="absolute top-0 right-0 p-2">
+                                        <Trophy size={64} className="text-green-500/10 rotate-12"/>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between items-center mb-4 relative z-10">
+                                    <div>
+                                        <h3 className="font-bold text-gray-200 text-base flex items-center gap-2">
+                                            {phase.title}
+                                            {phase.status === 'completed' && <span className="text-[10px] bg-green-500 text-black px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 animate-in zoom-in"><Trophy size={10} fill="currentColor"/> Milestone</span>}
+                                        </h3>
+                                        <span className="text-[10px] text-gray-500">Phase {i + 1}</span>
+                                    </div>
+                                    <span className={`text-[10px] px-2.5 py-1 rounded-full uppercase font-bold border ${phase.status === 'completed' ? 'bg-green-900/30 text-green-400 border-green-800 animate-pulse' : phase.status === 'active' ? 'bg-blue-900/30 text-blue-400 border-blue-800' : 'bg-gray-700/30 text-gray-400 border-gray-600'}`}>
+                                        {phase.status}
+                                    </span>
+                                </div>
+
+                                <div className="space-y-2 mb-5 relative z-10">
+                                    {phase.goals.map((g, idx) => (
+                                        <div key={idx} className="flex items-center gap-2 text-xs text-gray-400">
+                                            <Flag size={12} className={phase.status === 'completed' ? 'text-green-500' : 'text-yellow-500'} /> {g}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="bg-black/20 rounded-lg p-1 mb-4 border border-gray-700/50 relative z-10">
+                                    {phase.tasks.map(task => (
+                                        <div 
+                                            key={task.id} 
+                                            className="flex items-center gap-3 p-2 rounded hover:bg-gray-700/50 cursor-pointer transition-colors group/task" 
+                                            onClick={() => onToggleTask(phase.id, task.id)}
+                                        >
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${task.done ? 'bg-green-500 border-green-500' : 'border-gray-600 bg-gray-800 group-hover/task:border-gray-500'}`}>
+                                                {task.done && <Check size={10} className="text-black font-bold"/>}
+                                            </div>
+                                            <span className={`text-xs ${task.done ? 'text-gray-500 line-through decoration-gray-600' : 'text-gray-300'}`}>{task.text}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {phase.status !== 'completed' && (
+                                    <div className="flex justify-end relative z-10">
+                                        <Button size="sm" variant="secondary" onClick={() => onExecutePhase(phase)} className="text-xs group-hover:border-primary-500/50 group-hover:text-white transition-all">
+                                            Execute with AI <ArrowRight size={12} className="ml-2 group-hover:translate-x-1 transition-transform"/>
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>

@@ -30,6 +30,7 @@ interface PreviewPanelProps {
   onLog: (msg: string) => void;
   files: FileNode[];
   onSaveFile?: (path: string, content: string) => void;
+  onOpenFile?: (id: string) => void;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
   onUpdateProject?: (p: Project) => void;
@@ -50,7 +51,7 @@ const LoadingFallback = () => (
 
 export const PreviewPanel = memo(({
   project, previewSrc, activeTab, setActiveTab, onToggleLayout, onExport, onRefreshPreview,
-  roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile,
+  roadmap, isGeneratingPlan, onGeneratePlan, onExecutePhase, onToggleTask, onLog, files, onSaveFile, onOpenFile,
   isMaximized, onToggleMaximize, onUpdateProject, onDeleteProject, onDeploymentComplete, onConsoleLog,
   currentBranch, onMergeBranch, onAiFix, envVars
 }: PreviewPanelProps) => {
@@ -99,7 +100,7 @@ export const PreviewPanel = memo(({
                 />
             )}
             {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} />}
-            {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} files={files} />}
+            {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} files={files} onOpenFile={onOpenFile} />}
             {activeTab === 'deploy' && (
                 <DeploymentConsole 
                     project={project} 

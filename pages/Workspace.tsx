@@ -371,7 +371,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       projectType: project?.type || ProjectType.REACT_WEB, 
       files, activeFile, activeModel, editorSelection, setEditorSelection,
       onStartAgentTask: handleAgentSlashCommand,
-      runTests // Pass runTests here
+      runTests, // Pass runTests here
+      mcpContext // Pass Knowledge Base Context
   });
 
   const { handleCommand: baseHandleCommand, handleAiFix } = useTerminal({
@@ -571,6 +572,12 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
 
   const onFileClickWrapper = useCallback((id: string) => onFileClick(id, isSplitView, secondaryFileId, setSecondaryFileId), [isSplitView, secondaryFileId, onFileClick]);
   
+  // Wrapper for navigation from Architecture Designer
+  const handleOpenFileFromArch = useCallback((id: string) => {
+      onFileClick(id, isSplitView, secondaryFileId, setSecondaryFileId);
+      // Ensure editor area is visible/focused if possible (though sidebar is usually open)
+  }, [onFileClick, isSplitView, secondaryFileId, setSecondaryFileId]);
+
   const handleApplyCode = useCallback((code: string) => {
     const filenameMatch = code.match(/^\/\/ filename: (.*)/i);
     if (filenameMatch) {
@@ -805,7 +812,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
         {!isRightPanelMaximized && (
             <WorkspaceSidebar 
                 layout={layout} sidebarWidth={sidebarWidth} activeActivity={activeActivity} setActiveActivity={setActiveActivity} onToggleSidebar={() => toggleLayout('sidebar')}
-                files={files} activeFileId={activeFileId} project={project} remoteDirName={remoteDirName} deletedFiles={deletedFiles}
+                files={files} activeFileId={activeFileId} openFiles={openFiles} project={project} remoteDirName={remoteDirName} deletedFiles={deletedFiles}
                 onFileClick={onFileClickWrapper} onContextMenu={(e, id, isTrash) => { e.preventDefault(); setContextMenu({ visible: true, x: e.clientX, y: e.clientY, fileId: id, isTrash }); }}
                 onFileOps={{ 
                     onConnectRemote: () => setShowConnectModal(true), 
@@ -865,6 +872,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     project={project!} previewSrc={previewSrc} activeTab={activeTab} setActiveTab={setActiveTab} onToggleLayout={() => toggleLayout('right')}
                     onExport={handleExport} onRefreshPreview={() => {/* force update */}} roadmap={roadmap} isGeneratingPlan={isGeneratingPlan} onGeneratePlan={handleGeneratePlan}
                     onExecutePhase={handleExecutePhase} onToggleTask={handleToggleRoadmapTask} onLog={(l) => setTerminalLogs(p => [...p, l])} files={debouncedFiles} onSaveFile={addFile}
+                    onOpenFile={handleOpenFileFromArch}
                     isMaximized={isRightPanelMaximized} onToggleMaximize={() => setIsRightPanelMaximized(!isRightPanelMaximized)} onUpdateProject={onUpdateProject} onDeleteProject={(id) => onDeleteProject?.({} as any, id)}
                     onDeploymentComplete={(url) => { onUpdateProject?.({ ...project, deploymentStatus: 'live', deploymentUrl: url }); addToast('success', 'Deployed!'); }}
                     onConsoleLog={(l) => setLiveConsoleLogs(p => [...p, l])}
@@ -907,6 +915,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
           onToggleAutoPilot={handleToggleAutoPilot}
           attachedImage={attachedImage}
           onAttachImage={setAttachedImage}
+          files={files}
       />
     </div>
   );

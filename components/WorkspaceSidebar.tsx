@@ -15,6 +15,7 @@ interface WorkspaceSidebarProps {
   files: FileNode[];
   deletedFiles?: FileNode[];
   activeFileId: string;
+  openFiles: string[];
   project: Project;
   remoteDirName: string | null;
   onFileClick: (id: string) => void;
@@ -75,7 +76,7 @@ interface WorkspaceSidebarProps {
 
 export const WorkspaceSidebar = memo(({
   layout, sidebarWidth, activeActivity, setActiveActivity, onToggleSidebar,
-  files, activeFileId, project, remoteDirName, onFileClick, onContextMenu, onFileOps,
+  files, activeFileId, openFiles, project, remoteDirName, onFileClick, onContextMenu, onFileOps,
   commits, currentBranch, branches, onCommit, onCreateBranch, onSwitchBranch,
   searchQuery, onSearch, searchResults, onResultClick, onReplace, onReplaceAll,
   debugVariables, breakpoints, onRemoveBreakpoint,
@@ -88,14 +89,22 @@ export const WorkspaceSidebar = memo(({
 }: WorkspaceSidebarProps) => {
 
   const handleActivityClick = (activity: typeof activeActivity) => {
+      // If sidebar is closed (only possible on desktop usually, as mobile hides the bar), open it.
+      // On mobile, if the bar is visible, the sidebar 'should' be considered open in our new logic, but just in case:
       if (!layout.showSidebar) onToggleSidebar();
       setActiveActivity(activity);
   };
 
   return (
     <>
-      {/* Activity Bar */}
-      <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0 md:flex">
+      {/* Activity Bar: 
+          Desktop: Always visible on the left.
+          Mobile: Visible only when sidebar is toggled open (acts as the nav for the drawer). 
+      */}
+      <div className={`
+          w-12 bg-gray-900 border-r border-gray-800 flex-col items-center py-4 gap-4 z-50 flex-shrink-0
+          ${layout.showSidebar ? 'flex fixed inset-y-0 left-0 md:relative' : 'hidden md:flex'}
+      `}>
           {[
              { id: 'EXPLORER', icon: Files },
              { id: 'SEARCH', icon: Search },
@@ -118,16 +127,16 @@ export const WorkspaceSidebar = memo(({
           ))}
       </div>
 
-      {/* Side Panel Content - Mobile Drawer Logic */}
+      {/* Side Panel Content */}
       {layout.showSidebar && (
         <>
             {/* Mobile Backdrop */}
-            <div className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm" onClick={onToggleSidebar}></div>
+            <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={onToggleSidebar}></div>
             
             {/* Sidebar Panel */}
             <div 
-                className="bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 absolute md:static h-full z-30 shadow-2xl md:shadow-none animate-in slide-in-from-left-10 duration-200" 
-                style={{ width: sidebarWidth }}
+                className="bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0 fixed inset-y-0 left-12 md:static z-40 shadow-2xl md:shadow-none animate-in slide-in-from-left-10 duration-200" 
+                style={{ width: sidebarWidth, maxWidth: 'calc(100vw - 48px)' }}
             >
               {activeActivity === 'EXPLORER' && (
                   <div className="flex flex-col h-full">
@@ -143,6 +152,7 @@ export const WorkspaceSidebar = memo(({
                        <FileExplorer 
                             files={files} 
                             activeFileId={activeFileId} 
+                            openFiles={openFiles}
                             project={project} 
                             remoteDirName={remoteDirName} 
                             deletedFiles={deletedFiles}
@@ -159,7 +169,7 @@ export const WorkspaceSidebar = memo(({
               {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} onInsertAsset={onInsertAsset} />}
               {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} history={agentHistory} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} activeAgent={activeAgent} />}
               {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
-              {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddDoc={onAddKnowledgeDoc} onUpdateDoc={onUpdateKnowledgeDoc} onDeleteDoc={onDeleteKnowledgeDoc} />}
+              {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddKnowledgeDoc={onAddKnowledgeDoc} onUpdateKnowledgeDoc={onUpdateKnowledgeDoc} onDeleteKnowledgeDoc={onDeleteKnowledgeDoc} />}
             </div>
         </>
       )}

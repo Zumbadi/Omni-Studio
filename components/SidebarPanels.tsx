@@ -481,7 +481,7 @@ export const AgentsPanel: React.FC<AgentsPanelProps> = ({ activeTask, history = 
                 </span>
             </div>
             
-            <div className="h-24 mb-4 w-full">
+            <div className="h-24 mb-4 w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={stats}>
                         <defs>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff, Sun, Moon, Layout } from 'lucide-react';
+import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff, Sun, Moon, Layout, Palette } from 'lucide-react';
 import { Button } from './Button';
 
 interface ApiProvider {
@@ -11,6 +11,14 @@ interface ApiProvider {
   type: 'openai' | 'anthropic' | 'groq' | 'custom';
   status?: 'verified' | 'error' | 'pending';
 }
+
+const THEME_COLORS = [
+  { name: 'Indigo', values: { 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 900: '#312e81' } },
+  { name: 'Violet', values: { 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed', 900: '#4c1d95' } },
+  { name: 'Emerald', values: { 400: '#34d399', 500: '#10b981', 600: '#059669', 900: '#064e3b' } },
+  { name: 'Rose', values: { 400: '#fb7185', 500: '#f43f5e', 600: '#e11d48', 900: '#881337' } },
+  { name: 'Amber', values: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 900: '#78350f' } },
+];
 
 export const Settings: React.FC = () => {
   const [activeModel, setActiveModel] = useState(() => localStorage.getItem('omni_active_model') || 'Gemini 2.5 Flash (Fastest)');
@@ -31,6 +39,7 @@ export const Settings: React.FC = () => {
   
   // Appearance
   const [theme, setTheme] = useState(() => localStorage.getItem('omni_theme') || 'dark');
+  const [accentColor, setAccentColor] = useState(() => localStorage.getItem('omni_accent_color') || 'Indigo');
 
   useEffect(() => {
     // Load custom models deployed from Fine-Tuning Dashboard
@@ -69,6 +78,25 @@ export const Settings: React.FC = () => {
           root.classList.remove('dark');
       }
   }, [theme]);
+
+  const applyColor = (colorName: string) => {
+      const color = THEME_COLORS.find(c => c.name === colorName) || THEME_COLORS[0];
+      setAccentColor(colorName);
+      
+      const root = document.documentElement;
+      root.style.setProperty('--primary-400', color.values[400]);
+      root.style.setProperty('--primary-500', color.values[500]);
+      root.style.setProperty('--primary-600', color.values[600]);
+      root.style.setProperty('--primary-900', color.values[900]);
+      
+      localStorage.setItem('omni_accent_color', colorName);
+  };
+
+  // Apply saved color on mount
+  useEffect(() => {
+      const savedColor = localStorage.getItem('omni_accent_color');
+      if (savedColor) applyColor(savedColor);
+  }, []);
 
   const handleSave = () => {
       localStorage.setItem('omni_active_model', activeModel);
@@ -143,21 +171,43 @@ export const Settings: React.FC = () => {
             <Layout size={20} />
             <h2>Appearance</h2>
           </div>
-          <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-300">Interface Theme</span>
-              <div className="flex bg-gray-800 p-1 rounded-lg border border-gray-700">
-                  <button 
-                    onClick={() => setTheme('light')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${theme === 'light' ? 'bg-gray-200 text-gray-900 shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                  >
-                      <Sun size={14}/> Light
-                  </button>
-                  <button 
-                    onClick={() => setTheme('dark')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${theme === 'dark' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                  >
-                      <Moon size={14}/> Dark
-                  </button>
+          
+          <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-300">Interface Theme</span>
+                  <div className="flex bg-gray-800 p-1 rounded-lg border border-gray-700">
+                      <button 
+                        onClick={() => setTheme('light')}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${theme === 'light' ? 'bg-gray-200 text-gray-900 shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                      >
+                          <Sun size={14}/> Light
+                      </button>
+                      <button 
+                        onClick={() => setTheme('dark')}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${theme === 'dark' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                      >
+                          <Moon size={14}/> Dark
+                      </button>
+                  </div>
+              </div>
+
+              <div>
+                  <div className="flex items-center gap-2 mb-3 text-sm font-medium text-gray-300">
+                      <Palette size={16} /> Accent Color
+                  </div>
+                  <div className="flex gap-4">
+                      {THEME_COLORS.map(c => (
+                          <button
+                              key={c.name}
+                              onClick={() => applyColor(c.name)}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${accentColor === c.name ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900 scale-110' : 'hover:scale-105'}`}
+                              style={{ backgroundColor: c.values[500] }}
+                              title={c.name}
+                          >
+                              {accentColor === c.name && <Check size={14} className="text-white drop-shadow-md"/>}
+                          </button>
+                      ))}
+                  </div>
               </div>
           </div>
         </section>

@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, memo } from 'react';
-import { Sparkles, MessageSquare, Zap, Wrench, Loader2 } from 'lucide-react';
+import { Sparkles, MessageSquare, Zap, Wrench, Loader2, ChevronRight, Eye, GitCommit } from 'lucide-react';
 import { highlightCode } from '../utils/syntaxHighlight';
 
 export interface CodeEditorHandle {
@@ -12,6 +13,7 @@ interface CodeEditorProps {
   code: string;
   onChange: (value: string) => void;
   fileName: string;
+  filePath?: string;
   config?: {
     fontSize?: string;
     tabSize?: string;
@@ -40,7 +42,7 @@ const KEYWORDS = [
 ];
 
 export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
-  code, onChange, fileName, config, onCodeAction, onSelectionChange, 
+  code, onChange, fileName, filePath, config, onCodeAction, onSelectionChange, 
   breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange, onDrop, readOnly = false
 }, ref) => {
   const lines = code.split('\n');
@@ -69,6 +71,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const lineNumsRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLDivElement>(null);
+  const lensRef = useRef<HTMLDivElement>(null);
   
   // Scroll Sync Ref for Performance
   const rafRef = useRef<number | null>(null);
@@ -112,6 +115,8 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const isVim = config?.vimMode || false;
   const tabSizeVal = config?.tabSize === '4 Spaces' ? 4 : config?.tabSize === 'Tabs' ? 4 : 2;
 
+  const breadcrumbs = filePath ? filePath.split('/') : [fileName];
+
   // Optimized Scroll Handler using RequestAnimationFrame for 60fps performance
   const handleScroll = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -128,6 +133,11 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
           if (lineNumsRef.current) {
             lineNumsRef.current.scrollTop = scrollTop;
           }
+
+          if (lensRef.current) {
+            lensRef.current.scrollTop = scrollTop;
+            lensRef.current.scrollLeft = scrollLeft;
+          }
           
           // Sync Minimap Scroll
           if (minimapRef.current) {
@@ -138,10 +148,6 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
           
           // Hide actions on scroll to prevent drift
           if (showCodeActions) setShowCodeActions(false);
-          
-          // Force ghost text sync if visible (it's inside the container so it scrolls automatically if absolute,
-          // but if we are calculating position based on viewport we might need this.
-          // In this implementation ghost text is in the relative container, so it scrolls with flow)
         }
     });
   };
@@ -171,7 +177,6 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
      const editorRect = textareaRef.current.getBoundingClientRect();
      
      // Calculate relative position within the scrolling container
-     // We need to account for scrollTop to place it correctly inside the relative container
      const scrollTop = textareaRef.current.scrollTop;
      const scrollLeft = textareaRef.current.scrollLeft;
 
@@ -220,7 +225,6 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
       const textarea = e.currentTarget;
       const { selectionStart, selectionEnd, value } = textarea;
       
-      // Update cursor position stats
       calculateCursorStats(value, selectionStart);
 
       if (selectionEnd > selectionStart) {
@@ -267,7 +271,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
           setShowSuggestions(false);
       }
 
-      // Ghost Text Logic - Disable if readonly or no handler
+      // Ghost Text Logic
       if (onGhostTextRequest && !showSuggestions && !readOnly) {
           clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = setTimeout(async () => {
@@ -276,14 +280,14 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
               const lastLine = prefix.split('\n').pop() || '';
               if (lastLine.trim().length > 3) {
                   setIsLoadingGhost(true);
-                  updateCaretPosition(selectionStart); // ensure pos is current
+                  updateCaretPosition(selectionStart);
                   const completion = await onGhostTextRequest(prefix, suffix);
                   if (completion) {
                       setGhostText(completion);
                   }
                   setIsLoadingGhost(false);
               }
-          }, 600); // 600ms pause to trigger
+          }, 600);
       }
   };
 
@@ -304,7 +308,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
     // Save Shortcut
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        e.stopPropagation(); // Prevent global save conflict
+        e.stopPropagation();
         onSave?.();
         return;
     }
@@ -320,7 +324,6 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
             lines[currentLineIndex - 1] = temp;
             const newValue = lines.join('\n');
             onChange(newValue);
-            // Calculate new cursor pos
             const newPos = lines.slice(0, currentLineIndex - 1).join('\n').length + 1 + (selectionStart - value.lastIndexOf('\n', selectionStart - 1));
             setTimeout(() => {
                 textarea.selectionStart = textarea.selectionEnd = newPos;
@@ -340,7 +343,6 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
             lines[currentLineIndex + 1] = temp;
             const newValue = lines.join('\n');
             onChange(newValue);
-             // Calculate new cursor pos
             const newPos = lines.slice(0, currentLineIndex + 1).join('\n').length + 1 + (selectionStart - value.lastIndexOf('\n', selectionStart - 1));
             setTimeout(() => {
                 textarea.selectionStart = textarea.selectionEnd = newPos;
@@ -384,10 +386,10 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
         }, 0);
         return;
     } else if (ghostText) {
-        setGhostText(''); // Clear if any other key pressed
+        setGhostText('');
     }
 
-    // 1. Handle Tab (Insert spaces instead of focus change)
+    // 1. Handle Tab
     if (e.key === 'Tab') {
         e.preventDefault();
         const spaces = ' '.repeat(tabSizeVal);
@@ -440,20 +442,55 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
     }
   };
 
+  // Generate CodeLens Overlay
+  const renderCodeLens = () => {
+      const lenses: {line: number, text: string}[] = [];
+      const regex = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(function|class|const|let|var)\s+([a-zA-Z0-9_]+)/;
+      
+      lines.forEach((line, i) => {
+          const match = line.trim().match(regex);
+          if (match) {
+              const type = match[1];
+              const name = match[2];
+              if (type === 'const' && !line.includes('=>') && !line.includes('require')) return; // Skip simple consts unless arrow func
+              
+              // Seed random stats based on name char code sum
+              const seed = name.split('').reduce((a,c) => a + c.charCodeAt(0), 0);
+              const refs = Math.floor((seed % 10) + 1);
+              const author = seed % 2 === 0 ? 'Omni' : 'User';
+              
+              lenses.push({
+                  line: i,
+                  text: `${refs} references | Author: ${author}`
+              });
+          }
+      });
+
+      return lenses.map((lens, i) => (
+          <div 
+            key={i} 
+            className="absolute right-4 text-[10px] text-gray-500/60 font-sans pointer-events-none select-none flex items-center gap-1"
+            style={{ top: `${lens.line * 24}px`, height: '24px' }}
+          >
+              <Eye size={10} className="opacity-50"/> {lens.text}
+          </div>
+      ));
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-300 font-mono relative" style={{ fontSize: fontSize }}>
-      {/* Hidden Mirror for Caret Positioning - Must match textarea styling exactly */}
+      {/* Hidden Mirror for Caret Positioning */}
       <div 
          ref={mirrorRef}
          className="absolute top-0 left-0 visibility-hidden pointer-events-none whitespace-pre-wrap break-words"
          style={{ 
              fontSize, 
              fontFamily: 'monospace', 
-             padding: '16px', // Match textarea padding
+             padding: '16px',
              width: textareaRef.current?.clientWidth || 'auto',
              opacity: 0,
              zIndex: -1000,
-             lineHeight: '24px' // Match leading-6
+             lineHeight: '24px'
          }}
       ></div>
 
@@ -462,7 +499,15 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
         <div className="flex items-center gap-3">
            <div className={`text-[10px] font-black uppercase tracking-widest ${langColor}`}>{ext}</div>
            <div className="h-4 w-px bg-gray-700/50"></div>
-           <span className="text-xs font-medium text-gray-400 tracking-tight">{fileName}</span>
+           {/* Breadcrumbs */}
+           <div className="flex items-center text-xs font-medium text-gray-400 tracking-tight">
+               {breadcrumbs.map((part, i) => (
+                   <div key={i} className="flex items-center">
+                       {i > 0 && <ChevronRight size={10} className="mx-1 opacity-50"/>}
+                       <span className={i === breadcrumbs.length - 1 ? 'text-gray-200' : 'text-gray-500'}>{part}</span>
+                   </div>
+               ))}
+           </div>
            {readOnly && <span className="text-[9px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded border border-red-900/50 font-bold tracking-wider">READ ONLY</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -521,6 +566,15 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 {highlightCode(code)}
                 <br />
              </pre>
+
+             {/* CodeLens Overlay */}
+             <div 
+                ref={lensRef}
+                className="absolute inset-0 p-4 pt-4 m-0 leading-6 font-mono whitespace-pre pointer-events-none overflow-hidden scrollbar-none"
+                style={{ fontSize }}
+             >
+                 {renderCodeLens()}
+             </div>
 
             {/* Ghost Text */}
             {ghostText && (

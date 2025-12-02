@@ -13,7 +13,7 @@ interface AudioTimelineProps {
   onExportMix: () => void;
   isExporting: boolean;
   onShowAssets: () => void;
-  activeTab: string;
+  activeTab: AudioTab;
   setActiveTab: (tab: AudioTab) => void;
   isRecording: boolean;
   startRecording: () => void;
@@ -26,12 +26,14 @@ interface AudioTimelineProps {
   handleVolumeChange: (id: string, val: number) => void;
   setTracks: React.Dispatch<React.SetStateAction<AudioTrack[]>>;
   audioRefs: React.MutableRefObject<{ [key: string]: HTMLAudioElement }>;
+  mastering?: { enabled: boolean, warmth: number, clarity: number, punch: number };
 }
 
 export const AudioTimeline: React.FC<AudioTimelineProps> = ({
   tracks, isPlaying, onTogglePlay, onExportMix, isExporting, onShowAssets,
   activeTab, setActiveTab, isRecording, startRecording, stopRecording,
-  onTranscribe, isTranscribing, onDeleteTrack, toggleMute, toggleSolo, handleVolumeChange, setTracks, audioRefs
+  onTranscribe, isTranscribing, onDeleteTrack, toggleMute, toggleSolo, handleVolumeChange, setTracks, audioRefs,
+  mastering
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -190,6 +192,51 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
           const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 44100), 44100);
           
           let outputNode: AudioNode = offlineCtx.destination;
+          
+          // Apply Mastering Chain if enabled
+          let sourceNode = null; 
+          
+          // Note: OfflineAudioContext structure is slightly different for inserts.
+          // We connect sources to a master gain, then master gain through effects to destination.
+          
+          const masterGain = offlineCtx.createGain();
+          let currentOutput: AudioNode = masterGain;
+
+          if (mastering && mastering.enabled) {
+              // Warmth (Low Shelf)
+              if (mastering.warmth > 0) {
+                  const lowShelf = offlineCtx.createBiquadFilter();
+                  lowShelf.type = 'lowshelf';
+                  lowShelf.frequency.value = 200;
+                  lowShelf.gain.value = (mastering.warmth / 100) * 6; // up to 6dB
+                  currentOutput.connect(lowShelf);
+                  currentOutput = lowShelf;
+              }
+              
+              // Clarity (High Shelf)
+              if (mastering.clarity > 0) {
+                  const highShelf = offlineCtx.createBiquadFilter();
+                  highShelf.type = 'highshelf';
+                  highShelf.frequency.value = 8000;
+                  highShelf.gain.value = (mastering.clarity / 100) * 6;
+                  currentOutput.connect(highShelf);
+                  currentOutput = highShelf;
+              }
+
+              // Punch (Compression)
+              if (mastering.punch > 0) {
+                  const compressor = offlineCtx.createDynamicsCompressor();
+                  compressor.threshold.value = -24;
+                  compressor.knee.value = 30;
+                  compressor.ratio.value = 1 + (mastering.punch / 100) * 12; // 1 to 13
+                  compressor.attack.value = 0.003;
+                  compressor.release.value = 0.25;
+                  currentOutput.connect(compressor);
+                  currentOutput = compressor;
+              }
+          }
+          
+          currentOutput.connect(offlineCtx.destination);
 
           for (const track of tracks) {
               if (track.audioUrl && !track.muted) { 
@@ -201,11 +248,11 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                       const source = offlineCtx.createBufferSource();
                       source.buffer = audioBuffer;
                       
-                      const gain = offlineCtx.createGain();
-                      gain.gain.value = track.volume ?? 1.0;
+                      const trackGain = offlineCtx.createGain();
+                      trackGain.gain.value = track.volume ?? 1.0;
                       
-                      source.connect(gain);
-                      gain.connect(outputNode);
+                      source.connect(trackGain);
+                      trackGain.connect(masterGain); // Connect to master bus
                       
                       source.start(track.startOffset);
                   } catch (e) {
@@ -229,45 +276,50 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
   };
 
   return (
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-950 h-full">
          {/* Top Control Bar */}
-         <div className="h-14 border-b border-gray-800 bg-gray-900 flex items-center justify-between px-6 shadow-md z-10">
-            <div className="flex items-center gap-4">
-               <button 
-                 onClick={onTogglePlay}
-                 className="w-10 h-10 rounded-full bg-primary-600 hover:bg-primary-500 flex items-center justify-center text-white shadow-lg transition-all active:scale-95"
-               >
-                 {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-1" />}
-               </button>
-               <div className="text-2xl font-mono text-gray-400 tracking-widest">
-                  00:00:00 <span className="text-sm text-gray-600 tracking-normal">/ 00:05:30</span>
+         <div className="h-16 md:h-14 border-b border-gray-800 bg-gray-900 flex flex-col md:flex-row items-center justify-between px-4 md:px-6 shadow-md z-10 shrink-0">
+            <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start py-2 md:py-0">
+               <div className="flex items-center gap-4">
+                   <button 
+                     onClick={onTogglePlay}
+                     className="w-10 h-10 rounded-full bg-primary-600 hover:bg-primary-500 flex items-center justify-center text-white shadow-lg transition-all active:scale-95 shrink-0"
+                   >
+                     {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-1" />}
+                   </button>
+                   <div className="text-xl md:text-2xl font-mono text-gray-400 tracking-widest shrink-0">
+                      00:00:00
+                   </div>
                </div>
+               {/* Mobile only right spacer if needed, or hide export on very small screens */}
             </div>
-            <div className="flex gap-2">
-               <Button variant="ghost" size="sm" onClick={onShowAssets}><LayoutTemplate size={14} className="mr-2"/> Assets</Button>
+            
+            <div className="flex gap-2 w-full md:w-auto justify-end pb-2 md:pb-0">
+               <Button variant="ghost" size="sm" onClick={onShowAssets} className="text-xs"><LayoutTemplate size={14} className="mr-2"/> Assets</Button>
                <Button 
                   size="sm" 
                   onClick={handleExportMixLocal}
                   disabled={isExporting || tracks.length === 0}
+                  className="text-xs"
                >
                   {isExporting ? <Loader2 size={14} className="animate-spin mr-2"/> : <Download size={14} className="mr-2"/>}
-                  Export Mix
+                  Export
                </Button>
             </div>
          </div>
 
          {/* Visualizer (Canvas) */}
-         <div className="h-32 bg-gray-900 border-b border-gray-800 relative overflow-hidden">
+         <div className="h-24 md:h-32 bg-gray-900 border-b border-gray-800 relative overflow-hidden shrink-0">
             <canvas ref={canvasRef} className="w-full h-full absolute inset-0" />
             <div className="absolute bottom-2 right-4 text-[10px] text-gray-500 font-mono bg-black/50 px-1 rounded z-10">MASTER OUT L/R</div>
          </div>
 
          {/* Track List */}
-         <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-black select-none">
+         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-black select-none scrollbar-thin scrollbar-thumb-gray-800">
             {tracks.map((track) => (
-              <div key={track.id} className="flex items-center gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div key={track.id} className="flex flex-col md:flex-row items-stretch md:items-center gap-2 md:gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-300">
                  {/* Track Control Header */}
-                 <div className="w-72 bg-gray-900 border border-gray-800 rounded-lg p-3 flex flex-col gap-2 flex-shrink-0 shadow-md relative transition-colors hover:border-gray-700">
+                 <div className="w-full md:w-72 bg-gray-900 border border-gray-800 rounded-lg p-3 flex flex-col gap-2 flex-shrink-0 shadow-md relative transition-colors hover:border-gray-700">
                     <div className="flex items-center justify-between">
                         {editingTrackId === track.id ? (
                             <div className="flex items-center gap-1 w-32">
@@ -337,7 +389,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
 
                  {/* Timeline Lane */}
                  <div 
-                   className={`flex-1 h-20 rounded-lg relative overflow-hidden border shadow-inner cursor-crosshair transition-colors
+                   className={`flex-1 h-16 md:h-20 rounded-lg relative overflow-hidden border shadow-inner cursor-crosshair transition-colors
                      ${track.muted ? 'bg-gray-900 border-gray-800 opacity-50' : 'bg-gray-900 border-gray-800'}
                    `}
                    ref={timelineRef}
@@ -379,7 +431,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
               </div>
             ))}
             
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-900 mt-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-900 mt-8 pb-8">
                 <button 
                    onClick={() => { setActiveTab('mixer'); if(!isRecording) startRecording(); else stopRecording(); }}
                    className={`py-4 border-2 border-dashed rounded-xl transition-all flex items-center justify-center gap-2 ${isRecording && activeTab === 'mixer' ? 'border-red-500 bg-red-900/10 text-red-400' : 'border-gray-800 text-gray-600 hover:border-gray-600 hover:text-gray-400'}`}

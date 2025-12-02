@@ -1,9 +1,10 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, ChevronDown, Zap, ChevronUp, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Search, Terminal, Container, Workflow, Paperclip, MapPin, Trash2 } from 'lucide-react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, Zap, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Terminal, Container, Workflow, Paperclip, MapPin, Trash2, FileText, File, Move } from 'lucide-react';
 import { Button } from './Button';
-import { ChatMessage, AgentTask } from '../types';
+import { ChatMessage, AgentTask, FileNode } from '../types';
 import { MessageRenderer } from './MessageRenderer';
+import { getAllFiles } from '../utils/fileHelpers';
 
 interface ChatWidgetProps {
   isOpen: boolean;
@@ -26,9 +27,9 @@ interface ChatWidgetProps {
   onToggleAutoPilot?: () => void;
   attachedImage?: string;
   onAttachImage?: (image: string | undefined) => void;
+  files: FileNode[];
 }
 
-// Explicitly ordered list for prioritization
 const SLASH_COMMANDS = [
     { cmd: '/search', desc: 'Google Search for real-time info', Icon: Globe, color: 'text-blue-400' },
     { cmd: '/map', desc: 'Find places with Google Maps', Icon: MapPin, color: 'text-green-400' },
@@ -52,7 +53,7 @@ const SLASH_COMMANDS = [
 export const ChatWidget: React.FC<ChatWidgetProps> = ({
   isOpen, setIsOpen, history, setHistory, input, setInput, isGenerating, isAgentWorking, activeTask,
   onSubmit, onApplyCode, onCompareCode, onApplyAll, onAutoFix, onRevert, onToggleVoice,
-  isAutoPilot, onToggleAutoPilot, attachedImage, onAttachImage
+  isAutoPilot, onToggleAutoPilot, attachedImage, onAttachImage, files
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -60,10 +61,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Slash Command State
+  // Dragging State
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{x: number, y: number} | null>(null);
+  const dragRef = useRef<{startX: number, startY: number, startLeft: number, startTop: number} | null>(null);
+
+  // Autocomplete State
   const [showCommands, setShowCommands] = useState(false);
-  const [commandIndex, setCommandIndex] = useState(0);
+  const [showFiles, setShowFiles] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [filteredCommands, setFilteredCommands] = useState(SLASH_COMMANDS);
+  const [filteredFiles, setFilteredFiles] = useState<{name: string, path: string}[]>([]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -71,54 +79,133 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   }, [history, isOpen, isAgentWorking, isExpanded, attachedImage]);
 
+  // --- Robust Dragging Logic ---
+  const handleMouseDown = (e: React.MouseEvent) => {
+      // Ignore clicks on interactive elements inside the drag area
+      if ((e.target as HTMLElement).closest('input, button, textarea, a')) return;
+      
+      const widget = widgetRef.current;
+      if (!widget) return;
+      
+      const rect = widget.getBoundingClientRect();
+      dragRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          startLeft: rect.left,
+          startTop: rect.top
+      };
+      
+      // Initialize position state if it hasn't been set yet (switching from CSS positioning to JS positioning)
+      if (!position) {
+          setPosition({ x: rect.left, y: rect.top });
+      }
+      
+      e.preventDefault();
+  };
+
   useEffect(() => {
-      const match = input.match(/^\/(\w*)$/);
-      if (match) {
-          const query = match[1].toLowerCase();
+      const onMouseMove = (e: MouseEvent) => {
+          if (!dragRef.current) return;
+          
+          const deltaX = e.clientX - dragRef.current.startX;
+          const deltaY = e.clientY - dragRef.current.startY;
+          
+          // Calculate new position
+          let newX = dragRef.current.startLeft + deltaX;
+          let newY = dragRef.current.startTop + deltaY;
+
+          // Simple bounds checking to keep somewhat on screen
+          const maxX = window.innerWidth - 50;
+          const maxY = window.innerHeight - 50;
+          newX = Math.max(0, Math.min(newX, maxX));
+          newY = Math.max(0, Math.min(newY, maxY));
+          
+          setPosition({ x: newX, y: newY });
+      };
+      
+      const onMouseUp = () => {
+          dragRef.current = null;
+      };
+      
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+      return () => {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+      };
+  }, []);
+
+  useEffect(() => {
+      // 1. Slash Commands Detection
+      const slashMatch = input.match(/^\/(\w*)$/);
+      if (slashMatch) {
+          const query = slashMatch[1].toLowerCase();
           const filtered = SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith('/' + query));
           setFilteredCommands(filtered);
           setShowCommands(filtered.length > 0);
-          // Reset index when list changes
-          if (query === '' || filtered.length < filteredCommands.length) {
-              setCommandIndex(0);
-          }
-      } else {
+          setShowFiles(false);
+          setActiveIndex(0);
+          return;
+      } 
+      
+      // 2. File Mention Detection (@filename)
+      const mentionMatch = input.match(/@([\w\-\/\.]*)$/);
+      if (mentionMatch) {
+          const query = mentionMatch[1].toLowerCase();
+          const allFiles = getAllFiles(files).filter(f => f.node.type === 'file');
+          const filtered = allFiles
+              .filter(f => f.node.name.toLowerCase().includes(query))
+              .slice(0, 10) // Limit to 10 results
+              .map(f => ({ name: f.node.name, path: f.path }));
+          
+          setFilteredFiles(filtered);
+          setShowFiles(filtered.length > 0);
           setShowCommands(false);
+          setActiveIndex(0);
+          return;
       }
-  }, [input]);
 
-  // Scroll active command into view
+      setShowCommands(false);
+      setShowFiles(false);
+  }, [input, files]);
+
+  // Scroll active item into view
   useEffect(() => {
-      if (showCommands && menuRef.current) {
-          const activeEl = menuRef.current.children[commandIndex + 1] as HTMLElement; // +1 for header
+      if ((showCommands || showFiles) && menuRef.current) {
+          const activeEl = menuRef.current.children[activeIndex + 1] as HTMLElement; // +1 for header
           if (activeEl) {
               activeEl.scrollIntoView({ block: 'nearest' });
           }
       }
-  }, [commandIndex, showCommands]);
+  }, [activeIndex, showCommands, showFiles]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (showCommands) {
+      if (showCommands || showFiles) {
+          const listLength = showCommands ? filteredCommands.length : filteredFiles.length;
+          
           if (e.key === 'ArrowUp') {
               e.preventDefault();
-              setCommandIndex(prev => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+              setActiveIndex(prev => (prev - 1 + listLength) % listLength);
               return;
           }
           if (e.key === 'ArrowDown') {
               e.preventDefault();
-              setCommandIndex(prev => (prev + 1) % filteredCommands.length);
+              setActiveIndex(prev => (prev + 1) % listLength);
               return;
           }
           if (e.key === 'Enter' || e.key === 'Tab') {
               e.preventDefault();
-              if (filteredCommands[commandIndex]) {
-                  selectCommand(filteredCommands[commandIndex].cmd);
+              if (showCommands && filteredCommands[activeIndex]) {
+                  selectCommand(filteredCommands[activeIndex].cmd);
+              } else if (showFiles && filteredFiles[activeIndex]) {
+                  selectFile(filteredFiles[activeIndex].path);
               }
               return;
           }
           if (e.key === 'Escape') {
               e.preventDefault();
               setShowCommands(false);
+              setShowFiles(false);
               return;
           }
       }
@@ -127,6 +214,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const selectCommand = (cmd: string) => {
       setInput(cmd + ' ');
       setShowCommands(false);
+      inputRef.current?.focus();
+  };
+
+  const selectFile = (path: string) => {
+      // Replace the @query with @[path]
+      const newInput = input.replace(/@([\w\-\/\.]*)$/, `@[${path}] `);
+      setInput(newInput);
+      setShowFiles(false);
       inputRef.current?.focus();
   };
 
@@ -152,32 +247,54 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       }
   };
 
+  // --- CLOSED STATE (Floating Button) ---
   if (!isOpen) {
     return (
-      <div className="absolute bottom-6 right-6 z-50 pointer-events-auto">
+      <div 
+        ref={widgetRef}
+        className="fixed z-50 pointer-events-auto cursor-move select-none"
+        style={position ? { left: position.x, top: position.y } : { bottom: '24px', right: '24px' }}
+        onMouseDown={handleMouseDown}
+      >
         <button 
           onClick={() => setIsOpen(true)} 
-          className="bg-primary-600 text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-all hover:bg-primary-500 group relative flex items-center justify-center"
-          title="Open AI Assistant"
+          className="bg-primary-600 text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform hover:bg-primary-500 group relative flex items-center justify-center border-4 border-gray-900"
+          title="Open AI Assistant (Drag to move)"
         >
           <MessageSquare size={24} className="group-hover:animate-pulse"/>
           {isAgentWorking && (
               <span className="absolute top-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-gray-900 animate-ping"></span>
           )}
+          <div className="absolute inset-0 rounded-full border-2 border-white/20 pointer-events-none"></div>
         </button>
       </div>
     );
   }
 
+  // --- OPEN STATE ---
   return (
     <div 
-        className={`absolute bottom-6 right-6 w-[95vw] md:w-[450px] z-50 flex flex-col gap-4 pointer-events-none transition-all duration-300 ease-in-out
+        ref={widgetRef}
+        className={`fixed z-[100] flex flex-col gap-4 transition-all duration-300 ease-in-out shadow-2xl rounded-2xl
             ${isExpanded ? 'h-[85vh]' : 'max-h-[75vh] h-[600px]'}
         `}
+        style={position ? { 
+            left: position.x, 
+            top: position.y, 
+            width: isExpanded ? '450px' : '400px', 
+        } : { 
+            bottom: '24px', 
+            right: '24px',
+            width: isExpanded ? '95vw' : 'calc(100vw - 48px)',
+            maxWidth: '450px'
+        }}
     >
-        <div className="bg-gray-900/95 backdrop-blur-xl border border-gray-700 rounded-2xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden h-full animate-in slide-in-from-bottom-4 fade-in duration-300">
+        <div className="bg-gray-900/95 backdrop-blur-xl border border-gray-700 rounded-2xl pointer-events-auto flex flex-col overflow-hidden h-full animate-in slide-in-from-bottom-4 fade-in duration-300">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 bg-gray-850 border-b border-gray-700 shrink-0 select-none cursor-pointer" onClick={() => !isExpanded && setIsExpanded(true)}>
+            <div 
+                className="flex items-center justify-between px-4 py-3 bg-gray-850 border-b border-gray-700 shrink-0 select-none cursor-move group" 
+                onMouseDown={handleMouseDown}
+            >
                 <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg ${isAgentWorking ? 'bg-purple-600 animate-pulse' : 'bg-primary-600'}`}>
                         {isAgentWorking ? <Bot size={16} className="text-white"/> : <Sparkles size={16} className="text-white"/>}
@@ -193,6 +310,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-1">
+                    {/* Visual Grip Hint */}
+                    <div className="mr-2 text-gray-600 hidden group-hover:block animate-in fade-in">
+                        <Move size={14}/>
+                    </div>
+
                     {onToggleAutoPilot && (
                         <button 
                             onClick={(e) => { e.stopPropagation(); onToggleAutoPilot(); }} 
@@ -301,6 +423,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     </div>
                 )}
 
+                {/* Slash Command Menu */}
                 {showCommands && filteredCommands.length > 0 && (
                     <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 zoom-in-95 z-50 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600" ref={menuRef}>
                         <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2 sticky top-0 backdrop-blur-md z-10">
@@ -308,7 +431,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                         </div>
                         <div>
                             {filteredCommands.map((cmd, idx) => {
-                                const isActive = idx === commandIndex;
+                                const isActive = idx === activeIndex;
                                 return (
                                     <div 
                                         key={cmd.cmd}
@@ -322,6 +445,33 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                                             <span className="font-bold font-mono">{cmd.cmd}</span>
                                             <span className={`text-[10px] ${isActive ? 'text-primary-200' : 'text-gray-500'}`}>{cmd.desc}</span>
                                         </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* File Mention Menu */}
+                {showFiles && filteredFiles.length > 0 && (
+                    <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 zoom-in-95 z-50 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600" ref={menuRef}>
+                        <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2 sticky top-0 backdrop-blur-md z-10">
+                            <File size={10} /> Mention File
+                        </div>
+                        <div>
+                            {filteredFiles.map((file, idx) => {
+                                const isActive = idx === activeIndex;
+                                return (
+                                    <div 
+                                        key={file.path}
+                                        onClick={() => selectFile(file.path)}
+                                        className={`px-4 py-2 flex items-center justify-between cursor-pointer text-sm transition-colors ${isActive ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <FileText size={14} className={isActive ? 'text-white' : 'text-blue-400'}/>
+                                            <span className="truncate">{file.name}</span>
+                                        </div>
+                                        <span className={`text-[10px] ${isActive ? 'text-primary-200' : 'text-gray-600'}`}>{file.path}</span>
                                     </div>
                                 );
                             })}
@@ -353,7 +503,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                             ref={inputRef}
                             type="text" 
                             className="flex-1 bg-transparent border-none py-3 px-2 text-white text-sm focus:outline-none placeholder-gray-600" 
-                            placeholder={isAgentWorking ? "Add instructions to queue..." : "Type / for commands or ask Omni..."}
+                            placeholder={isAgentWorking ? "Add instructions to queue..." : "Type / for commands, @ for files..."}
                             value={input} 
                             onChange={e => setInput(e.target.value)} 
                             onKeyDown={handleKeyDown}

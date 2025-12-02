@@ -33,10 +33,12 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
     const scenes: Partial<Scene>[] = [];
     let currentScene: Partial<Scene> | null = null;
 
-    // Regex to detect scene headers (e.g. "Scene 1:", "**Scene 1**", "### Scene 1", "[Scene 1]")
+    // Regex to detect scene headers
     const headerRegex = /^([#*\[]*\s*)?(Scene|Shot|Clip)\s*(\d+).*?([\]*:]|$)/i;
-    // Regex to detect duration tags (e.g. "[Duration]: 5s", "Duration: 4.5")
+    // Regex to detect duration tags
     const durationRegex = /\[?Duration\]?:?\s*(\d+(?:\.\d+)?)s?/i;
+    // Regex to detect Audio/Voiceover tags
+    const audioRegex = /\[?(Audio|Voiceover|Dialogue)\]?:?\s*(.*)/i;
 
     lines.forEach((line) => {
         const cleanLine = line.trim();
@@ -49,24 +51,26 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
             if (currentScene) scenes.push(currentScene);
             
             // Start new scene
-            // Try to extract any description on the same line after the header
             let desc = cleanLine.replace(headerRegex, '').trim();
-            // Remove leading colons or hyphens
             desc = desc.replace(/^[:\-\s]+/, '');
 
             currentScene = {
                 description: desc,
-                duration: 0, // Will calculate later
-                transition: 'cut'
+                duration: 0, 
+                transition: 'cut',
+                audioScript: ''
             };
         } else if (currentScene) {
             const durMatch = cleanLine.match(durationRegex);
+            const audioMatch = cleanLine.match(audioRegex);
+
             if (durMatch) {
-                // Parse duration explicitly
                 currentScene.duration = parseFloat(durMatch[1]);
+            } else if (audioMatch) {
+                // Found audio script
+                currentScene.audioScript = audioMatch[2].trim();
             } else {
-                // Append to description if it's a continuation
-                // We keep [Visuals], [Audio] tags in description for context, but [Duration] is metadata
+                // Append to description if it's a visual description
                 currentScene.description = (currentScene.description ? currentScene.description + "\n" : "") + cleanLine;
             }
         }
@@ -75,13 +79,12 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
     // Push the last scene
     if (currentScene) scenes.push(currentScene);
     
-    // Post-process for duration estimation if explicit duration is missing
+    // Post-process for duration estimation
     const processedScenes = scenes.map(s => {
-        // If duration was parsed (and is valid), use it
         if (s.duration && s.duration > 0) return s;
-
-        const wordCount = (s.description || '').split(/\s+/).length;
-        // Estimate: 3 words per second, min 3s, max 10s default
+        // Estimate based on word count of audio script or description
+        const textToEstimate = s.audioScript || s.description || '';
+        const wordCount = textToEstimate.split(/\s+/).length;
         const estimatedDuration = Math.max(3, Math.min(15, Math.ceil(wordCount / 2.5)));
         return { ...s, duration: estimatedDuration };
     });
@@ -96,7 +99,6 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
           reader.onload = (ev) => {
               const res = ev.target?.result as string;
               setRefData(res);
-              // Auto-detect type from file
               if (file.type.startsWith('video/')) {
                   setRefType('video');
               } else if (file.type.startsWith('image/')) {
@@ -114,20 +116,17 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
       if (refType === 'youtube' && refYoutube) {
           styleInstruction += ` Reference Video Content: ${refYoutube}.`;
       } else if ((refType === 'image' || refType === 'video') && refData) {
-          styleInstruction += ` Use the attached ${refType} as a primary visual and tonal reference. Analyze it for lighting, camera work, and mood.`;
+          styleInstruction += ` Use the attached ${refType} as a primary visual and tonal reference.`;
       }
 
-      // Explicit instruction for Scene Headers and Cinematic Elements
       styleInstruction += `
-        IMPORTANT: Create a professional screenplay format designed for video generation.
+        IMPORTANT: Create a professional screenplay format designed for AI video generation.
         1. Break the script into distinct "Scene X:" blocks (e.g., Scene 1, Scene 2).
-        2. For EACH scene, you MUST include the following structured prompts on separate lines:
-           - [Camera Angle]: Specific instructions (e.g., Low angle wide shot, Tracking shot, Extreme close-up).
+        2. For EACH scene, you MUST include:
            - [Visuals]: Detailed, vivid description of the action, lighting, characters, and environment.
-           - [Audio]: Dialogue, specific Sound Effects (SFX), and Music cues/mood.
-           - [Duration]: A specific duration in seconds (e.g., "5s" or "3.5s"). Base this on the action's pacing.
+           - [Audio]: Write the EXACT Voice Over (VO) script to be spoken. **Bring it to life with emotion, character, and rhythm.** Avoid dry descriptions. Write actual spoken words.
+           - [Duration]: A specific duration in seconds (e.g., "5s").
         3. Ensure the scenes blend seamlessly like a ${visualStyle} production.
-        4. Focus on storytelling and pacing suitable for ${platform}.
       `;
 
       const prompt = script 
@@ -136,7 +135,6 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
       
       let newScript = script ? script + "\n" : "";
       
-      // Pass refData if it's an image or video
       const mediaToSend = (refType === 'image' || refType === 'video') ? refData : undefined;
 
       await generateSocialContent(prompt, platform, (chunk) => {
@@ -160,7 +158,8 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
           status: 'pending',
           duration: s.duration || 5,
           transition: 'cut',
-          mediaStartTime: 0
+          mediaStartTime: 0,
+          audioScript: s.audioScript || ''
       }));
       
       onSyncToTimeline(fullScenes);
@@ -182,9 +181,9 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
                                 <div className="absolute top-6 left-0 bg-gray-800 border border-gray-700 p-3 rounded-lg shadow-xl w-64 z-50 text-xs text-gray-300">
                                     <h4 className="font-bold text-white mb-1">Format Guide</h4>
                                     <p className="mb-2">Use these headers to auto-generate scenes:</p>
-                                    <code className="block bg-black/50 p-1 rounded mb-1">Scene 1: Description...</code>
+                                    <code className="block bg-black/50 p-1 rounded mb-1">Scene 1: Visual Description...</code>
                                     <code className="block bg-black/50 p-1 rounded mb-1">[Duration]: 5s</code>
-                                    <code className="block bg-black/50 p-1 rounded">[Visuals]: Details...</code>
+                                    <code className="block bg-black/50 p-1 rounded">[Audio]: Spoken text here...</code>
                                 </div>
                             )}
                         </div>
@@ -267,7 +266,7 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
                 className="flex-1 w-full bg-black/50 p-6 text-sm text-gray-300 leading-relaxed focus:outline-none font-mono resize-none"
                 value={script}
                 onChange={(e) => onUpdateScript(e.target.value)}
-                placeholder={`Scene 1: Wide shot of the city (${visualStyle} style)...\n[Camera Angle] Panning left\n[Visuals] Neon lights flickering in rain\n[Audio] City ambiance fading in...\n[Duration] 5s\n\nScene 2: Close up of character...`}
+                placeholder={`Scene 1: Wide shot of the city (${visualStyle} style)...\n[Audio]: "It was a dark and stormy night..."\n[Duration]: 5s\n\nScene 2: Close up of character...`}
             />
         </div>
 
@@ -287,7 +286,7 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/20">
                 {parsedScenes.length === 0 ? (
                     <div className="text-center text-gray-600 py-10 px-4">
-                        <p className="text-xs mb-2">Write your script using "Scene X" headers (e.g. Scene 1, **Scene 2**) to auto-generate timeline clips.</p>
+                        <p className="text-xs mb-2">Write your script using "Scene X" headers to auto-generate timeline clips.</p>
                     </div>
                 ) : (
                     parsedScenes.map((s, i) => (
@@ -296,7 +295,12 @@ export const MediaScriptEditor: React.FC<MediaScriptEditorProps> = ({ script, on
                                 <div className="text-[10px] font-bold text-primary-400 uppercase">Scene {i + 1}</div>
                                 <div className="text-[9px] text-gray-500 font-mono">{s.duration}s</div>
                             </div>
-                            <p className="text-xs text-gray-300 line-clamp-3 whitespace-pre-wrap">{s.description || '(No description)'}</p>
+                            <p className="text-xs text-gray-300 line-clamp-2 whitespace-pre-wrap">{s.description || '(No description)'}</p>
+                            {s.audioScript && (
+                                <div className="mt-2 text-[10px] text-gray-400 border-l-2 border-purple-500 pl-2 italic">
+                                    "{s.audioScript.substring(0, 50)}{s.audioScript.length > 50 ? '...' : ''}"
+                                </div>
+                            )}
                         </div>
                     ))
                 )}

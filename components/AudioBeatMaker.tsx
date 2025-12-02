@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Wand2, Plus, Download, X, Loader2, Music } from 'lucide-react';
+import { Play, Pause, Wand2, Plus, Download, X, Loader2, Music, Trash2, Brain } from 'lucide-react';
 import { Button } from './Button';
-import { generateSoundEffect } from '../services/geminiService';
+import { generateSoundEffect, generateDrumPattern } from '../services/geminiService';
 import { AudioTrack } from '../types';
+import { bufferToWav } from '../utils/audioHelpers';
 
 interface AudioBeatMakerProps {
   onAddTrack: (track: AudioTrack) => void;
@@ -18,7 +18,10 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
   const [currentStep, setCurrentStep] = useState(0);
   const [grid, setGrid] = useState<boolean[][]>(DRUM_ROWS.map(() => Array(16).fill(false)));
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [buffers, setBuffers] = useState<Record<string, AudioBuffer | null>>({});
+  const [patternPrompt, setPatternPrompt] = useState('');
+  const [isGeneratingPattern, setIsGeneratingPattern] = useState(false);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextNoteTimeRef = useRef(0);
@@ -116,29 +119,61 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
       setGrid(newGrid);
   };
 
+  const handleAiPattern = async () => {
+      if (!patternPrompt) return;
+      setIsGeneratingPattern(true);
+      const newGrid = await generateDrumPattern(patternPrompt);
+      if (newGrid && newGrid.length === 5) {
+          setGrid(newGrid);
+      } else {
+          alert("Failed to generate valid pattern.");
+      }
+      setIsGeneratingPattern(false);
+  };
+
+  const handleClearGrid = () => {
+      setGrid(DRUM_ROWS.map(() => Array(16).fill(false)));
+  };
+
   const decodeBase64Audio = async (base64: string): Promise<AudioBuffer> => {
+      // Ensure context is active
+      if (audioContextRef.current?.state === 'suspended') {
+          await audioContextRef.current.resume();
+      }
       const binaryString = atob(base64.split(',')[1]);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) {
           bytes[i] = binaryString.charCodeAt(i);
       }
-      return await audioContextRef.current!.decodeAudioData(bytes.buffer);
+      // Decode audio data (buffer needs to be a copy or owned)
+      return await audioContextRef.current!.decodeAudioData(bytes.buffer.slice(0));
   };
 
   const handleGenerateKit = async () => {
       if (!audioContextRef.current) return;
       setIsGenerating(true);
-      const newBuffers: Record<string, AudioBuffer | null> = {};
+      
+      const newBuffers: Record<string, AudioBuffer | null> = { ...buffers };
 
       try {
-          for (const row of DRUM_ROWS) {
+          const promises = DRUM_ROWS.map(async (row) => {
               const prompt = `One-shot authentic ${genre} ${row} drum sample. Clean, punchy, high quality.`;
-              const audioUrl = await generateSoundEffect(prompt); // Using SFX generation
+              const audioUrl = await generateSoundEffect(prompt); 
               if (audioUrl) {
-                  newBuffers[row] = await decodeBase64Audio(audioUrl);
+                  const buffer = await decodeBase64Audio(audioUrl);
+                  return { row, buffer };
               }
-          }
+              return null;
+          });
+
+          const results = await Promise.all(promises);
+          results.forEach(res => {
+              if (res) {
+                  newBuffers[res.row] = res.buffer;
+              }
+          });
+
           setBuffers(newBuffers);
           alert(`Generated Authentic ${genre} Kit!`);
       } catch (e) {
@@ -149,18 +184,64 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
   };
 
   const handleExportLoop = async () => {
-      // For now, simple export simulation or adding a text representation track
-      const track: AudioTrack = {
-          id: `loop-${Date.now()}`,
-          name: `${genre} Loop ${bpm}BPM`,
-          type: 'music',
-          duration: (60 / bpm) * 4 * 2,
-          startOffset: 0,
-          audioUrl: '', // In a real app we'd render the offline context
-          volume: 0.8
-      };
-      onAddTrack(track);
-      alert("Loop structure exported to timeline. (Rendering not fully implemented)");
+      if (Object.keys(buffers).length === 0) {
+          alert("Please generate or load a drum kit first.");
+          return;
+      }
+      
+      setIsExporting(true);
+      
+      try {
+          // Calculate duration of 1 bar (16 steps)
+          const secondsPerBeat = 60.0 / bpm;
+          const totalDuration = secondsPerBeat * 4; 
+          
+          const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 44100), 44100);
+          
+          for (let r = 0; r < DRUM_ROWS.length; r++) {
+              const rowName = DRUM_ROWS[r];
+              const buffer = buffers[rowName];
+              if (!buffer) continue;
+              
+              for (let s = 0; s < 16; s++) {
+                  if (grid[r][s]) {
+                      const time = s * (secondsPerBeat / 4);
+                      const source = offlineCtx.createBufferSource();
+                      source.buffer = buffer;
+                      source.connect(offlineCtx.destination);
+                      source.start(time);
+                  }
+              }
+          }
+          
+          const renderedBuffer = await offlineCtx.startRendering();
+          const wavBlob = bufferToWav(renderedBuffer);
+          
+          // Convert Blob to Data URI for persistence
+          const reader = new FileReader();
+          reader.readAsDataURL(wavBlob);
+          reader.onloadend = () => {
+              const base64data = reader.result as string;
+              
+              const track: AudioTrack = {
+                  id: `loop-${Date.now()}`,
+                  name: `${genre} Loop ${bpm}BPM`,
+                  type: 'music',
+                  duration: totalDuration,
+                  startOffset: 0,
+                  audioUrl: base64data,
+                  volume: 0.8
+              };
+              
+              onAddTrack(track);
+              setIsExporting(false);
+              alert("Loop rendered and added to timeline!");
+          };
+      } catch (e) {
+          console.error("Export Failed", e);
+          setIsExporting(false);
+          alert("Failed to render loop.");
+      }
   };
 
   return (
@@ -186,6 +267,23 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
            </div>
        </div>
 
+       <div className="flex gap-2 mb-4">
+           <input 
+               type="text" 
+               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary-500"
+               placeholder="Describe pattern (e.g. 'Fast hi-hats with heavy kick')"
+               value={patternPrompt}
+               onChange={(e) => setPatternPrompt(e.target.value)}
+               onKeyDown={(e) => e.key === 'Enter' && handleAiPattern()}
+           />
+           <Button size="sm" onClick={handleAiPattern} disabled={isGeneratingPattern || !patternPrompt}>
+               {isGeneratingPattern ? <Loader2 size={14} className="animate-spin"/> : <Brain size={14} className="mr-1"/>} Generate
+           </Button>
+           <button onClick={handleClearGrid} className="p-2 bg-gray-800 hover:bg-red-900/30 text-gray-400 hover:text-red-400 rounded-lg border border-gray-700 transition-colors" title="Clear Grid">
+               <Trash2 size={14}/>
+           </button>
+       </div>
+
        <div className="bg-black rounded-xl border border-gray-800 p-4 mb-6 overflow-x-auto">
            <div className="min-w-[600px]">
                {/* Header Steps */}
@@ -202,7 +300,13 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
                    <div key={row} className="flex items-center mb-2">
                        <div className="w-24 text-xs font-bold text-gray-400 flex items-center justify-between pr-3">
                            {row}
-                           {buffers[row] && <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm shadow-green-500/50"></div>}
+                           {buffers[row] ? (
+                               <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm shadow-green-500/50"></div>
+                           ) : isGenerating ? (
+                               <Loader2 size={10} className="text-blue-500 animate-spin"/>
+                           ) : (
+                               <div className="w-1.5 h-1.5 rounded-full bg-gray-700"></div>
+                           )}
                        </div>
                        <div className="flex-1 flex gap-1">
                            {grid[rIdx].map((active, cIdx) => (
@@ -228,10 +332,11 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
                Generate Authentic Kit
            </Button>
            <Button variant="secondary" onClick={handleGeneratePattern}>
-               <Wand2 size={16} className="mr-2"/> AI Pattern
+               <Wand2 size={16} className="mr-2"/> Randomize
            </Button>
-           <Button onClick={handleExportLoop}>
-               <Plus size={16} className="ml-2"/> Add to Timeline
+           <Button onClick={handleExportLoop} disabled={isExporting}>
+               {isExporting ? <Loader2 size={16} className="animate-spin ml-2"/> : <Plus size={16} className="ml-2"/>}
+               {isExporting ? 'Rendering...' : 'Add to Timeline'}
            </Button>
        </div>
     </div>

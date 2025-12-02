@@ -147,6 +147,7 @@ export interface Scene {
   mediaStartTime?: number;
   transition?: 'cut' | 'fade' | 'dissolve' | 'slide-left' | 'slide-right' | 'zoom' | 'blur' | 'wipe';
   bgRemoved?: boolean;
+  audioScript?: string;
 }
 
 export interface Character {
@@ -154,6 +155,9 @@ export interface Character {
   name: string;
   imageUrl: string;
   description?: string;
+  isAvatar?: boolean;
+  faceSamples?: string[];
+  linkedVoiceId?: string;
 }
 
 export interface ReferenceAsset {
@@ -353,4 +357,23 @@ export interface Problem {
   severity: 'error' | 'warning' | 'info';
   message: string;
   source: 'ts' | 'eslint' | 'ai';
+}
+
+export interface Column {
+  id: string;
+  name: string;
+  type: string;
+  isPk?: boolean;
+  isFk?: boolean;
+  fkTable?: string;
+  nullable?: boolean;
+}
+
+export interface TableDef {
+  id: string;
+  name: string;
+  columns: Column[];
+  x: number;
+  y: number;
+  rows: any[];
 }
