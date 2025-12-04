@@ -1,10 +1,12 @@
 
-import React, { useState } from 'react';
-import { Database, Table, BrainCircuit, Search, Plus, Filter, RefreshCw, Key, Wand2, Download, Code, Sparkles, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Database, Table, BrainCircuit, Search, Plus, Filter, RefreshCw, Key, Wand2, Download, Code, Sparkles, Loader2, ArrowRight, Save, FileJson } from 'lucide-react';
 import { FileNode, ProjectType } from '../types';
 import { Button } from './Button';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { generateDatabaseSchema, generateMigrationCode } from '../services/geminiService';
+import { generateDatabaseSchema, generateMigrationCode, generateMockRowData, naturalLanguageToSql } from '../services/geminiService';
+import { useDebounce } from '../hooks/useDebounce';
+import { getAllFiles } from '../utils/fileHelpers';
 
 interface DatabaseStudioProps {
   projectType: ProjectType;
@@ -16,7 +18,14 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
   const [dbView, setDbView] = useState<'schema' | 'data' | 'vectors'>('schema');
   const [genPrompt, setGenPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [activeTable, setActiveTable] = useState<string | null>(null);
   
+  // Data Explorer State
+  const [tableData, setTableData] = useState<Record<string, any[]>>({});
+  const [nlQuery, setNlQuery] = useState('');
+  const [generatedSql, setGeneratedSql] = useState('');
+  const [isExecuting, setIsExecuting] = useState(false);
+
   // Mock Vector Data
   const vectorData = Array.from({length: 30}, () => ({
       x: Math.random() * 100,
@@ -32,12 +41,52 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
       { name: 'comments', columns: [{name:'id', type:'UUID'}, {name:'post_id', type:'UUID', isFk:true}, {name:'user_id', type:'UUID', isFk:true}, {name:'body', type:'TEXT'}] }
   ]);
 
+  const [lastSavedSchema, setLastSavedSchema] = useState('');
+  const initialized = useRef(false);
+
+  // Load schema from file on mount
+  useEffect(() => {
+      if (initialized.current) return;
+      const allFiles = getAllFiles(files);
+      const schemaFile = allFiles.find(f => f.path.includes('database/schema.json'));
+      
+      if (schemaFile && schemaFile.node.content) {
+          try {
+              const parsed = JSON.parse(schemaFile.node.content);
+              setSchema(parsed);
+              setLastSavedSchema(schemaFile.node.content);
+              console.log("Loaded schema from file");
+          } catch (e) { console.error("Failed to parse schema file", e); }
+      }
+      initialized.current = true;
+  }, [files]);
+
+  // Auto-save schema to file
+  const debouncedSchema = useDebounce(schema, 2000);
+  
+  useEffect(() => {
+      if (onSaveFile && schema.length > 0) {
+          const content = JSON.stringify(schema, null, 2);
+          if (content !== lastSavedSchema) {
+              onSaveFile('database/schema.json', content);
+              setLastSavedSchema(content);
+          }
+      }
+  }, [debouncedSchema, onSaveFile, lastSavedSchema]);
+
+  useEffect(() => {
+      if (schema.length > 0 && !activeTable) {
+          setActiveTable(schema[0].name);
+      }
+  }, [schema, activeTable]);
+
   const handleGenerateSchema = async () => {
       if (!genPrompt) return;
       setIsGenerating(true);
       const newSchema = await generateDatabaseSchema(genPrompt);
       if (newSchema && newSchema.length > 0) {
           setSchema(newSchema);
+          setActiveTable(newSchema[0].name);
       } else {
           alert("Failed to generate schema. Try a more detailed prompt.");
       }
@@ -66,6 +115,32 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
       setIsGenerating(false);
   };
 
+  const handleGenerateMockData = async () => {
+      if (!activeTable) return;
+      setIsGenerating(true);
+      const tableSchema = schema.find(t => t.name === activeTable);
+      if (tableSchema) {
+          const newData = await generateMockRowData(activeTable, tableSchema.columns, 5);
+          setTableData(prev => ({
+              ...prev,
+              [activeTable]: [...(prev[activeTable] || []), ...newData]
+          }));
+      }
+      setIsGenerating(false);
+  };
+
+  const handleExecuteNlQuery = async () => {
+      if (!nlQuery.trim()) return;
+      setIsExecuting(true);
+      const sql = await naturalLanguageToSql(nlQuery, schema);
+      setGeneratedSql(sql);
+      // Simulate execution delay
+      setTimeout(() => {
+          setIsExecuting(false);
+          // In a real app, this would filter `tableData[activeTable]` based on the SQL logic
+      }, 800);
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-950">
         <div className="p-4 border-b border-gray-800 bg-gray-900 flex justify-between items-center shrink-0">
@@ -77,7 +152,11 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
                     <button onClick={() => setDbView('vectors')} className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${dbView === 'vectors' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>Vector Store</button>
                 </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+                <div className="text-[10px] text-gray-500 flex items-center gap-1 mr-2">
+                    <FileJson size={10}/>
+                    {JSON.stringify(schema) === lastSavedSchema ? 'Synced' : 'Unsaved'}
+                </div>
                 <Button size="sm" variant="ghost" title="Refresh"><RefreshCw size={14}/></Button>
                 <Button size="sm" className="bg-purple-600 hover:bg-purple-500"><Plus size={14} className="mr-1"/> New Table</Button>
             </div>
@@ -145,16 +224,100 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
             )}
 
             {dbView === 'data' && (
-                <div className="flex flex-col h-full">
-                    <div className="p-4 border-b border-gray-800 flex gap-4">
-                        <div className="relative flex-1 max-w-md">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"/>
-                            <input type="text" placeholder="SQL Query or Search..." className="w-full bg-black/30 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-xs text-white focus:border-purple-500 outline-none font-mono"/>
-                        </div>
-                        <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white px-3 py-2 bg-gray-800 rounded"><Filter size={14}/> Filter</button>
+                <div className="flex h-full">
+                    {/* Tables Sidebar */}
+                    <div className="w-48 bg-gray-900 border-r border-gray-800 p-2 flex flex-col">
+                        <div className="text-xs font-bold text-gray-500 uppercase px-2 mb-2">Tables</div>
+                        {schema.map(table => (
+                            <button 
+                                key={table.name}
+                                onClick={() => setActiveTable(table.name)}
+                                className={`text-left px-3 py-2 rounded text-xs mb-1 flex items-center justify-between group ${activeTable === table.name ? 'bg-purple-900/30 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+                            >
+                                {table.name}
+                                <span className="text-[10px] bg-gray-800 px-1.5 rounded text-gray-500 group-hover:bg-gray-700">{tableData[table.name]?.length || 0}</span>
+                            </button>
+                        ))}
                     </div>
-                    <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
-                        Select a table to view data.
+
+                    {/* Main Data Area */}
+                    <div className="flex-1 flex flex-col min-w-0">
+                        {/* Natural Language Query Bar */}
+                        <div className="p-4 border-b border-gray-800 bg-gray-850">
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Sparkles size={14} className="text-purple-400" />
+                                </div>
+                                <input 
+                                    type="text" 
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-24 py-2 text-sm text-white focus:border-purple-500 focus:outline-none placeholder-gray-500"
+                                    placeholder={`Ask about ${activeTable} data (e.g. "Show verified users created after 2023")...`}
+                                    value={nlQuery}
+                                    onChange={e => setNlQuery(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleExecuteNlQuery()}
+                                />
+                                <button 
+                                    onClick={handleExecuteNlQuery}
+                                    className="absolute right-1 top-1 bottom-1 bg-purple-600 hover:bg-purple-500 text-white px-3 rounded-md text-xs font-medium flex items-center"
+                                >
+                                    {isExecuting ? <Loader2 size={12} className="animate-spin"/> : <ArrowRight size={12}/>}
+                                </button>
+                            </div>
+                            {generatedSql && (
+                                <div className="mt-2 p-2 bg-black/50 border border-gray-700 rounded text-xs font-mono text-green-400 overflow-x-auto flex justify-between items-center animate-in slide-in-from-top-1">
+                                    <span>{generatedSql}</span>
+                                    <span className="text-[10px] text-gray-500 uppercase font-bold">SQL</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Data Grid */}
+                        <div className="flex-1 overflow-auto p-4 bg-gray-950">
+                            {activeTable ? (
+                                <>
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold text-white text-sm capitalize">{activeTable} Data</h3>
+                                        <div className="flex gap-2">
+                                            <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-white px-3 py-1.5 bg-gray-800 rounded border border-gray-700"><Filter size={12}/> Filter</button>
+                                            <Button size="sm" variant="secondary" onClick={handleGenerateMockData} disabled={isGenerating}>
+                                                {isGenerating ? <Loader2 size={12} className="animate-spin mr-1"/> : <Wand2 size={12} className="mr-1"/>} Populate Mock Data
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {(!tableData[activeTable] || tableData[activeTable].length === 0) ? (
+                                        <div className="h-64 border-2 border-dashed border-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-600">
+                                            <Table size={32} className="mb-2 opacity-50"/>
+                                            <p className="text-sm">Table is empty.</p>
+                                            <button onClick={handleGenerateMockData} className="text-xs text-purple-400 hover:text-purple-300 mt-2 underline">Generate 5 mock rows</button>
+                                        </div>
+                                    ) : (
+                                        <div className="border border-gray-800 rounded-lg overflow-hidden bg-gray-900">
+                                            <table className="w-full text-left text-xs">
+                                                <thead className="bg-gray-800 text-gray-400 font-medium">
+                                                    <tr>
+                                                        {schema.find(t => t.name === activeTable)?.columns.map((col: any) => (
+                                                            <th key={col.name} className="px-4 py-3 border-b border-gray-700">{col.name}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-800 text-gray-300">
+                                                    {tableData[activeTable].map((row, i) => (
+                                                        <tr key={i} className="hover:bg-gray-800/50">
+                                                            {schema.find(t => t.name === activeTable)?.columns.map((col: any) => (
+                                                                <td key={col.name} className="px-4 py-2 truncate max-w-[200px]">{String(row[col.name])}</td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-gray-500 text-sm">Select a table to view data.</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

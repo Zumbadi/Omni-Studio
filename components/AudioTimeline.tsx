@@ -1,5 +1,6 @@
+
 import React, { useRef, useState, useEffect } from 'react';
-import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Trash2, Volume2, Check } from 'lucide-react';
+import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Trash2, Volume2, Check, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from './Button';
 import { AudioTrack } from '../types';
 import { bufferToWav } from '../utils/audioHelpers';
@@ -45,6 +46,9 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
 
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [zoom, setZoom] = useState(2); // Zoom level 1-10
+
+  const PIXELS_PER_SECOND = zoom * 20;
 
   const rafRef = useRef<number | null>(null);
 
@@ -140,10 +144,8 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragState.isDragging || !dragState.trackId || !timelineRef.current) return;
 
-      const timelineWidth = timelineRef.current.clientWidth;
       const deltaPixels = e.clientX - dragState.startX;
-      const deltaPercent = (deltaPixels / timelineWidth) * 100;
-      const deltaSeconds = deltaPercent * 0.5; // 1% = 0.5s (Approximation based on zoom)
+      const deltaSeconds = deltaPixels / PIXELS_PER_SECOND;
 
       const newOffset = Math.max(0, dragState.originalOffset + deltaSeconds);
       
@@ -167,7 +169,7 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState, setTracks]);
+  }, [dragState, setTracks, PIXELS_PER_SECOND]);
 
   const handleTrackMouseDown = (e: React.MouseEvent, track: AudioTrack) => {
     setDragState({
@@ -291,6 +293,19 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                       00:00:00
                    </div>
                </div>
+               
+               {/* Zoom Control */}
+               <div className="hidden md:flex items-center gap-2 bg-gray-800 rounded-lg p-1 border border-gray-700">
+                   <button onClick={() => setZoom(z => Math.max(1, z - 0.5))} className="p-1 hover:text-white text-gray-400"><ZoomOut size={14}/></button>
+                   <input 
+                      type="range" 
+                      min="1" max="10" step="0.5" 
+                      value={zoom} 
+                      onChange={(e) => setZoom(parseFloat(e.target.value))}
+                      className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                   />
+                   <button onClick={() => setZoom(z => Math.min(10, z + 0.5))} className="p-1 hover:text-white text-gray-400"><ZoomIn size={14}/></button>
+               </div>
             </div>
             
             <div className="flex gap-2 w-full md:w-auto justify-end pb-2 md:pb-0">
@@ -400,16 +415,16 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                         ${dragState.trackId === track.id ? 'cursor-grabbing ring-2 ring-white/50' : 'cursor-grab'}
                       `}
                       style={{ 
-                        left: `${track.startOffset * 2}%`, 
-                        width: `${Math.max(10, track.duration * 2)}%`,
-                        minWidth: '60px'
+                        left: `${track.startOffset * PIXELS_PER_SECOND}px`, 
+                        width: `${Math.max(20, track.duration * PIXELS_PER_SECOND)}px`,
+                        minWidth: '20px'
                       }}
                     >
                        <div className="absolute left-0 w-2 h-full bg-black/20 cursor-ew-resize hover:bg-white/20"></div>
                        
                        {/* Waveform graphic */}
-                       <div className="w-full h-full flex items-center gap-0.5 opacity-50 pointer-events-none">
-                          {[...Array(20)].map((_, i) => (
+                       <div className="w-full h-full flex items-center gap-0.5 opacity-50 pointer-events-none overflow-hidden">
+                          {[...Array(Math.floor(track.duration * 2))].map((_, i) => (
                              <div key={i} className="w-1 rounded-full bg-white/50" style={{ height: `${20 + Math.random() * 60}%` }}></div>
                           ))}
                        </div>
@@ -423,8 +438,8 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                     </div>
                     
                     {/* Grid Lines */}
-                    <div className="absolute inset-0 grid grid-cols-[repeat(20,1fr)] pointer-events-none opacity-5">
-                       {[...Array(20)].map((_, i) => <div key={i} className="border-l border-white h-full"></div>)}
+                    <div className="absolute inset-0 pointer-events-none opacity-5 flex">
+                       {[...Array(20)].map((_, i) => <div key={i} className="border-l border-white h-full flex-1"></div>)}
                     </div>
                  </div>
               </div>

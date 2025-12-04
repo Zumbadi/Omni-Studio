@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Lightbulb, Target, Clapperboard, FileText, ShoppingBag, List, Youtube, Video, Link as LinkIcon, Check, BrainCircuit } from 'lucide-react';
+import { Upload, Sparkles, Image as ImageIcon, ArrowRight, Loader2, Lightbulb, Target, Clapperboard, FileText, ShoppingBag, List, Youtube, Video, Link as LinkIcon, Check, BrainCircuit, X } from 'lucide-react';
 import { Button } from './Button';
 import { analyzeMediaStyle, generateSocialContent } from '../services/geminiService';
 import { SocialPost, Scene } from '../types';
@@ -10,6 +10,7 @@ interface MediaIdeaGeneratorProps {
   brands: string[];
   activeBrandId: string;
   mindMapContext?: string;
+  onClearContext?: () => void;
 }
 
 const CONTENT_TYPES = [
@@ -19,7 +20,7 @@ const CONTENT_TYPES = [
   { id: 'showcase', label: 'Product Showcase', icon: ShoppingBag, desc: 'Feature focused highlights' }
 ];
 
-export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreatePost, brands, activeBrandId, mindMapContext }) => {
+export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreatePost, brands, activeBrandId, mindMapContext, onClearContext }) => {
   const [selectedBrand, setSelectedBrand] = useState(activeBrandId);
   const [refType, setRefType] = useState<'image' | 'video' | 'url'>('image');
   const [refData, setRefData] = useState<string>(''); // Base64 or URL
@@ -145,7 +146,8 @@ export const MediaIdeaGenerator: React.FC<MediaIdeaGeneratorProps> = ({ onCreate
             <div className="space-y-6">
                 
                 {mindMapContext && (
-                    <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4 animate-in fade-in">
+                    <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4 animate-in fade-in relative group">
+                        <button onClick={onClearContext} className="absolute top-2 right-2 text-yellow-500/50 hover:text-yellow-400 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>
                         <h3 className="text-xs font-bold text-yellow-500 uppercase mb-2 flex items-center gap-2">
                             <BrainCircuit size={14}/> Mind Map Active
                         </h3>

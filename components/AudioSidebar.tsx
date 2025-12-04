@@ -1,11 +1,11 @@
 
 import React, { useRef, useState } from 'react';
-import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid, Sparkles, Youtube, Edit2, Save, ArrowRight, Activity, FileMusic } from 'lucide-react';
+import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid, Sparkles, Youtube, Edit2, Save, ArrowRight, Activity, FileMusic, Radio } from 'lucide-react';
 import { Button } from './Button';
 import { Voice } from '../types';
 import { generateLyrics } from '../services/geminiService';
 
-export type AudioTab = 'mixer' | 'cloning' | 'pro' | 'sequencer' | 'music';
+export type AudioTab = 'mixer' | 'cloning' | 'pro' | 'sequencer' | 'music' | 'podcast';
 
 interface AudioSidebarProps {
   activeTab: string;
@@ -40,6 +40,14 @@ interface AudioSidebarProps {
   setVoiceStyle?: (s: string) => void;
   songStructure?: string;
   setSongStructure?: (s: string) => void;
+  // Podcast Props
+  podcastTopic?: string;
+  setPodcastTopic?: (t: string) => void;
+  hostVoice?: string;
+  setHostVoice?: (v: string) => void;
+  guestVoice?: string;
+  setGuestVoice?: (v: string) => void;
+  onGeneratePodcast?: () => void;
 }
 
 export const AudioSidebar: React.FC<AudioSidebarProps> = ({
@@ -47,7 +55,8 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
   ttsInput, setTtsInput, styleReference, isGenerating, onGenerateTTS, onSmartMix,
   mastering, setMastering, onUploadStyleRef, isRecording, startRecording, stopRecording, recordingTime, formatTime,
   onCloneFromFile, onGenerateSong, youtubeLink, setYoutubeLink, genre, setGenre, onUpdateVoice, className,
-  voiceStyle, setVoiceStyle, songStructure, setSongStructure
+  voiceStyle, setVoiceStyle, songStructure, setSongStructure,
+  podcastTopic, setPodcastTopic, hostVoice, setHostVoice, guestVoice, setGuestVoice, onGeneratePodcast
 }) => {
   const cloneInputRef = useRef<HTMLInputElement>(null);
   const musicRefInputRef = useRef<HTMLInputElement>(null);
@@ -99,11 +108,12 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
            <p className="text-xs text-gray-500">Create podcasts, music & clones</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 bg-gray-800 p-1 rounded-lg shrink-0">
+        <div className="grid grid-cols-3 gap-2 bg-gray-800 p-1 rounded-lg shrink-0">
            <button onClick={() => setActiveTab('mixer')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'mixer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Mixer</button>
-           <button onClick={() => setActiveTab('music')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'music' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Music AI</button>
+           <button onClick={() => setActiveTab('podcast')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'podcast' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Podcast</button>
+           <button onClick={() => setActiveTab('music')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'music' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Music</button>
            <button onClick={() => setActiveTab('cloning')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'cloning' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Voice Lab</button>
-           <button onClick={() => setActiveTab('sequencer')} className={`py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'sequencer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Sequencer</button>
+           <button onClick={() => setActiveTab('sequencer')} className={`col-span-2 py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'sequencer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Beat Sequencer</button>
         </div>
 
         {activeTab === 'mixer' && (
@@ -143,6 +153,48 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
                  <Button size="sm" variant="secondary" className="w-full mb-2" onClick={onSmartMix}>Auto-Mix (Ducking)</Button>
               </div>
            </div>
+        )}
+
+        {activeTab === 'podcast' && (
+            <div className="space-y-4 flex-1 overflow-y-auto">
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Radio size={14} className="text-red-400"/> AI Podcast</h3>
+                    
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Topic / Title</label>
+                            <input 
+                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary-500" 
+                                placeholder="e.g. Future of Tech"
+                                value={podcastTopic || ''}
+                                onChange={(e) => setPodcastTopic && setPodcastTopic(e.target.value)}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Host Voice</label>
+                            <select value={hostVoice} onChange={(e) => setHostVoice && setHostVoice(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300">
+                                {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Guest Voice</label>
+                            <select value={guestVoice} onChange={(e) => setGuestVoice && setGuestVoice(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300">
+                                {voices.filter(v => v.id !== hostVoice).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-3 text-[10px] text-blue-200">
+                            <p>Omni will generate a script, synthesize voices for both speakers, and arrange them on the timeline.</p>
+                        </div>
+
+                        <Button size="sm" className="w-full" onClick={onGeneratePodcast} disabled={isGenerating || !podcastTopic}>
+                            {isGenerating ? <Loader2 size={14} className="animate-spin mr-2"/> : <Mic size={14} className="mr-2"/>} {isGenerating ? 'Producing...' : 'Create Episode'}
+                        </Button>
+                    </div>
+                </div>
+            </div>
         )}
 
         {activeTab === 'sequencer' && (

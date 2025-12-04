@@ -1,13 +1,13 @@
 
 import React, { useState, useRef, useMemo } from 'react';
-import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal, Maximize2, Minimize2, Save } from 'lucide-react';
+import { X, SplitSquareHorizontal, PanelBottom, Plus, AlertCircle, Terminal as TerminalIcon, Play, RotateCcw, Code, FileText, Keyboard, Sparkles, Command, Clock, Zap, MoreHorizontal, Maximize2, Minimize2, Save, Wand2 } from 'lucide-react';
 import { CodeEditor, CodeEditorHandle } from './CodeEditor';
 import { DiffEditor } from './DiffEditor';
 import { Terminal } from './Terminal';
 import { TestRunnerPanel } from './TestRunnerPanel';
 import { ProblemsPanel } from './ProblemsPanel';
 import { FileNode, TestResult } from '../types';
-import { generateGhostText } from '../services/geminiService';
+import { generateGhostText, improveCode } from '../services/geminiService';
 import { getAllFiles, getFilePath } from '../utils/fileHelpers';
 
 interface EditorAreaProps {
@@ -84,6 +84,8 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   const [activeBottomTab, setActiveBottomTab] = useState<'terminal' | 'problems' | 'tests'>('terminal');
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
+  const [showMagicMenu, setShowMagicMenu] = useState(false);
+  const [isImproving, setIsImproving] = useState(false);
 
   const getFile = (id: string, nodes: FileNode[]): FileNode | undefined => {
       for (const node of nodes) {
@@ -134,6 +136,21 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   const handleTabContextMenu = (e: React.MouseEvent, id: string) => {
       e.preventDefault();
       setTabContextMenu({ x: e.clientX, y: e.clientY, id });
+  };
+
+  const handleMagicAction = async (type: 'docs' | 'types' | 'clean') => {
+      if (!activeFile || !activeFile.content) return;
+      setIsImproving(true);
+      setShowMagicMenu(false);
+      addToast('info', 'AI is improving your code...');
+      
+      const improved = await improveCode(activeFile.content, type);
+      setPreviewDiff({
+          original: activeFile.content,
+          modified: improved,
+          fileName: activeFile.name
+      });
+      setIsImproving(false);
   };
 
   // Start Screen Component
@@ -249,6 +266,25 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
             {openFiles.length === 0 && <div className="px-4 py-2.5 text-xs text-gray-600 italic">No open files</div>}
             
             <div className="ml-auto flex items-center">
+                {activeFile && (
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowMagicMenu(!showMagicMenu)}
+                            className={`px-3 flex items-center gap-1 text-purple-400 hover:text-white border-l border-gray-800 h-full transition-colors ${isImproving ? 'animate-pulse' : ''}`}
+                            title="Magic Code Tools"
+                        >
+                            <Wand2 size={14} />
+                        </button>
+                        {showMagicMenu && (
+                            <div className="absolute top-full right-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 p-1 animate-in fade-in zoom-in-95">
+                                <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 mb-1">AI Actions</div>
+                                <button onClick={() => handleMagicAction('docs')} className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 rounded flex items-center gap-2"><FileText size={12}/> Add Documentation</button>
+                                <button onClick={() => handleMagicAction('types')} className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 rounded flex items-center gap-2"><Code size={12}/> Convert to TypeScript</button>
+                                <button onClick={() => handleMagicAction('clean')} className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 rounded flex items-center gap-2"><Sparkles size={12}/> Clean & Optimize</button>
+                            </div>
+                        )}
+                    </div>
+                )}
                 {onSaveAll && (
                     <button
                         onClick={onSaveAll}

@@ -1,18 +1,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Command, File, ChevronRight, Settings, Github, Moon, Sun, Monitor, Terminal, Download, FilePlus, FolderPlus } from 'lucide-react';
-import { FileNode } from '../types';
+import { Search, Command, File, ChevronRight, Settings, Github, Moon, Sun, Monitor, Terminal, Download, FilePlus, FolderPlus, BrainCircuit, Book } from 'lucide-react';
+import { FileNode, KnowledgeDoc } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   files: FileNode[];
+  knowledgeDocs?: KnowledgeDoc[];
   onOpenFile: (id: string) => void;
   onRunCommand: (cmd: string) => void;
+  onOpenDoc?: (id: string) => void;
 }
 
-export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, files, onOpenFile, onRunCommand }) => {
+export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, files, knowledgeDocs = [], onOpenFile, onRunCommand, onOpenDoc }) => {
   const [input, setInput] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,9 +34,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
 
   const filteredFiles = allFiles.filter(f => f.node.name.toLowerCase().includes(input.toLowerCase())).slice(0, 5);
   const filteredCommands = commands.filter(c => c.label.toLowerCase().includes(input.toLowerCase()));
+  const filteredDocs = knowledgeDocs.filter(d => d.title.toLowerCase().includes(input.toLowerCase())).slice(0, 3);
   
   const combinedResults = [
       ...filteredFiles.map(f => ({ type: 'file', ...f })),
+      ...filteredDocs.map(d => ({ type: 'doc', ...d })),
       ...filteredCommands.map(c => ({ type: 'command', ...c }))
   ];
 
@@ -58,6 +62,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
           const selected = combinedResults[activeIndex];
           if (selected) {
               if (selected.type === 'file') onOpenFile((selected as any).node.id);
+              else if (selected.type === 'doc') onOpenDoc?.((selected as any).id);
               else (selected as any).action();
               onClose();
           }
@@ -77,7 +82,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
                     ref={inputRef}
                     type="text" 
                     className="flex-1 bg-transparent text-lg text-white placeholder-gray-600 focus:outline-none" 
-                    placeholder="Search files or run commands..." 
+                    placeholder="Search files, docs, or commands..." 
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -95,16 +100,21 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
                         key={idx}
                         onClick={() => {
                             if (item.type === 'file') onOpenFile((item as any).node.id);
+                            else if (item.type === 'doc') onOpenDoc?.((item as any).id);
                             else (item as any).action();
                             onClose();
                         }}
                         className={`px-4 py-2 flex items-center justify-between cursor-pointer ${idx === activeIndex ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
                       >
                           <div className="flex items-center gap-3">
-                              {item.type === 'file' ? <File size={16} className={idx === activeIndex ? 'text-white' : 'text-gray-500'} /> : (item as any).icon}
+                              {item.type === 'file' && <File size={16} className={idx === activeIndex ? 'text-white' : 'text-gray-500'} />}
+                              {item.type === 'doc' && <BrainCircuit size={16} className={idx === activeIndex ? 'text-white' : 'text-orange-500'} />}
+                              {item.type === 'command' && (item as any).icon}
+                              
                               <div>
-                                  <div className="text-sm font-medium">{(item as any).node?.name || (item as any).label}</div>
+                                  <div className="text-sm font-medium">{(item as any).node?.name || (item as any).title || (item as any).label}</div>
                                   {item.type === 'file' && <div className={`text-[10px] ${idx === activeIndex ? 'text-blue-200' : 'text-gray-600'}`}>{(item as any).path}</div>}
+                                  {item.type === 'doc' && <div className={`text-[10px] ${idx === activeIndex ? 'text-orange-200' : 'text-gray-600'}`}>Knowledge Base</div>}
                               </div>
                           </div>
                           {idx === activeIndex && <ChevronRight size={16} />}

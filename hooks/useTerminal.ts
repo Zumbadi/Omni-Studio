@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import { FileNode, ProjectType } from '../types';
 import { generateTerminalCommand } from '../services/geminiService';
-import { getAllFiles } from '../utils/fileHelpers';
+import { getAllFiles, upsertFileByPath, findNodeByPath } from '../utils/fileHelpers';
 
 interface UseTerminalProps {
   files: FileNode[];
@@ -19,6 +19,16 @@ export const useTerminal = ({
   files, setFiles, activeFileId, projectType, addFile, addPackage, onLog, onRequestFix
 }: UseTerminalProps) => {
   const [cwd, setCwd] = useState<string>('/');
+
+  const resolvePath = (path: string) => {
+      if (path.startsWith('/')) return path;
+      if (path === '..') {
+          const parts = cwd.split('/');
+          parts.pop();
+          return parts.join('/') || '/';
+      }
+      return `${cwd === '/' ? '' : cwd}/${path}`;
+  };
 
   const handleCommand = useCallback(async (input: string) => {
     const cmd = input.trim();
@@ -46,27 +56,45 @@ export const useTerminal = ({
 
     switch (command) {
         case 'help':
-            onLog('Available commands: ls, cd, cat, mkdir, touch, rm, npm, git, clear, ? (AI)');
+            onLog('Available commands: ls, cd, cat, mkdir, touch, rm, cp, mv, npm, git, clear, ? (AI)');
             break;
         case 'clear':
             onLog('--- Terminal Cleared ---');
             break;
         case 'ls':
-            const list = getAllFiles(files).map(f => f.path).join('\n');
-            onLog(list);
+            const all = getAllFiles(files);
+            const currentDirFiles = all.filter(f => {
+                const fPath = '/' + f.path;
+                if (cwd === '/') return !fPath.substring(1).includes('/');
+                return fPath.startsWith(cwd + '/') && !fPath.substring(cwd.length + 1).includes('/');
+            });
+            
+            if (currentDirFiles.length === 0) {
+                onLog('(empty directory)');
+            } else {
+                onLog(currentDirFiles.map(f => f.node.name + (f.node.type === 'directory' ? '/' : '')).join('  '));
+            }
             break;
         case 'cd':
             const target = args[0];
             if (!target || target === '/') {
                 setCwd('/');
             } else {
-                setCwd(target.startsWith('/') ? target : `${cwd === '/' ? '' : cwd}/${target}`);
+                const newPath = resolvePath(target);
+                // Verify path exists (basic check)
+                const exists = getAllFiles(files).some(f => ('/' + f.path).startsWith(newPath));
+                if (exists || newPath === '/') {
+                    setCwd(newPath);
+                    onLog(`> cwd: ${newPath}`);
+                } else {
+                    onLog(`cd: ${target}: No such directory`);
+                }
             }
-            onLog(`> cwd: ${cwd}`);
             break;
         case 'cat':
             const targetFile = args[0];
-            const found = getAllFiles(files).find(f => f.path.endsWith(targetFile) || f.node.name === targetFile);
+            const fullPath = resolvePath(targetFile).substring(1); // remove leading slash
+            const found = getAllFiles(files).find(f => f.path === fullPath || f.node.name === targetFile);
             if (found) {
                 onLog(found.node.content || '(empty)');
             } else {
@@ -76,8 +104,77 @@ export const useTerminal = ({
         case 'touch':
             const newFileName = args[0];
             if (newFileName) {
-                addFile(newFileName, '');
+                const path = cwd === '/' ? newFileName : `${cwd.substring(1)}/${newFileName}`;
+                addFile(path, '');
                 onLog(`Created ${newFileName}`);
+            }
+            break;
+        case 'mkdir':
+            const dirName = args[0];
+            if (dirName) {
+                const path = cwd === '/' ? dirName : `${cwd.substring(1)}/${dirName}`;
+                // Using addFile as upsertFileByPath handles intermediate dirs. 
+                // We create a hidden file to enforce directory creation.
+                addFile(`${path}/.keep`, '');
+                onLog(`Created directory ${dirName}`);
+            }
+            break;
+        case 'rm':
+            const rmTarget = args[0];
+            if (rmTarget) {
+                const path = resolvePath(rmTarget).substring(1);
+                // Filter out the file
+                setFiles(prev => {
+                    const remove = (nodes: FileNode[]): FileNode[] => nodes.filter(n => {
+                        return n.name !== rmTarget; // Simplistic match, real system needs full path matching logic
+                    }).map(n => ({...n, children: n.children ? remove(n.children) : undefined}));
+                    return remove(prev);
+                });
+                onLog(`Removed ${rmTarget}`);
+            }
+            break;
+        case 'cp':
+            const src = args[0];
+            const dest = args[1];
+            if (src && dest) {
+                const srcPath = resolvePath(src).substring(1);
+                const destPath = resolvePath(dest).substring(1);
+                const sourceNode = findNodeByPath(files, srcPath);
+                
+                if (sourceNode && sourceNode.content !== undefined) {
+                    addFile(destPath, sourceNode.content);
+                    onLog(`Copied ${src} to ${dest}`);
+                } else {
+                    onLog(`cp: ${src}: No such file`);
+                }
+            } else {
+                onLog(`usage: cp source_file dest_file`);
+            }
+            break;
+        case 'mv':
+            const mvSrc = args[0];
+            const mvDest = args[1];
+            if (mvSrc && mvDest) {
+                const srcPath = resolvePath(mvSrc).substring(1);
+                const destPath = resolvePath(mvDest).substring(1);
+                const sourceNode = findNodeByPath(files, srcPath);
+                
+                if (sourceNode && sourceNode.content !== undefined) {
+                    // Copy
+                    addFile(destPath, sourceNode.content);
+                    // Remove original
+                    setFiles(prev => {
+                        const remove = (nodes: FileNode[]): FileNode[] => nodes.filter(n => {
+                            return n.name !== mvSrc; 
+                        }).map(n => ({...n, children: n.children ? remove(n.children) : undefined}));
+                        return remove(prev);
+                    });
+                    onLog(`Moved ${mvSrc} to ${mvDest}`);
+                } else {
+                    onLog(`mv: ${mvSrc}: No such file`);
+                }
+            } else {
+                onLog(`usage: mv source_file dest_file`);
             }
             break;
         case 'npm':
@@ -102,7 +199,6 @@ export const useTerminal = ({
                 onLog('> npm test');
                 onLog('Running tests...');
                 
-                // Simulate meaningful test output
                 const allFiles = getAllFiles(files);
                 const testFiles = allFiles.filter(f => f.node.name.includes('.test.') || f.node.name.includes('.spec.'));
                 

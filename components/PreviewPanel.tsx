@@ -1,6 +1,6 @@
 
 import React, { Suspense, lazy, memo, useState } from 'react';
-import { Download, X, Map, BrainCircuit, Gauge, Book, Server, Database, Smartphone, Loader2, Maximize2, Minimize2, Settings } from 'lucide-react';
+import { Download, X, Map, BrainCircuit, Gauge, Book, Server, Database, Smartphone, Loader2, Maximize2, Minimize2, Settings, BookOpen } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, ProjectPhase, FileNode } from '../types';
 import { LivePreview } from './LivePreview';
@@ -13,11 +13,12 @@ const DeploymentConsole = lazy(() => import('./DeploymentConsole').then(m => ({ 
 const AuditView = lazy(() => import('./AuditView').then(m => ({ default: m.AuditView })));
 const DocsViewer = lazy(() => import('./DocsViewer').then(m => ({ default: m.DocsViewer })));
 const ProjectSettings = lazy(() => import('./ProjectSettings').then(m => ({ default: m.ProjectSettings })));
+const ComponentLibrary = lazy(() => import('./ComponentLibrary').then(m => ({ default: m.ComponentLibrary })));
 
 interface PreviewPanelProps {
   project: Project;
   previewSrc: string;
-  activeTab: 'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture' | 'settings';
+  activeTab: 'preview' | 'deploy' | 'database' | 'roadmap' | 'docs' | 'audit' | 'architecture' | 'settings' | 'uikit';
   setActiveTab: (tab: any) => void;
   onToggleLayout: () => void;
   onExport: () => void;
@@ -56,6 +57,7 @@ export const PreviewPanel = memo(({
   currentBranch, onMergeBranch, onAiFix, envVars
 }: PreviewPanelProps) => {
   const isBackend = project.type === ProjectType.NODE_API;
+  const isReact = project.type === ProjectType.REACT_WEB;
 
   return (
     <div className="w-full h-full flex flex-col bg-gray-900 border-l border-gray-800">
@@ -65,6 +67,7 @@ export const PreviewPanel = memo(({
            <button onClick={() => setActiveTab('preview')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'preview' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
                <Smartphone size={12}/> Preview
            </button>
+           {isReact && <button onClick={() => setActiveTab('uikit')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'uikit' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><BookOpen size={12}/> UI Kit</button>}
            {isBackend && <button onClick={() => setActiveTab('database')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'database' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><Database size={12}/> DB Studio</button>}
            <button onClick={() => setActiveTab('roadmap')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'roadmap' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><Map size={12}/> Roadmap</button>
            <button onClick={() => setActiveTab('architecture')} className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${activeTab === 'architecture' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}><BrainCircuit size={12}/> Architect</button>
@@ -99,8 +102,9 @@ export const PreviewPanel = memo(({
                     envVars={envVars}
                 />
             )}
+            {activeTab === 'uikit' && <ComponentLibrary files={files} />}
             {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} onSaveFile={onSaveFile} />}
-            {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} files={files} onOpenFile={onOpenFile} />}
+            {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} files={files} onOpenFile={onOpenFile} onSaveFile={onSaveFile} />}
             {activeTab === 'deploy' && (
                 <DeploymentConsole 
                     project={project} 

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Activity, X, Volume2, Wifi, AlertCircle, RefreshCw } from 'lucide-react';
+import { Mic, MicOff, Activity, X, Volume2, Wifi, AlertCircle, RefreshCw, VolumeX } from 'lucide-react';
 import { LiveSession } from '../services/geminiService';
 
 interface VoiceCommanderProps {
@@ -15,6 +15,7 @@ export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose, onProce
   const [transcript, setTranscript] = useState('');
   const [bars, setBars] = useState<number[]>(Array(5).fill(10));
   const [isInterrupted, setIsInterrupted] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   
   const liveSessionRef = useRef<LiveSession | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -101,6 +102,11 @@ export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose, onProce
       }
   };
 
+  const handleMuteToggle = () => {
+      // In a real implementation, this would mute the audio output context
+      setIsMuted(!isMuted);
+  };
+
   return (
     <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-10 fade-in duration-300">
         <div className={`
@@ -130,6 +136,9 @@ export const VoiceCommander: React.FC<VoiceCommanderProps> = ({ onClose, onProce
 
             {/* Controls */}
             <div className="flex items-center gap-2 z-10">
+                <button onClick={handleMuteToggle} className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${isMuted ? 'bg-gray-700 text-red-400' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                    {isMuted ? <VolumeX size={14}/> : <Volume2 size={14}/>}
+                </button>
                 <button 
                     onClick={handleToggleConnection}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${

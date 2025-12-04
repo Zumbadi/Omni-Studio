@@ -1,10 +1,11 @@
 
-import React, { useRef, useEffect, useState } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, Zap, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Terminal, Container, Workflow, Paperclip, MapPin, Trash2, FileText, File, Move } from 'lucide-react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, Zap, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Terminal, Container, Workflow, Paperclip, MapPin, Trash2, FileText, File, Move, Box, Clapperboard } from 'lucide-react';
 import { Button } from './Button';
 import { ChatMessage, AgentTask, FileNode } from '../types';
 import { MessageRenderer } from './MessageRenderer';
 import { getAllFiles } from '../utils/fileHelpers';
+import { extractSymbols, CodeSymbol } from '../utils/codeParser';
 
 interface ChatWidgetProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ const SLASH_COMMANDS = [
     { cmd: '/search', desc: 'Google Search for real-time info', Icon: Globe, color: 'text-blue-400' },
     { cmd: '/map', desc: 'Find places with Google Maps', Icon: MapPin, color: 'text-green-400' },
     { cmd: '/agent', desc: 'Delegate task to AI Agents', Icon: Bot, color: 'text-purple-400' },
+    { cmd: '/campaign', desc: 'Generate full media campaign', Icon: Clapperboard, color: 'text-red-400' },
     { cmd: '/image', desc: 'Generate visual assets', Icon: ImageIcon, color: 'text-pink-400' },
     { cmd: '/pipeline', desc: 'Trigger CI/CD Pipeline', Icon: Workflow, color: 'text-orange-400' },
     { cmd: '/docker', desc: 'Generate Docker configs', Icon: Container, color: 'text-cyan-400' },
@@ -68,10 +70,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   // Autocomplete State
   const [showCommands, setShowCommands] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
+  const [showMentions, setShowMentions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [filteredCommands, setFilteredCommands] = useState(SLASH_COMMANDS);
-  const [filteredFiles, setFilteredFiles] = useState<{name: string, path: string}[]>([]);
+  
+  // Memoize symbols to avoid expensive re-parsing on every render
+  const projectSymbols = useMemo(() => extractSymbols(files), [files]);
+  
+  const [filteredMentions, setFilteredMentions] = useState<{name: string, type: string, detail: string, id: string, context?: string}[]>([]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -81,7 +87,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   // --- Robust Dragging Logic ---
   const handleMouseDown = (e: React.MouseEvent) => {
-      // Ignore clicks on interactive elements inside the drag area
       if ((e.target as HTMLElement).closest('input, button, textarea, a')) return;
       
       const widget = widgetRef.current;
@@ -95,7 +100,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           startTop: rect.top
       };
       
-      // Initialize position state if it hasn't been set yet (switching from CSS positioning to JS positioning)
       if (!position) {
           setPosition({ x: rect.left, y: rect.top });
       }
@@ -110,11 +114,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           const deltaX = e.clientX - dragRef.current.startX;
           const deltaY = e.clientY - dragRef.current.startY;
           
-          // Calculate new position
           let newX = dragRef.current.startLeft + deltaX;
           let newY = dragRef.current.startTop + deltaY;
 
-          // Simple bounds checking to keep somewhat on screen
           const maxX = window.innerWidth - 50;
           const maxY = window.innerHeight - 50;
           newX = Math.max(0, Math.min(newX, maxX));
@@ -143,45 +145,52 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           const filtered = SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith('/' + query));
           setFilteredCommands(filtered);
           setShowCommands(filtered.length > 0);
-          setShowFiles(false);
+          setShowMentions(false);
           setActiveIndex(0);
           return;
       } 
       
-      // 2. File Mention Detection (@filename)
+      // 2. Mention Detection (@...)
       const mentionMatch = input.match(/@([\w\-\/\.]*)$/);
       if (mentionMatch) {
           const query = mentionMatch[1].toLowerCase();
-          const allFiles = getAllFiles(files).filter(f => f.node.type === 'file');
-          const filtered = allFiles
-              .filter(f => f.node.name.toLowerCase().includes(query))
-              .slice(0, 10) // Limit to 10 results
-              .map(f => ({ name: f.node.name, path: f.path }));
           
-          setFilteredFiles(filtered);
-          setShowFiles(filtered.length > 0);
+          // Combine files and symbols
+          const allFiles = getAllFiles(files).filter(f => f.node.type === 'file');
+          
+          const fileResults = allFiles
+              .filter(f => f.node.name.toLowerCase().includes(query))
+              .map(f => ({ name: f.node.name, type: 'file', detail: f.path, id: f.node.id }));
+              
+          const symbolResults = projectSymbols
+              .filter(s => s.name.toLowerCase().includes(query))
+              .map(s => ({ name: s.name, type: s.type, detail: s.fileName, id: `${s.fileId}:${s.name}`, context: s.content }));
+
+          const combined = [...fileResults, ...symbolResults].slice(0, 15); // Limit results
+          
+          setFilteredMentions(combined);
+          setShowMentions(combined.length > 0);
           setShowCommands(false);
           setActiveIndex(0);
           return;
       }
 
       setShowCommands(false);
-      setShowFiles(false);
-  }, [input, files]);
+      setShowMentions(false);
+  }, [input, files, projectSymbols]);
 
-  // Scroll active item into view
   useEffect(() => {
-      if ((showCommands || showFiles) && menuRef.current) {
-          const activeEl = menuRef.current.children[activeIndex + 1] as HTMLElement; // +1 for header
+      if ((showCommands || showMentions) && menuRef.current) {
+          const activeEl = menuRef.current.children[activeIndex + 1] as HTMLElement;
           if (activeEl) {
               activeEl.scrollIntoView({ block: 'nearest' });
           }
       }
-  }, [activeIndex, showCommands, showFiles]);
+  }, [activeIndex, showCommands, showMentions]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (showCommands || showFiles) {
-          const listLength = showCommands ? filteredCommands.length : filteredFiles.length;
+      if (showCommands || showMentions) {
+          const listLength = showCommands ? filteredCommands.length : filteredMentions.length;
           
           if (e.key === 'ArrowUp') {
               e.preventDefault();
@@ -197,15 +206,15 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
               e.preventDefault();
               if (showCommands && filteredCommands[activeIndex]) {
                   selectCommand(filteredCommands[activeIndex].cmd);
-              } else if (showFiles && filteredFiles[activeIndex]) {
-                  selectFile(filteredFiles[activeIndex].path);
+              } else if (showMentions && filteredMentions[activeIndex]) {
+                  selectMention(filteredMentions[activeIndex]);
               }
               return;
           }
           if (e.key === 'Escape') {
               e.preventDefault();
               setShowCommands(false);
-              setShowFiles(false);
+              setShowMentions(false);
               return;
           }
       }
@@ -217,11 +226,18 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       inputRef.current?.focus();
   };
 
-  const selectFile = (path: string) => {
-      // Replace the @query with @[path]
-      const newInput = input.replace(/@([\w\-\/\.]*)$/, `@[${path}] `);
+  const selectMention = (item: {name: string, type: string, detail: string, id: string}) => {
+      let replacement = '';
+      if (item.type === 'file') {
+          replacement = `@[${item.detail}] `;
+      } else {
+          // Store symbol reference as @[File:SymbolName]
+          replacement = `@[${item.detail}:${item.name}] `;
+      }
+      
+      const newInput = input.replace(/@([\w\-\/\.]*)$/, replacement);
       setInput(newInput);
-      setShowFiles(false);
+      setShowMentions(false);
       inputRef.current?.focus();
   };
 
@@ -236,7 +252,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           };
           reader.readAsDataURL(file);
       }
-      // Reset input so same file can be selected again if needed
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -247,7 +262,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       }
   };
 
-  // --- CLOSED STATE (Floating Button) ---
+  const getIconForType = (type: string) => {
+      switch(type) {
+          case 'file': return <FileText size={14} className="text-blue-400"/>;
+          case 'function': return <Box size={14} className="text-purple-400"/>;
+          case 'class': return <Container size={14} className="text-yellow-400"/>;
+          case 'component': return <Layers size={14} className="text-green-400"/>;
+          case 'variable': return <Code size={14} className="text-gray-400"/>;
+          default: return <File size={14} className="text-gray-500"/>;
+      }
+  };
+
   if (!isOpen) {
     return (
       <div 
@@ -271,7 +296,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     );
   }
 
-  // --- OPEN STATE ---
   return (
     <div 
         ref={widgetRef}
@@ -310,7 +334,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-1">
-                    {/* Visual Grip Hint */}
                     <div className="mr-2 text-gray-600 hidden group-hover:block animate-in fade-in">
                         <Move size={14}/>
                     </div>
@@ -334,7 +357,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     <button 
                         onClick={handleClearHistory}
                         className="text-gray-400 hover:text-red-400 transition-colors p-1.5 hover:bg-gray-800 rounded"
-                        title="Clear Chat History (Frees Memory)"
+                        title="Clear Chat History"
                     >
                         <Trash2 size={16}/>
                     </button>
@@ -351,7 +374,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                         <MessageSquare size={32} />
                         <p>Start a conversation or run a command.</p>
                         <div className="flex gap-2 mt-2">
-                             <button onClick={() => setInput('/pipeline ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-orange-500 transition-colors">/pipeline</button>
+                             <button onClick={() => setInput('/campaign Launch Video ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-red-500 transition-colors">/campaign</button>
                              <button onClick={() => setInput('/search react hooks ')} className="px-2 py-1 bg-gray-800 rounded text-xs border border-gray-700 hover:border-primary-500 transition-colors">/search react hooks</button>
                         </div>
                     </div>
@@ -452,26 +475,29 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     </div>
                 )}
 
-                {/* File Mention Menu */}
-                {showFiles && filteredFiles.length > 0 && (
+                {/* Mention Menu */}
+                {showMentions && filteredMentions.length > 0 && (
                     <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 zoom-in-95 z-50 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600" ref={menuRef}>
                         <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2 sticky top-0 backdrop-blur-md z-10">
-                            <File size={10} /> Mention File
+                            <FileText size={10} /> Context References
                         </div>
                         <div>
-                            {filteredFiles.map((file, idx) => {
+                            {filteredMentions.map((item, idx) => {
                                 const isActive = idx === activeIndex;
                                 return (
                                     <div 
-                                        key={file.path}
-                                        onClick={() => selectFile(file.path)}
+                                        key={item.id}
+                                        onClick={() => selectMention(item)}
                                         className={`px-4 py-2 flex items-center justify-between cursor-pointer text-sm transition-colors ${isActive ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <FileText size={14} className={isActive ? 'text-white' : 'text-blue-400'}/>
-                                            <span className="truncate">{file.name}</span>
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            {getIconForType(item.type)}
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="truncate font-medium">{item.name}</span>
+                                                <span className={`text-[10px] ${isActive ? 'text-primary-200' : 'text-gray-500'}`}>{item.detail}</span>
+                                            </div>
                                         </div>
-                                        <span className={`text-[10px] ${isActive ? 'text-primary-200' : 'text-gray-600'}`}>{file.path}</span>
+                                        <span className={`text-[9px] uppercase tracking-wider ${isActive ? 'text-white/70' : 'text-gray-600'}`}>{item.type}</span>
                                     </div>
                                 );
                             })}
@@ -503,7 +529,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                             ref={inputRef}
                             type="text" 
                             className="flex-1 bg-transparent border-none py-3 px-2 text-white text-sm focus:outline-none placeholder-gray-600" 
-                            placeholder={isAgentWorking ? "Add instructions to queue..." : "Type / for commands, @ for files..."}
+                            placeholder={isAgentWorking ? "Add instructions to queue..." : "Type / for commands, @ for symbols..."}
                             value={input} 
                             onChange={e => setInput(e.target.value)} 
                             onKeyDown={handleKeyDown}

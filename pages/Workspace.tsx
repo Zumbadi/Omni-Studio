@@ -314,6 +314,51 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       onLog: (msg) => setTerminalLogs(prev => [...prev, msg]) 
   });
 
+  const { handleCommand: baseHandleCommand, handleAiFix } = useTerminal({
+      files, setFiles, activeFileId, projectType: project?.type || ProjectType.REACT_WEB, addFile, addPackage, 
+      onLog: (msg) => setTerminalLogs(prev => [...prev, msg]),
+      onRequestFix: (errorMsg) => {
+          const activeFileNode = findFileById(files, activeFileId);
+          if (setActiveAgentTask) {
+              setActiveAgentTask({
+                  id: `fix-${Date.now()}`,
+                  type: 'custom',
+                  name: `Fix Error: ${errorMsg.substring(0, 50)}...`,
+                  status: 'running',
+                  totalFiles: 1,
+                  processedFiles: 0,
+                  logs: [`Initializing fix for: ${errorMsg}`],
+                  fileList: activeFileNode ? [{ name: activeFileNode.name, status: 'pending' }] : []
+              });
+              addToast('info', 'Agent started debugging...');
+          }
+      }
+  });
+
+  const handleCommand = async (input: string) => {
+      if (input.startsWith('git commit')) {
+          const match = input.match(/-m\s+["'](.+)["']/);
+          const message = match ? match[1] : 'Update files';
+          setCommits(prev => [{ id: Date.now().toString(), message, author: 'You', date: 'Now', hash: Math.random().toString(36).substr(2, 7) }, ...prev]);
+          setTerminalLogs(prev => [...prev, `> ${input}`, `[${currentBranch}] ${message}`]);
+          addToast('success', 'Changes committed.');
+          if(project) logActivity('commit', `Commit: ${message}`, `You committed changes to ${currentBranch}`, project.id);
+      } else if (input.startsWith('git checkout -b')) {
+          const newBranch = input.split(' ')[3];
+          if (newBranch) handleCreateBranch(newBranch);
+      } else if (input.startsWith('git checkout')) {
+          const branch = input.split(' ')[2];
+          if (branch && branches.includes(branch)) handleSwitchBranch(branch);
+      } else if (input.startsWith('git merge')) {
+          handleMergeBranch();
+      } else if (input === 'npm start') {
+          setActiveTab('preview');
+          baseHandleCommand(input);
+      } else {
+          await baseHandleCommand(input);
+      }
+  };
+
   const {
       activeAgentTask,
       handleStartAgentTask,
@@ -376,6 +421,65 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
        addToast('info', 'Agent task started');
   }, [setActiveAgentTask, setActiveAgent, addToast]);
 
+  const handleExport = async () => {
+      const zip = new JSZip();
+      const addToZip = (nodes: any[], path = '') => { nodes.forEach(n => { if (n.type === 'file') zip.file(path + n.name, n.content); if (n.children) addToZip(n.children, path + n.name + '/'); }); };
+      addToZip(files);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `${project?.name || 'project'}.zip`; a.click();
+      addToast('success', 'Exported successfully');
+  };
+
+  const handleRunCommand = (cmd: string) => {
+      if (cmd === 'toggle_sidebar') toggleLayout('sidebar');
+      if (cmd === 'toggle_terminal') toggleLayout('bottom');
+      if (cmd === 'export_project') handleExport();
+      if (cmd === 'git_commit') { handleCommand('git commit -m "Update"'); }
+      if (cmd === 'open_settings') setActiveTab('settings');
+      if (cmd === 'format_document' && activeFile && activeFile.content) {
+          const formatted = activeFile.content.split('\n').map(l => l.trim() ? l : '').join('\n'); 
+          updateFileContent(activeFile.id, formatted);
+          addToast('success', 'Document Formatted');
+      }
+      if (cmd === 'toggle_theme') {
+          const html = document.documentElement;
+          const currentTheme = html.classList.contains('dark') ? 'dark' : 'light';
+          if (currentTheme === 'dark') {
+              html.classList.remove('dark');
+              localStorage.setItem('omni_theme', 'light');
+              addToast('info', 'Switched to Light Mode');
+          } else {
+              html.classList.add('dark');
+              localStorage.setItem('omni_theme', 'dark');
+              addToast('info', 'Switched to Dark Mode');
+          }
+      }
+      if (cmd === 'create_file') {
+          setNewItemModal({ isOpen: true, type: 'file' });
+          setShowCommandPalette(false);
+      }
+      if (cmd === 'create_folder') {
+          setNewItemModal({ isOpen: true, type: 'folder' });
+          setShowCommandPalette(false);
+      }
+      // New Voice/UI Commands
+      if (cmd === 'deploy_app') setActiveTab('deploy');
+      if (cmd === 'run_tests') runTests();
+      if (cmd === 'split_editor') setIsSplitView(prev => !prev);
+      if (cmd === 'open_preview') setActiveTab('preview');
+      if (cmd === 'zoom_in') (document.body.style as any).zoom = '110%';
+      if (cmd === 'zoom_out') (document.body.style as any).zoom = '100%';
+      if (cmd === 'close_terminal') setLayout(p => ({...p, showBottom: false}));
+      if (cmd === 'open_terminal') setLayout(p => ({...p, showBottom: true}));
+  };
+
+  const handleOpenDoc = (id: string) => {
+      setActiveActivity('KNOWLEDGE');
+      if (!layout.showSidebar) toggleLayout('sidebar');
+      addToast('info', 'Opened Knowledge Base');
+  };
+
   const {
       chatInput, setChatInput, chatHistory, setChatHistory, isGenerating, 
       isChatOpen, setIsChatOpen, triggerGeneration, handleChatSubmit, 
@@ -388,52 +492,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       onStartAgentTask: handleAgentSlashCommand,
       runTests, // Pass runTests here
       mcpContext, // Pass Knowledge Base Context
+      onRunUICommand: handleRunCommand
   });
-
-  const { handleCommand: baseHandleCommand, handleAiFix } = useTerminal({
-      files, setFiles, activeFileId, projectType: project?.type || ProjectType.REACT_WEB, addFile, addPackage, 
-      onLog: (msg) => setTerminalLogs(prev => [...prev, msg]),
-      onRequestFix: (errorMsg) => {
-          const activeFileNode = findFileById(files, activeFileId);
-          if (setActiveAgentTask) {
-              setActiveAgentTask({
-                  id: `fix-${Date.now()}`,
-                  type: 'custom',
-                  name: `Fix Error: ${errorMsg.substring(0, 50)}...`,
-                  status: 'running',
-                  totalFiles: 1,
-                  processedFiles: 0,
-                  logs: [`Initializing fix for: ${errorMsg}`],
-                  fileList: activeFileNode ? [{ name: activeFileNode.name, status: 'pending' }] : []
-              });
-              addToast('info', 'Agent started debugging...');
-          }
-      }
-  });
-
-  const handleCommand = async (input: string) => {
-      if (input.startsWith('git commit')) {
-          const match = input.match(/-m\s+["'](.+)["']/);
-          const message = match ? match[1] : 'Update files';
-          setCommits(prev => [{ id: Date.now().toString(), message, author: 'You', date: 'Now', hash: Math.random().toString(36).substr(2, 7) }, ...prev]);
-          setTerminalLogs(prev => [...prev, `> ${input}`, `[${currentBranch}] ${message}`]);
-          addToast('success', 'Changes committed.');
-          if(project) logActivity('commit', `Commit: ${message}`, `You committed changes to ${currentBranch}`, project.id);
-      } else if (input.startsWith('git checkout -b')) {
-          const newBranch = input.split(' ')[3];
-          if (newBranch) handleCreateBranch(newBranch);
-      } else if (input.startsWith('git checkout')) {
-          const branch = input.split(' ')[2];
-          if (branch && branches.includes(branch)) handleSwitchBranch(branch);
-      } else if (input.startsWith('git merge')) {
-          handleMergeBranch();
-      } else if (input === 'npm start') {
-          setActiveTab('preview');
-          baseHandleCommand(input);
-      } else {
-          await baseHandleCommand(input);
-      }
-  };
 
   const envVars = useMemo(() => {
       if(!project) return {};
@@ -604,52 +664,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
     }
   }, [activeFileId, addFile, updateFileContent]);
 
-  const handleExport = async () => {
-      const zip = new JSZip();
-      const addToZip = (nodes: any[], path = '') => { nodes.forEach(n => { if (n.type === 'file') zip.file(path + n.name, n.content); if (n.children) addToZip(n.children, path + n.name + '/'); }); };
-      addToZip(files);
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `${project?.name || 'project'}.zip`; a.click();
-      addToast('success', 'Exported successfully');
-  };
-
   const handleRenameSubmit = (newName: string) => { if (renameModal.fileId) { renameFile(renameModal.fileId, newName); addToast('success', 'Renamed'); } };
   const handleCreateItem = (name: string) => { if (newItemModal.type === 'file') addFile(name, '// New file'); else addDirectory(name); addToast('success', `Created ${name}`); };
-
-  const handleRunCommand = (cmd: string) => {
-      if (cmd === 'toggle_sidebar') toggleLayout('sidebar');
-      if (cmd === 'toggle_terminal') toggleLayout('bottom');
-      if (cmd === 'export_project') handleExport();
-      if (cmd === 'git_commit') { handleCommand('git commit -m "Update"'); }
-      if (cmd === 'open_settings') setActiveTab('settings');
-      if (cmd === 'format_document' && activeFile && activeFile.content) {
-          const formatted = activeFile.content.split('\n').map(l => l.trim() ? l : '').join('\n'); 
-          updateFileContent(activeFile.id, formatted);
-          addToast('success', 'Document Formatted');
-      }
-      if (cmd === 'toggle_theme') {
-          const html = document.documentElement;
-          const currentTheme = html.classList.contains('dark') ? 'dark' : 'light';
-          if (currentTheme === 'dark') {
-              html.classList.remove('dark');
-              localStorage.setItem('omni_theme', 'light');
-              addToast('info', 'Switched to Light Mode');
-          } else {
-              html.classList.add('dark');
-              localStorage.setItem('omni_theme', 'dark');
-              addToast('info', 'Switched to Dark Mode');
-          }
-      }
-      if (cmd === 'create_file') {
-          setNewItemModal({ isOpen: true, type: 'file' });
-          setShowCommandPalette(false);
-      }
-      if (cmd === 'create_folder') {
-          setNewItemModal({ isOpen: true, type: 'folder' });
-          setShowCommandPalette(false);
-      }
-  };
 
   const handleDeleteWrapper = (id: string) => { if (onDeleteProject) onDeleteProject({ stopPropagation: () => {} } as React.MouseEvent, id); };
 
@@ -831,8 +847,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
         isOpen={showCommandPalette} 
         onClose={() => setShowCommandPalette(false)} 
         files={files} 
+        knowledgeDocs={knowledgeDocs}
         onOpenFile={onFileClickWrapper} 
-        onRunCommand={handleRunCommand} 
+        onRunCommand={handleRunCommand}
+        onOpenDoc={handleOpenDoc}
       />
       {showVoiceCommander && <VoiceCommander onClose={() => setShowVoiceCommander(false)} onProcess={submitQuery} />}
       

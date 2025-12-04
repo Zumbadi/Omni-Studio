@@ -248,6 +248,43 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
     };
   `;
 
+  const networkInjection = `
+    const env = ${JSON.stringify(envVars)};
+    window.process = { env: env, version: 'v18.0.0' };
+    
+    // Network Simulation
+    if (env.NETWORK_CONDITION && env.NETWORK_CONDITION !== 'online') {
+        const delay = env.NETWORK_CONDITION === 'slow-3g' ? 2000 : 0;
+        const isOffline = env.NETWORK_CONDITION === 'offline';
+        
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            if (delay > 0) await new Promise(r => setTimeout(r, delay));
+            if (isOffline) throw new TypeError("Failed to fetch");
+            return originalFetch(...args);
+        };
+        
+        const originalXHR = window.XMLHttpRequest;
+        // Basic XHR override (simplified)
+        window.XMLHttpRequest = class extends originalXHR {
+            send(...args) {
+                if (isOffline) {
+                    setTimeout(() => {
+                        this.dispatchEvent(new Event('error'));
+                        if (this.onerror) this.onerror(new Event('error'));
+                    }, 100);
+                    return;
+                }
+                if (delay > 0) {
+                    setTimeout(() => super.send(...args), delay);
+                } else {
+                    super.send(...args);
+                }
+            }
+        };
+    }
+  `;
+
   return `
     <!DOCTYPE html>
     <html>
@@ -270,7 +307,7 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
         <div id="root"></div>
         <script>
           (function() {
-            window.process = { env: ${JSON.stringify(envVars)}, version: 'v18.0.0' };
+            ${networkInjection}
             const originalLog = console.log;
             const originalWarn = console.warn;
             const originalError = console.error;

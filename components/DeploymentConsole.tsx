@@ -6,6 +6,7 @@ import { Project, ProjectType } from '../types';
 import { MOCK_DEPLOYMENTS } from '../constants';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { logActivity } from '../utils/activityLogger';
+import { Confetti } from './Confetti';
 
 interface DeploymentConsoleProps {
   project: Project;
@@ -22,6 +23,7 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
   const [metricsData, setMetricsData] = useState<{time: string, reqs: number, latency: number}[]>([]);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
   const [containerLogs, setContainerLogs] = useState<Record<string, string[]>>({});
+  const [showConfetti, setShowConfetti] = useState(false);
   
   // Docker Service Stats
   const [services, setServices] = useState([
@@ -36,7 +38,15 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
   useEffect(() => {
       setDeploymentState('idle');
       setSelectedContainer(null);
+      setShowConfetti(false);
   }, [currentBranch]);
+
+  useEffect(() => {
+      if (showConfetti) {
+          const timer = setTimeout(() => setShowConfetti(false), 5000);
+          return () => clearTimeout(timer);
+      }
+  }, [showConfetti]);
 
   // Metric Simulation
   useEffect(() => {
@@ -124,6 +134,7 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
             setDeployUrl(url);
             logActivity('deploy', 'Deployment Success', `Deployed ${project.name} to production`, project.id);
             if (onDeploymentComplete) onDeploymentComplete(url);
+            setShowConfetti(true);
         }
       }, currentDelay);
     });
@@ -228,7 +239,8 @@ export const DeploymentConsole: React.FC<DeploymentConsoleProps> = ({ project, o
 
   if (deploymentState === 'deployed') {
       return (
-          <div className="flex-1 flex flex-col p-6 space-y-6 overflow-y-auto animate-in fade-in duration-300">
+          <div className="flex-1 flex flex-col p-6 space-y-6 overflow-y-auto animate-in fade-in duration-300 relative">
+              {showConfetti && <Confetti />}
               <div className="bg-green-900/20 border border-green-800 rounded-xl p-4 flex items-center justify-between">
                   <div>
                       <div className="text-xs font-bold text-green-500 uppercase mb-1 flex items-center gap-2"><Check size={12}/> Production Active</div>

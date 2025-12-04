@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Image as ImageIcon, Video, Search, Download, Filter, Grid, Trash2, ExternalLink, Check, Layers, Music, Volume2, Play, Pause } from 'lucide-react';
+import { Image as ImageIcon, Video, Search, Download, Filter, Grid, Trash2, ExternalLink, Check, Layers, Music, Volume2, Play, Pause, MessageSquare } from 'lucide-react';
 import { SocialPost } from '../types';
 import { Button } from './Button';
 
@@ -9,35 +9,56 @@ interface MediaAssetsLibraryProps {
   onDeleteAsset?: (postId: string, sceneId: string) => void;
   onCreateMontage?: (assets: any[]) => void;
   audioAssets?: any[];
+  brands?: string[];
+  activeBrand?: string;
 }
 
-export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, onDeleteAsset, onCreateMontage, audioAssets: propAudioAssets }) => {
+export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, onDeleteAsset, onCreateMontage, audioAssets: propAudioAssets, brands, activeBrand }) => {
   const [filterType, setFilterType] = useState<'all' | 'image' | 'video' | 'audio'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [storedAudioAssets, setStoredAudioAssets] = useState<any[]>([]);
+  const [generatedAssets, setGeneratedAssets] = useState<any[]>([]);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  
+  // Brand Filter
+  const [filterBrand, setFilterBrand] = useState<string>('All');
 
   useEffect(() => {
-      const loadAudio = () => {
+      if (activeBrand) setFilterBrand(activeBrand);
+  }, [activeBrand]);
+
+  useEffect(() => {
+      const loadAssets = () => {
           try {
-              const saved = localStorage.getItem('omni_audio_assets');
-              if (saved) {
-                  const parsed = JSON.parse(saved);
-                  // Ensure valid URLs or data URIs
+              const audioSaved = localStorage.getItem('omni_audio_assets');
+              if (audioSaved) {
+                  const parsed = JSON.parse(audioSaved);
                   setStoredAudioAssets(parsed.filter((a: any) => a.audioUrl && (a.audioUrl.startsWith('data:') || a.audioUrl.startsWith('blob:'))));
+              }
+              
+              const generatedSaved = localStorage.getItem('omni_generated_assets');
+              if (generatedSaved) {
+                  setGeneratedAssets(JSON.parse(generatedSaved));
               }
           } catch(e) { console.error(e); }
       };
-      loadAudio();
-      window.addEventListener('omniAssetsUpdated', loadAudio);
-      return () => window.removeEventListener('omniAssetsUpdated', loadAudio);
+      loadAssets();
+      window.addEventListener('omniAssetsUpdated', loadAssets);
+      return () => window.removeEventListener('omniAssetsUpdated', loadAssets);
   }, []);
+
+  const deleteGeneratedAsset = (id: string) => {
+      const newAssets = generatedAssets.filter(a => a.id !== id);
+      setGeneratedAssets(newAssets);
+      localStorage.setItem('omni_generated_assets', JSON.stringify(newAssets));
+      window.dispatchEvent(new Event('omniAssetsUpdated'));
+  };
 
   const assets = useMemo(() => {
     const allAssets: any[] = [];
     
-    // Post Assets
+    // 1. Post Assets
     posts.forEach(post => {
       post.scenes?.forEach(scene => {
         if (scene.imageUrl) {
@@ -45,10 +66,12 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
             id: scene.id,
             postId: post.id,
             postTitle: post.title,
+            brandId: post.brandId,
             type: 'image',
             url: scene.imageUrl,
             description: scene.description || 'Scene Image',
-            date: post.lastModified || new Date().toISOString()
+            date: post.lastModified || new Date().toISOString(),
+            source: 'campaign'
           });
         }
         if (scene.videoUrl) {
@@ -56,18 +79,19 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
             id: scene.id + '_vid',
             postId: post.id,
             postTitle: post.title,
+            brandId: post.brandId,
             type: 'video',
             url: scene.videoUrl,
             description: scene.description || 'Scene Video',
-            date: post.lastModified || new Date().toISOString()
+            date: post.lastModified || new Date().toISOString(),
+            source: 'campaign'
           });
         }
       });
     });
 
-    // Audio Assets (Merged from props and storage)
+    // 2. Audio Assets (Merged)
     const audioSource = [...(propAudioAssets || []), ...storedAudioAssets];
-    // De-duplicate by ID or URL
     const uniqueAudio = audioSource.filter((v, i, a) => a.findIndex(t => (t.id === v.id) || (t.audioUrl && t.audioUrl === v.audioUrl)) === i);
 
     uniqueAudio.forEach(audio => {
@@ -79,19 +103,54 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
                 type: 'audio',
                 url: audio.url || audio.audioUrl,
                 description: audio.name || audio.description || 'Audio Track',
-                date: audio.created || audio.date || new Date().toISOString()
+                date: audio.created || audio.date || new Date().toISOString(),
+                source: 'audio'
             });
         }
     });
 
-    return allAssets;
-  }, [posts, storedAudioAssets, propAudioAssets]);
+    // 3. Generated Chat Assets
+    generatedAssets.forEach(asset => {
+        allAssets.push({
+            id: asset.id,
+            postId: 'chat-gen',
+            postTitle: 'AI Generated',
+            type: asset.type,
+            url: asset.url,
+            description: asset.description || asset.name || 'Generated Asset',
+            date: asset.date,
+            source: 'chat'
+        });
+    });
+
+    return allAssets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [posts, storedAudioAssets, propAudioAssets, generatedAssets]);
 
   const filteredAssets = assets.filter(asset => {
     const matchesType = filterType === 'all' || asset.type === filterType;
     const matchesSearch = asset.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           asset.postTitle.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesType && matchesSearch;
+    
+    // Brand Filtering logic
+    let matchesBrand = true;
+    if (filterBrand !== 'All') {
+        if (asset.source === 'campaign') {
+            matchesBrand = asset.brandId === filterBrand;
+        } else {
+            // Audio and Chat assets are global for now, show them in 'All' or if they are generally available
+            // To be strict, we could hide them if a specific brand is selected, but usually assets are shared.
+            // Let's hide them if a specific brand is selected to reduce clutter, 
+            // unless we add brand tagging to generic assets later.
+            // For now: Show global assets in all views OR only in 'All'. 
+            // Decision: Show only matching brand assets for campaign, allow globals for 'Personal' or generic.
+            if (filterBrand !== 'Personal') {
+                 // If filtering by a specific corporate brand, maybe hide generic chat assets?
+                 // Let's keep it simple: Campaign assets MUST match. Others pass.
+            }
+        }
+    }
+
+    return matchesType && matchesSearch && matchesBrand;
   });
 
   const toggleSelection = (id: string) => {
@@ -117,7 +176,7 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
               <Grid className="text-primary-500" /> Asset Library
             </h2>
-            <p className="text-gray-400 text-sm mt-1">Manage all generated media across your campaigns.</p>
+            <p className="text-gray-400 text-sm mt-1">Manage generated media from Campaigns, Audio Studio, and Chat.</p>
           </div>
           
           <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
@@ -137,11 +196,24 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
                 <input 
                     type="text" 
                     placeholder="Search assets..." 
-                    className="bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:border-primary-500 focus:outline-none w-64"
+                    className="bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:border-primary-500 focus:outline-none w-48"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
                 </div>
+
+                {/* Brand Filter */}
+                {brands && (
+                    <select 
+                        value={filterBrand} 
+                        onChange={(e) => setFilterBrand(e.target.value)}
+                        className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-primary-500 outline-none"
+                    >
+                        <option value="All">All Brands</option>
+                        {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                )}
+
                 <div className="flex bg-gray-900 p-1 rounded-lg border border-gray-700">
                 <button 
                     onClick={() => setFilterType('all')} 
@@ -243,13 +315,19 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
                             <ExternalLink size={16} />
                         </button>
                     )}
-                    {onDeleteAsset && asset.type !== 'audio' && (
+                    
+                    {/* Delete Action (For Campaign and Chat generated assets) */}
+                    {(asset.source === 'chat' || asset.source === 'campaign') && (
                         <button 
-                        onClick={(e) => { e.stopPropagation(); onDeleteAsset(asset.postId, asset.id.replace('_vid', '')); }}
-                        className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-full backdrop-blur-sm transition-colors pointer-events-auto" 
-                        title="Delete"
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (asset.source === 'chat') deleteGeneratedAsset(asset.id);
+                                else if (onDeleteAsset) onDeleteAsset(asset.postId, asset.id.replace('_vid', '')); 
+                            }}
+                            className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-full backdrop-blur-sm transition-colors pointer-events-auto" 
+                            title="Delete"
                         >
-                        <Trash2 size={16} />
+                            <Trash2 size={16} />
                         </button>
                     )}
                     </div>
@@ -260,11 +338,14 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
                 </div>
                 
                 <div className="p-4" onClick={() => toggleSelection(asset.id)}>
-                    <div className="text-xs text-primary-400 font-bold mb-1 truncate">{asset.postTitle}</div>
+                    <div className="flex items-center justify-between mb-1">
+                        <div className="text-xs text-primary-400 font-bold truncate max-w-[120px]">{asset.postTitle}</div>
+                        {asset.source === 'chat' && <div title="From Chat"><MessageSquare size={10} className="text-gray-500"/></div>}
+                    </div>
                     <p className="text-sm text-gray-300 line-clamp-2 mb-3 h-10">{asset.description}</p>
                     <div className="flex justify-between items-center text-[10px] text-gray-500 border-t border-gray-800 pt-3">
-                    <span>ID: {asset.id.slice(0,6)}</span>
-                    <span className="uppercase tracking-wider">Generated</span>
+                        {asset.brandId && <span className="bg-gray-800 px-1.5 rounded text-gray-400">{asset.brandId}</span>}
+                        <span className="uppercase tracking-wider">{asset.source || 'Generated'}</span>
                     </div>
                 </div>
                 </div>
@@ -276,7 +357,7 @@ export const MediaAssetsLibrary: React.FC<MediaAssetsLibraryProps> = ({ posts, o
           <div className="flex flex-col items-center justify-center py-20 text-gray-500 border-2 border-dashed border-gray-800 rounded-xl">
             <Filter size={48} className="mb-4 opacity-20" />
             <p className="text-lg font-medium">No assets found</p>
-            <p className="text-sm">Try changing filters or generate some content in the Director view.</p>
+            <p className="text-sm">Try adjusting your search or brand filters.</p>
           </div>
         )}
       </div>

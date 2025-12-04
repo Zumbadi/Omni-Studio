@@ -4,7 +4,7 @@ import { X, FileText, LayoutTemplate, Play, Pause, Trash2, Menu, Music, FolderOp
 import { Button } from './Button';
 import { MOCK_VOICES } from '../constants';
 import { Voice, AudioTrack } from '../types';
-import { generateSpeech, transcribeAudio, analyzeMediaStyle, generateSong } from '../services/geminiService';
+import { generateSpeech, transcribeAudio, analyzeMediaStyle, generateSong, generatePodcastScript } from '../services/geminiService';
 import { AudioTimeline } from './AudioTimeline';
 import { AudioSidebar } from './AudioSidebar';
 import type { AudioTab } from './AudioSidebar';
@@ -76,6 +76,11 @@ export const AudioStudio: React.FC = () => {
   const [voiceStyle, setVoiceStyle] = useState('Singing');
   const [songStructure, setSongStructure] = useState('Intro-Verse-Chorus-Outro');
   
+  // Podcast State
+  const [podcastTopic, setPodcastTopic] = useState('');
+  const [hostVoice, setHostVoice] = useState(voices[0].id);
+  const [guestVoice, setGuestVoice] = useState(voices[1]?.id || voices[0].id);
+
   const [transcription, setTranscription] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
@@ -285,6 +290,48 @@ export const AudioStudio: React.FC = () => {
       setIsGenerating(false);
   };
 
+  const handleGeneratePodcast = async () => {
+      if (!podcastTopic || !hostVoice || !guestVoice) return;
+      setIsGenerating(true);
+
+      const host = voices.find(v => v.id === hostVoice) || voices[0];
+      const guest = voices.find(v => v.id === guestVoice) || voices[1];
+
+      // 1. Generate Script
+      const script = await generatePodcastScript(podcastTopic, host.name, guest.name);
+      
+      let currentOffset = 0;
+      const newTracks: AudioTrack[] = [];
+
+      // 2. Generate Audio for each line
+      for (const line of script) {
+          const voice = line.speaker === host.name ? host : guest;
+          const audioUrl = await generateSpeech(line.text, voice);
+          const duration = Math.max(2, line.text.length / 15);
+
+          if (audioUrl) {
+              const track: AudioTrack = {
+                  id: `pod-${Date.now()}-${Math.random()}`,
+                  name: `${line.speaker}: ${line.text.substring(0, 15)}...`,
+                  type: 'voiceover',
+                  duration: duration,
+                  startOffset: currentOffset,
+                  audioUrl,
+                  volume: 1.0,
+                  muted: false
+              };
+              newTracks.push(track);
+              addAsset(track);
+              currentOffset += duration + 0.5; // Add slight pause between speakers
+          }
+      }
+
+      setTracks(prev => [...prev, ...newTracks]);
+      setIsGenerating(false);
+      setActiveTab('mixer'); // Switch to mixer to see result
+      alert("Podcast Generated! Tracks added to timeline.");
+  };
+
   const handleCloneFromFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -453,6 +500,13 @@ export const AudioStudio: React.FC = () => {
               setVoiceStyle={setVoiceStyle}
               songStructure={songStructure}
               setSongStructure={setSongStructure}
+              podcastTopic={podcastTopic}
+              setPodcastTopic={setPodcastTopic}
+              hostVoice={hostVoice}
+              setHostVoice={setHostVoice}
+              guestVoice={guestVoice}
+              setGuestVoice={setGuestVoice}
+              onGeneratePodcast={handleGeneratePodcast}
            />
        </div>
 

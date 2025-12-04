@@ -1,15 +1,18 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { BrainCircuit, Globe, Cpu, Database, HardDrive, Loader2, Wand2, Share2, Layers, FileText, Zap, ZoomIn, ZoomOut, MousePointer2 } from 'lucide-react';
+import { BrainCircuit, Globe, Cpu, Database, HardDrive, Loader2, Wand2, Share2, Layers, FileText, Zap, ZoomIn, ZoomOut, MousePointer2, Save } from 'lucide-react';
 import { Button } from './Button';
 import { generateArchitecture, optimizeArchitecture } from '../services/geminiService';
 import { ArchNode, ArchLink, FileNode } from '../types';
 import { analyzeDependencies } from '../utils/projectAnalysis';
+import { useDebounce } from '../hooks/useDebounce';
+import { getAllFiles } from '../utils/fileHelpers';
 
 interface ArchitectureDesignerProps {
   projectDescription: string;
   files?: FileNode[];
   onOpenFile?: (id: string) => void;
+  onSaveFile?: (path: string, content: string) => void;
 }
 
 // Extended Node type for physics simulation
@@ -21,7 +24,7 @@ interface SimNode extends ArchNode {
   radius?: number;
 }
 
-export const ArchitectureDesigner: React.FC<ArchitectureDesignerProps> = ({ projectDescription, files = [], onOpenFile }) => {
+export const ArchitectureDesigner: React.FC<ArchitectureDesignerProps> = ({ projectDescription, files = [], onOpenFile, onSaveFile }) => {
   const [archNodes, setArchNodes] = useState<SimNode[]>([]);
   const [archLinks, setArchLinks] = useState<ArchLink[]>([]);
   const [isGeneratingArch, setIsGeneratingArch] = useState(false);
@@ -34,6 +37,40 @@ export const ArchitectureDesigner: React.FC<ArchitectureDesignerProps> = ({ proj
   const containerRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<number>(0);
   
+  const [lastSavedDesign, setLastSavedDesign] = useState('');
+  const initialized = useRef(false);
+
+  // Load design from file
+  useEffect(() => {
+      if (initialized.current) return;
+      const allFiles = getAllFiles(files);
+      const designFile = allFiles.find(f => f.path.includes('design/architecture.json'));
+      
+      if (designFile && designFile.node.content) {
+          try {
+              const parsed = JSON.parse(designFile.node.content);
+              setArchNodes(parsed.nodes || []);
+              setArchLinks(parsed.links || []);
+              setLastSavedDesign(designFile.node.content);
+              console.log("Loaded architecture from file");
+          } catch (e) { console.error("Failed to parse architecture file", e); }
+      }
+      initialized.current = true;
+  }, [files]);
+
+  // Auto-save design to file
+  const debouncedDesign = useDebounce({ nodes: archNodes, links: archLinks }, 2000);
+  
+  useEffect(() => {
+      if (onSaveFile && archNodes.length > 0 && mode === 'design') {
+          const content = JSON.stringify({ nodes: archNodes, links: archLinks }, null, 2);
+          if (content !== lastSavedDesign) {
+              onSaveFile('design/architecture.json', content);
+              setLastSavedDesign(content);
+          }
+      }
+  }, [debouncedDesign, onSaveFile, lastSavedDesign, mode]);
+
   // Physics Parameters
   const REPULSION = 800;
   const SPRING_LENGTH = 120;
@@ -277,6 +314,10 @@ export const ArchitectureDesigner: React.FC<ArchitectureDesignerProps> = ({ proj
                   )}
               </div>
               <div className="flex gap-2">
+                  <div className="text-[10px] text-gray-500 flex items-center gap-1 mr-2">
+                      <Save size={10}/>
+                      {JSON.stringify({nodes: archNodes, links: archLinks}) === lastSavedDesign ? 'Synced' : 'Unsaved'}
+                  </div>
                   <div className="flex items-center gap-1 bg-gray-800 rounded p-0.5 mr-2">
                       <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1 hover:bg-gray-700 rounded text-gray-400"><ZoomIn size={14}/></button>
                       <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-1 hover:bg-gray-700 rounded text-gray-400"><ZoomOut size={14}/></button>

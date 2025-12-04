@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity, X } from 'lucide-react';
+import { Smartphone, Globe, QrCode, RefreshCw, Network, Loader2, Play, Terminal, ChevronUp, ChevronDown, ExternalLink, Download, Shield, Layers, Zap, AlertTriangle, Activity, X, RotateCw, Monitor, Tablet, Wifi, WifiOff } from 'lucide-react';
 import { Button } from './Button';
 import { Project, ProjectType, FileNode, BuildSettings } from '../types';
 import { getAllFiles } from '../utils/fileHelpers';
@@ -46,8 +47,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const [previewMode, setPreviewMode] = useState<'web' | 'mobile'>((isNative || isIOS || isAndroid) ? 'mobile' : 'web');
   const [showQrCode, setShowQrCode] = useState(false);
   const [deviceFrame, setDeviceFrame] = useState<'iphone14' | 'pixel7' | 'ipad'>('iphone14');
+  const [isLandscape, setIsLandscape] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
   const [buildStep, setBuildStep] = useState('');
+  const [showDeviceMenu, setShowDeviceMenu] = useState(false);
   
   // Runtime Error State
   const [runtimeError, setRuntimeError] = useState<{ message: string, stack: string } | null>(null);
@@ -71,6 +74,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
   const [apiResponse, setApiResponse] = useState<string>('// Click Send to test endpoint');
   const [apiStatus, setApiStatus] = useState<number | null>(null);
   const [availableRoutes, setAvailableRoutes] = useState<string[]>(['/']);
+
+  // Network Simulation
+  const [networkCondition, setNetworkCondition] = useState<'online' | 'slow-3g' | 'offline'>('online');
+  const [showNetworkMenu, setShowNetworkMenu] = useState(false);
 
   // Calculate the correct preview source based on the *Entry File* not the active file
   const previewSrc = useMemo(() => {
@@ -142,14 +149,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
 
       if (!codeToRun) return '';
 
+      // Merge environment variables with network state for runtime injection
+      const runtimeEnv = {
+          ...envVars,
+          NETWORK_CONDITION: networkCondition
+      };
+
       return generatePreviewHtml(
           codeToRun, 
           isNative || isIOS || isAndroid, 
           files, 
           pathToRun, 
-          envVars
+          runtimeEnv
       );
-  }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid, envVars]);
+  }, [files, project, propPreviewSrc, isNative, isIOS, isAndroid, envVars, networkCondition]);
 
   useEffect(() => {
       if (Object.keys(envVars).length > 0) {
@@ -395,6 +408,18 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
       );
   }
 
+  // Device sizes
+  const getDeviceDimensions = () => {
+      if (deviceFrame === 'iphone14') return { w: 375, h: 812 };
+      if (deviceFrame === 'pixel7') return { w: 412, h: 915 };
+      if (deviceFrame === 'ipad') return { w: 768, h: 1024 };
+      return { w: 375, h: 812 };
+  };
+
+  const dims = getDeviceDimensions();
+  const width = isLandscape ? dims.h : dims.w;
+  const height = isLandscape ? dims.w : dims.h;
+
   return (
     <div className="flex-1 flex flex-col bg-gray-950 overflow-hidden relative group/preview">
         {showBuildModal && <BuildSettingsModal isOpen={showBuildModal} onClose={() => setShowBuildModal(false)} onExport={handleExportWithSettings} projectType={project.type} />}
@@ -408,14 +433,52 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                 >
                     <Globe size={16} />
                 </button>
-                <button 
-                    onClick={() => setPreviewMode('mobile')}
-                    className={`p-1.5 rounded-md transition-colors ${previewMode === 'mobile' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                    title="Mobile View"
-                >
-                    <Smartphone size={16} />
-                </button>
+                <div className="relative">
+                    <button 
+                        onClick={() => { setPreviewMode('mobile'); setShowDeviceMenu(!showDeviceMenu); }}
+                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 ${previewMode === 'mobile' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        title="Mobile View"
+                    >
+                        {deviceFrame === 'ipad' ? <Tablet size={16}/> : <Smartphone size={16} />}
+                        {previewMode === 'mobile' && <ChevronDown size={10}/>}
+                    </button>
+                    {showDeviceMenu && previewMode === 'mobile' && (
+                        <div className="absolute top-8 left-0 w-32 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 animate-in fade-in zoom-in-95">
+                            <button onClick={() => { setDeviceFrame('iphone14'); setShowDeviceMenu(false); }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-700 rounded-t-lg ${deviceFrame === 'iphone14' ? 'text-primary-400' : 'text-gray-300'}`}>iPhone 14</button>
+                            <button onClick={() => { setDeviceFrame('pixel7'); setShowDeviceMenu(false); }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-700 ${deviceFrame === 'pixel7' ? 'text-primary-400' : 'text-gray-300'}`}>Pixel 7</button>
+                            <button onClick={() => { setDeviceFrame('ipad'); setShowDeviceMenu(false); }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-700 rounded-b-lg ${deviceFrame === 'ipad' ? 'text-primary-400' : 'text-gray-300'}`}>iPad Air</button>
+                        </div>
+                    )}
+                </div>
                 
+                {previewMode === 'mobile' && (
+                    <button 
+                        onClick={() => setIsLandscape(!isLandscape)}
+                        className={`p-1.5 rounded-md transition-colors ${isLandscape ? 'bg-gray-800 text-primary-400' : 'text-gray-500 hover:text-gray-300'}`}
+                        title="Rotate Device"
+                    >
+                        <RotateCw size={14} />
+                    </button>
+                )}
+                
+                {/* Network Simulation */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setShowNetworkMenu(!showNetworkMenu)}
+                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 ${networkCondition !== 'online' ? 'bg-red-900/30 text-red-400' : 'text-gray-500 hover:text-gray-300'}`}
+                        title="Network Simulation"
+                    >
+                        {networkCondition === 'offline' ? <WifiOff size={14}/> : <Wifi size={14}/>}
+                    </button>
+                    {showNetworkMenu && (
+                        <div className="absolute top-8 left-0 w-32 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 animate-in fade-in zoom-in-95">
+                            <button onClick={() => { setNetworkCondition('online'); setShowNetworkMenu(false); }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-700 rounded-t-lg ${networkCondition === 'online' ? 'text-green-400' : 'text-gray-300'}`}>Online</button>
+                            <button onClick={() => { setNetworkCondition('slow-3g'); setShowNetworkMenu(false); }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-700 ${networkCondition === 'slow-3g' ? 'text-yellow-400' : 'text-gray-300'}`}>Slow 3G</button>
+                            <button onClick={() => { setNetworkCondition('offline'); setShowNetworkMenu(false); }} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-700 rounded-b-lg ${networkCondition === 'offline' ? 'text-red-400' : 'text-gray-300'}`}>Offline</button>
+                        </div>
+                    )}
+                </div>
+
                 <div className="h-4 w-px bg-gray-800 mx-2"></div>
                 
                 <button onClick={onRefresh} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-md transition-colors" title="Reload">
@@ -537,10 +600,17 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
             ) : (
                 <div className={`transition-all duration-500 ease-in-out relative ${previewMode === 'mobile' ? 'scale-[0.85] md:scale-100' : 'w-full h-full'}`}>
                     {previewMode === 'mobile' ? (
-                        <div className="mockup-phone border-gray-800">
+                        <div 
+                            className="mockup-phone border-gray-800 transition-all duration-300"
+                            style={{ 
+                                width: isLandscape ? height + 20 : width + 20, 
+                                height: isLandscape ? width + 20 : height + 20,
+                                borderRadius: deviceFrame === 'ipad' ? '20px' : '40px'
+                            }}
+                        >
                             <div className="camera"></div> 
                             <div className="display">
-                                <div className={`artboard artboard-demo phone-1 bg-white overflow-hidden relative ${deviceFrame === 'iphone14' ? 'w-[375px] h-[812px]' : 'w-[412px] h-[915px]'}`}>
+                                <div className="artboard bg-white overflow-hidden relative transition-all duration-300" style={{ width: `${width}px`, height: `${height}px` }}>
                                     <iframe 
                                         id="preview-iframe"
                                         title="Preview"
@@ -549,7 +619,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ project, previewSrc: p
                                         sandbox="allow-scripts allow-modals allow-forms allow-same-origin allow-popups"
                                     />
                                     {/* Notch Overlay for realism */}
-                                    <div className="absolute top-0 left-0 right-0 h-8 bg-black/90 z-20 pointer-events-none"></div>
+                                    {deviceFrame !== 'ipad' && !isLandscape && (
+                                        <div className="absolute top-0 left-0 right-0 h-8 bg-black/90 z-20 pointer-events-none"></div>
+                                    )}
                                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-32 h-1 bg-black/20 rounded-full z-20 pointer-events-none"></div>
                                 </div>
                             </div>

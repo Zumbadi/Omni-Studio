@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff, Sun, Moon, Layout, Palette } from 'lucide-react';
+import { Save, RotateCcw, Shield, Cpu, Type, Zap, Check, Key, Globe, Plus, Trash2, Server, RefreshCw, AlertCircle, AlertTriangle, Eye, EyeOff, Sun, Moon, Layout, Palette, UserCheck } from 'lucide-react';
 import { Button } from './Button';
 
 interface ApiProvider {
@@ -18,6 +18,14 @@ const THEME_COLORS = [
   { name: 'Emerald', values: { 400: '#34d399', 500: '#10b981', 600: '#059669', 900: '#064e3b' } },
   { name: 'Rose', values: { 400: '#fb7185', 500: '#f43f5e', 600: '#e11d48', 900: '#881337' } },
   { name: 'Amber', values: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 900: '#78350f' } },
+];
+
+const PERSONA_PRESETS = [
+    { name: 'Frontend Specialist', prompt: 'You are an expert Frontend Engineer specializing in React, Tailwind CSS, and modern UI/UX principles. Prioritize accessibility, responsiveness, and clean component architecture.' },
+    { name: 'Backend Architect', prompt: 'You are a Senior Backend Architect. Focus on scalable API design, database normalization, security best practices, and efficient Node.js/Python code.' },
+    { name: 'Security Auditor', prompt: 'You are a ruthless Security Auditor. Analyze code for vulnerabilities (XSS, SQLi), suggest robust validation, and enforce strict auth patterns.' },
+    { name: 'Creative Director', prompt: 'You are a Creative Technologist. Focus on stunning visuals, creative CSS animations, and engaging user interactions. Suggest bold design choices.' },
+    { name: 'Full-Stack Generalist', prompt: 'You are an elite Full-Stack Developer capable of handling the entire stack. Write pragmatic, maintainable code for both client and server.' }
 ];
 
 export const Settings: React.FC = () => {
@@ -385,6 +393,21 @@ export const Settings: React.FC = () => {
             <h2>System Instructions</h2>
           </div>
           
+          <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Developer Persona</label>
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-700">
+                  {PERSONA_PRESETS.map((p, i) => (
+                      <button 
+                        key={i}
+                        onClick={() => setSystemPrompt(p.prompt)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all ${systemPrompt === p.prompt ? 'bg-purple-900/30 border-purple-500 text-purple-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-750'}`}
+                      >
+                          <UserCheck size={12}/> {p.name}
+                      </button>
+                  ))}
+              </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Base Prompt</label>
             <textarea 
