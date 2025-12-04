@@ -1,16 +1,21 @@
+
 import React, { useState } from 'react';
-import { Database, Table, BrainCircuit, Search, Plus, Filter, RefreshCw, Key } from 'lucide-react';
+import { Database, Table, BrainCircuit, Search, Plus, Filter, RefreshCw, Key, Wand2, Download, Code, Sparkles, Loader2 } from 'lucide-react';
 import { FileNode, ProjectType } from '../types';
 import { Button } from './Button';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { generateDatabaseSchema, generateMigrationCode } from '../services/geminiService';
 
 interface DatabaseStudioProps {
   projectType: ProjectType;
   files: FileNode[];
+  onSaveFile?: (path: string, content: string) => void;
 }
 
-export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, files }) => {
+export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, files, onSaveFile }) => {
   const [dbView, setDbView] = useState<'schema' | 'data' | 'vectors'>('schema');
+  const [genPrompt, setGenPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
   
   // Mock Vector Data
   const vectorData = Array.from({length: 30}, () => ({
@@ -20,12 +25,46 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
       cluster: Math.floor(Math.random() * 3)
   }));
 
-  // Mock Schema derived from files (simulation)
-  const schema = [
-      { name: 'users', columns: ['id', 'email', 'password_hash', 'created_at'] },
-      { name: 'posts', columns: ['id', 'user_id', 'title', 'content', 'published'] },
-      { name: 'comments', columns: ['id', 'post_id', 'user_id', 'body'] }
-  ];
+  // Schema state
+  const [schema, setSchema] = useState<any[]>([
+      { name: 'users', columns: [{name:'id', type:'UUID'}, {name:'email', type:'VARCHAR'}, {name:'password_hash', type:'VARCHAR'}, {name:'created_at', type:'TIMESTAMP'}] },
+      { name: 'posts', columns: [{name:'id', type:'UUID'}, {name:'user_id', type:'UUID', isFk:true}, {name:'title', type:'VARCHAR'}, {name:'content', type:'TEXT'}, {name:'published', type:'BOOLEAN'}] },
+      { name: 'comments', columns: [{name:'id', type:'UUID'}, {name:'post_id', type:'UUID', isFk:true}, {name:'user_id', type:'UUID', isFk:true}, {name:'body', type:'TEXT'}] }
+  ]);
+
+  const handleGenerateSchema = async () => {
+      if (!genPrompt) return;
+      setIsGenerating(true);
+      const newSchema = await generateDatabaseSchema(genPrompt);
+      if (newSchema && newSchema.length > 0) {
+          setSchema(newSchema);
+      } else {
+          alert("Failed to generate schema. Try a more detailed prompt.");
+      }
+      setIsGenerating(false);
+  };
+
+  const handleExportMigrations = async (type: 'sql' | 'prisma') => {
+      setIsGenerating(true);
+      const code = await generateMigrationCode(schema, type);
+      
+      const filename = type === 'prisma' ? 'schema.prisma' : 'migration.sql';
+      const path = `database/${filename}`;
+      
+      if (onSaveFile) {
+          onSaveFile(path, code);
+          alert(`Migration saved to ${path}`);
+      } else {
+          // Fallback download
+          const blob = new Blob([code], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+      }
+      setIsGenerating(false);
+  };
 
   return (
     <div className="flex flex-col h-full bg-gray-950">
@@ -46,28 +85,62 @@ export const DatabaseStudio: React.FC<DatabaseStudioProps> = ({ projectType, fil
 
         <div className="flex-1 overflow-y-auto">
             {dbView === 'schema' && (
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {schema.map((table) => (
-                        <div key={table.name} className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-lg">
-                            <div className="bg-gray-900/50 p-3 border-b border-gray-700 flex justify-between items-center">
-                                <span className="font-bold text-white text-sm flex items-center gap-2"><Table size={14} className="text-gray-400"/> {table.name}</span>
-                                <span className="text-xs text-gray-500">{table.columns.length} cols</span>
-                            </div>
-                            <div className="p-3 space-y-2">
-                                {table.columns.map(col => (
-                                    <div key={col} className="flex items-center justify-between text-xs text-gray-300">
-                                        <span className="flex items-center gap-2">
-                                            {col === 'id' ? <Key size={10} className="text-yellow-500"/> : <span className="w-2.5 h-2.5 rounded-full bg-gray-600"></span>}
-                                            {col}
-                                        </span>
-                                        <span className="text-gray-600 font-mono">
-                                            {col.includes('id') ? 'UUID' : col.includes('at') ? 'TIMESTAMP' : 'VARCHAR'}
-                                        </span>
-                                    </div>
-                                ))}
+                <div className="p-6">
+                    {/* Magic Generator */}
+                    <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-xl p-4 mb-8 flex items-center gap-4">
+                        <div className="p-2 bg-purple-500/20 rounded-lg text-purple-300"><Wand2 size={20}/></div>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-bold text-white mb-1">AI Schema Architect</h3>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    className="flex-1 bg-black/40 border border-purple-500/30 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 placeholder-purple-300/50"
+                                    placeholder="Describe your data (e.g. 'Social network with users, posts, and followers')..."
+                                    value={genPrompt}
+                                    onChange={(e) => setGenPrompt(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleGenerateSchema()}
+                                />
+                                <Button size="sm" onClick={handleGenerateSchema} disabled={isGenerating || !genPrompt}>
+                                    {isGenerating ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>} Generate
+                                </Button>
                             </div>
                         </div>
-                    ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {schema.map((table) => (
+                            <div key={table.name} className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-lg hover:border-purple-500/50 transition-colors">
+                                <div className="bg-gray-900/50 p-3 border-b border-gray-700 flex justify-between items-center">
+                                    <span className="font-bold text-white text-sm flex items-center gap-2"><Table size={14} className="text-gray-400"/> {table.name}</span>
+                                    <span className="text-xs text-gray-500">{table.columns.length} cols</span>
+                                </div>
+                                <div className="p-3 space-y-2">
+                                    {table.columns.map((col: any) => (
+                                        <div key={col.name} className="flex items-center justify-between text-xs text-gray-300">
+                                            <span className="flex items-center gap-2">
+                                                {col.isPk ? <Key size={10} className="text-yellow-500"/> : col.isFk ? <Key size={10} className="text-blue-500 rotate-90"/> : <span className="w-2.5 h-2.5 rounded-full bg-gray-600"></span>}
+                                                {col.name}
+                                            </span>
+                                            <span className="text-gray-600 font-mono text-[10px] uppercase">
+                                                {col.type}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {schema.length > 0 && (
+                        <div className="flex justify-end mt-8 gap-3 border-t border-gray-800 pt-6">
+                            <Button variant="secondary" onClick={() => handleExportMigrations('sql')}>
+                                <Download size={14} className="mr-2"/> Export SQL
+                            </Button>
+                            <Button onClick={() => handleExportMigrations('prisma')}>
+                                <Code size={14} className="mr-2"/> Generate Prisma Schema
+                            </Button>
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle, RotateCcw, Activity, Wifi, ShieldCheck, Database, HardDrive } from 'lucide-react';
+import { LayoutGrid, Code, Zap, Music, Clapperboard, Plus, Trash2, Smartphone, Server, Globe, Youtube, Twitter, Film, Instagram, Volume2, Search, Tablet, Users, Download, Settings, Clock, CheckCircle, AlertTriangle, BarChart2, Check, XCircle, RotateCcw, Activity, Wifi, ShieldCheck, Database, HardDrive, Rocket } from 'lucide-react';
 import { AppView, Project, ProjectType, SocialPost, AudioTrack, ActivityItem } from '../types';
 import { Button } from './Button';
-import { MOCK_SOCIAL_POSTS } from '../constants';
+import { MOCK_SOCIAL_POSTS, WEB_FILE_TREE } from '../constants';
 import { getActivities } from '../utils/activityLogger';
 import { AnalyticsModal } from './AnalyticsModal';
 
@@ -87,10 +88,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
 
     const handleResetDemo = () => {
         if(confirm("⚠ WARNING: This will reset all demo data to factory defaults. Continue?")) {
-            localStorage.clear();
+            // Deep clean all project-related keys
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.startsWith('omni_') || key.startsWith('proj_'))) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            
+            // Reload to reset state
             window.location.reload();
         }
     }
+
+    const handleQuickStart = () => {
+        // Direct inject of a sample project
+        const newProject: Project = {
+            id: `quick-${Date.now()}`,
+            name: "Quick Start App",
+            description: "A fast React template generated instantly.",
+            type: ProjectType.REACT_WEB,
+            lastModified: "Just now",
+            fileCount: WEB_FILE_TREE.length
+        };
+        localStorage.setItem(`omni_files_${newProject.id}`, JSON.stringify(WEB_FILE_TREE));
+        
+        // Use window event to update App.tsx state without prop drilling for simplicity in this specific "Quick" action
+        const currentProjects = JSON.parse(localStorage.getItem('omni_projects') || '[]');
+        const updatedProjects = [newProject, ...currentProjects];
+        localStorage.setItem('omni_projects', JSON.stringify(updatedProjects));
+        
+        // Select it via event
+        window.dispatchEvent(new Event('omniProjectsUpdated'));
+        
+        // Slight hack: we need to trigger selection in App.tsx, but dispatching storage update helps persistence.
+        // We can manually call onProjectSelect if available, but for a true "refresh" feel we reload or use prop.
+        onProjectSelect(newProject);
+    };
 
     return (
       <div className="flex-1 bg-gray-950 overflow-y-auto p-4 md:p-8 w-full relative scroll-smooth">
@@ -213,6 +249,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ projects, onProjectSelect,
 
             {/* Projects Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-8">
+              
+              {/* Quick Start Card */}
+              {activeTab === 'all' && searchQuery === '' && (
+                  <div 
+                    onClick={handleQuickStart}
+                    className="group bg-gradient-to-br from-primary-900/20 to-gray-900 border border-primary-500/30 rounded-xl p-5 cursor-pointer hover:border-primary-500 hover:shadow-lg hover:shadow-primary-900/20 transition-all duration-300 relative flex flex-col justify-center items-center min-h-[180px] border-dashed"
+                  >
+                      <div className="w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center mb-3 shadow-lg group-hover:scale-110 transition-transform">
+                          <Rocket size={24} className="text-white"/>
+                      </div>
+                      <h3 className="text-lg font-bold text-white mb-1">Quick Start</h3>
+                      <p className="text-sm text-primary-200/70 text-center">Launch a React + Tailwind template instantly.</p>
+                  </div>
+              )}
+
               {/* Code Projects */}
               {(activeTab === 'all' || activeTab === 'code') && filteredProjects.map(project => (
                 <div 

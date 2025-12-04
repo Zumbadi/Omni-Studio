@@ -32,7 +32,7 @@ export const ArchitectureDesigner: React.FC<ArchitectureDesignerProps> = ({ proj
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number>(0);
   
   // Physics Parameters
   const REPULSION = 800;
@@ -292,7 +292,7 @@ export const ArchitectureDesigner: React.FC<ArchitectureDesignerProps> = ({ proj
           
           <div 
             ref={containerRef}
-            className="flex-1 bg-gray-950 relative overflow-hidden cursor-move"
+            className="flex-1 bg-gray-900 relative overflow-hidden cursor-move"
             onMouseDown={(e) => { if(e.target === containerRef.current) setPan(p => ({...p, startX: e.clientX, startY: e.clientY})) }} 
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

@@ -101,6 +101,31 @@ export const useTerminal = ({
             } else if (args[0] === 'test') {
                 onLog('> npm test');
                 onLog('Running tests...');
+                
+                // Simulate meaningful test output
+                const allFiles = getAllFiles(files);
+                const testFiles = allFiles.filter(f => f.node.name.includes('.test.') || f.node.name.includes('.spec.'));
+                
+                if (testFiles.length === 0) {
+                    setTimeout(() => onLog('No test files found. Try creating a .test.tsx file.'), 500);
+                } else {
+                    setTimeout(() => {
+                        testFiles.forEach(f => {
+                            const isPass = Math.random() > 0.3;
+                            if (isPass) {
+                                onLog(` PASS  ${f.path}`);
+                            } else {
+                                onLog(` FAIL  ${f.path}`);
+                                onLog(`  ● Test suite failed to run`);
+                                onLog(`    ReferenceError: Component is not defined`);
+                            }
+                        });
+                        const passed = Math.floor(Math.random() * testFiles.length);
+                        onLog(`\nTest Suites: ${passed} passed, ${testFiles.length - passed} failed, ${testFiles.length} total`);
+                        onLog(`Time:        ${(Math.random() * 2 + 0.5).toFixed(3)} s`);
+                        onLog(`Ran all test suites.`);
+                    }, 1500);
+                }
             } else {
                 onLog(`npm: command not found: ${args[0]}`);
             }

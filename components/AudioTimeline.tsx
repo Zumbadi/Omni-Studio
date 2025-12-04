@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect } from 'react';
 import { Play, Pause, LayoutTemplate, Download, Loader2, Mic, Plus, FileText, Trash2, Volume2, Check } from 'lucide-react';
 import { Button } from './Button';
@@ -191,17 +190,10 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
           const totalDuration = Math.max(...tracks.map(t => t.startOffset + t.duration)) || 10;
           const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * 44100), 44100);
           
-          let outputNode: AudioNode = offlineCtx.destination;
-          
-          // Apply Mastering Chain if enabled
-          let sourceNode = null; 
-          
-          // Note: OfflineAudioContext structure is slightly different for inserts.
-          // We connect sources to a master gain, then master gain through effects to destination.
-          
           const masterGain = offlineCtx.createGain();
           let currentOutput: AudioNode = masterGain;
 
+          // Apply Mastering Chain if enabled
           if (mastering && mastering.enabled) {
               // Warmth (Low Shelf)
               if (mastering.warmth > 0) {
@@ -238,28 +230,36 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
           
           currentOutput.connect(offlineCtx.destination);
 
-          for (const track of tracks) {
-              if (track.audioUrl && !track.muted) { 
-                  try {
-                      const response = await fetch(track.audioUrl);
-                      const arrayBuffer = await response.arrayBuffer();
-                      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-                      
-                      const source = offlineCtx.createBufferSource();
-                      source.buffer = audioBuffer;
-                      
-                      const trackGain = offlineCtx.createGain();
-                      trackGain.gain.value = track.volume ?? 1.0;
-                      
-                      source.connect(trackGain);
-                      trackGain.connect(masterGain); // Connect to master bus
-                      
-                      source.start(track.startOffset);
-                  } catch (e) {
-                      console.error("Failed to process track", track.id, e);
-                  }
+          // Parallel Fetch and Decode
+          const trackBuffers = await Promise.all(tracks.map(async (track) => {
+              if (!track.audioUrl || track.muted) return null;
+              try {
+                  const response = await fetch(track.audioUrl);
+                  const arrayBuffer = await response.arrayBuffer();
+                  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                  return { buffer: audioBuffer, track };
+              } catch (e) {
+                  console.error("Failed to load track:", track.id, e);
+                  return null;
               }
-          }
+          }));
+
+          // Schedule Sources
+          trackBuffers.forEach((item) => {
+              if (item) {
+                  const { buffer, track } = item;
+                  const source = offlineCtx.createBufferSource();
+                  source.buffer = buffer;
+                  
+                  const trackGain = offlineCtx.createGain();
+                  trackGain.gain.value = track.volume ?? 1.0;
+                  
+                  source.connect(trackGain);
+                  trackGain.connect(masterGain); 
+                  
+                  source.start(track.startOffset);
+              }
+          });
           
           const renderedBuffer = await offlineCtx.startRendering();
           const wavBlob = bufferToWav(renderedBuffer);
@@ -291,7 +291,6 @@ export const AudioTimeline: React.FC<AudioTimelineProps> = ({
                       00:00:00
                    </div>
                </div>
-               {/* Mobile only right spacer if needed, or hide export on very small screens */}
             </div>
             
             <div className="flex gap-2 w-full md:w-auto justify-end pb-2 md:pb-0">

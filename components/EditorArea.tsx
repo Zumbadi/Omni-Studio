@@ -56,12 +56,16 @@ interface EditorAreaProps {
   // Testing Props
   testResults: TestResult[];
   isRunningTests: boolean;
-  onRunTests: () => void;
+  onRunTests: (files?: string[]) => void;
 
   // Zen Mode Props
   isZenMode?: boolean;
   onToggleZenMode?: () => void;
   onSaveAll?: () => void;
+
+  // Interpreter Props
+  interpreterEnabled?: boolean;
+  onInterpreterOutput?: (logs: string[]) => void;
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
@@ -73,7 +77,8 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   layout, toggleLayout, bottomPanelHeight, handleResizeStart,
   terminalLogs, onCommand, onAiFix,
   testResults, isRunningTests, onRunTests,
-  isZenMode, onToggleZenMode, onSaveAll
+  isZenMode, onToggleZenMode, onSaveAll,
+  interpreterEnabled, onInterpreterOutput
 }) => {
   
   const [activeBottomTab, setActiveBottomTab] = useState<'terminal' | 'problems' | 'tests'>('terminal');
@@ -331,6 +336,8 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                                 onGhostTextRequest={async (p, s) => await generateGhostText(p, s)}
                                 onSave={() => addToast('success', 'File Saved')}
                                 onCursorChange={(line, col) => setCursorPos({ line, col })}
+                                interpreterEnabled={interpreterEnabled}
+                                onInterpreterOutput={onInterpreterOutput}
                             />
                         ) : (
                             <StartScreen />
@@ -410,6 +417,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                                 results={testResults}
                                 isRunning={isRunningTests}
                                 onRunTests={onRunTests}
+                                activeFile={activeFile}
                             />
                         )}
                     </div>

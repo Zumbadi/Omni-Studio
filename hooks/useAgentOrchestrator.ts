@@ -23,6 +23,7 @@ interface UseAgentOrchestratorProps {
   projectType: ProjectType;
   projectRules?: string;
   mcpContext?: string; 
+  interpreterOutput?: string[]; 
   addToast: (type: 'success' | 'error' | 'info', msg: string) => void;
   setChatInput: (val: string) => void;
   setIsChatOpen: (val: boolean) => void;
@@ -49,6 +50,7 @@ export const useAgentOrchestrator = ({
   projectType,
   projectRules,
   mcpContext,
+  interpreterOutput = [],
   addToast,
   setChatInput,
   setIsChatOpen,
@@ -245,6 +247,7 @@ export const useAgentOrchestrator = ({
               debugVariables,
               projectRules,
               mcpContext,
+              interpreterOutput, // Included for Sentinel
               relatedCode: pkgContent !== '{}' ? `Dependency Config:\n${pkgContent}` : undefined
           };
 
@@ -388,10 +391,18 @@ export const useAgentOrchestrator = ({
                       break; 
                   }
                   
-                  // 2. CRITIQUE
+                  // 2. CRITIQUE (Sentinel)
                   setActiveAgent(critic);
                   setTerminalLogs(prev => [...prev, `[${critic.name}] Verifying changes...`]);
-                  const review = await reviewBuildTask(fileNode.name, currentContent, buildResult.code, instructions, enrichedContext, projectType);
+                  
+                  // Add interpreter output to the context for review if available
+                  if (interpreterOutput && interpreterOutput.length > 0) {
+                      enrichedContext.interpreterOutput = interpreterOutput;
+                      setTerminalLogs(prev => [...prev, `[${critic.name}] Analyzing live interpreter logs...`]);
+                  }
+
+                  // ** Pass critic agent to reviewBuildTask **
+                  const review = await reviewBuildTask(critic, fileNode.name, currentContent, buildResult.code, instructions, enrichedContext, projectType);
 
                   if (review.approved) {
                       // 3. APPLY

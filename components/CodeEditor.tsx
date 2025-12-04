@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, memo } from 'react';
-import { Sparkles, MessageSquare, Zap, Wrench, Loader2, ChevronRight, Eye, GitCommit } from 'lucide-react';
+import { Sparkles, MessageSquare, Zap, Wrench, Loader2, ChevronRight, Eye, GitCommit, Play, XCircle, AlertTriangle, AlertCircle, Info, EyeOff, ShieldAlert, FileWarning } from 'lucide-react';
 import { highlightCode } from '../utils/syntaxHighlight';
 
 export interface CodeEditorHandle {
@@ -28,6 +28,8 @@ interface CodeEditorProps {
   onCursorChange?: (line: number, col: number) => void;
   onDrop?: (e: React.DragEvent, cursorPos: number) => void;
   readOnly?: boolean;
+  interpreterEnabled?: boolean;
+  onInterpreterOutput?: (output: string[]) => void;
 }
 
 const KEYWORDS = [
@@ -41,9 +43,16 @@ const KEYWORDS = [
   'className', 'style', 'onClick', 'onChange', 'value', 'key', 'children'
 ];
 
+interface LiveDecoration {
+    line: number;
+    message: string;
+    type: 'error' | 'warning' | 'info';
+}
+
 export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({ 
   code, onChange, fileName, filePath, config, onCodeAction, onSelectionChange, 
-  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange, onDrop, readOnly = false
+  breakpoints = [], onToggleBreakpoint, onGhostTextRequest, onSave, onCursorChange, onDrop, readOnly = false,
+  interpreterEnabled = false, onInterpreterOutput
 }, ref) => {
   const lines = code.split('\n');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -66,12 +75,19 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
   const [selectionCoords, setSelectionCoords] = useState({ top: 0, left: 0 });
   const [selectedText, setSelectedText] = useState('');
 
+  // Interpreter State
+  const [interpreterLogs, setInterpreterLogs] = useState<string[]>([]);
+  const [liveDecorations, setLiveDecorations] = useState<LiveDecoration[]>([]);
+  const [showLivePanel, setShowLivePanel] = useState(true);
+  const interpreterTimeoutRef = useRef<any>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const lineNumsRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLDivElement>(null);
   const lensRef = useRef<HTMLDivElement>(null);
+  const decorationRef = useRef<HTMLDivElement>(null);
   
   // Scroll Sync Ref for Performance
   const rafRef = useRef<number | null>(null);
@@ -106,6 +122,127 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
     }
   }));
 
+  // Run interpreter on code change
+  useEffect(() => {
+      if (interpreterEnabled && !readOnly) {
+          if (interpreterTimeoutRef.current) clearTimeout(interpreterTimeoutRef.current);
+          interpreterTimeoutRef.current = setTimeout(() => {
+              runLiveInterpreter(code);
+          }, 600); // 600ms debounce for responsiveness
+      } else {
+          setInterpreterLogs([]);
+          setLiveDecorations([]);
+      }
+      return () => { if (interpreterTimeoutRef.current) clearTimeout(interpreterTimeoutRef.current); };
+  }, [code, interpreterEnabled, readOnly]);
+
+  const runLiveInterpreter = (sourceCode: string) => {
+      // Ephemeral logs: We rebuild the log state from scratch every run to represent "Current State"
+      const logs: string[] = [];
+      const decorations: LiveDecoration[] = [];
+      
+      logs.push(`[Critique] Analyzing ${fileName}...`);
+
+      // 1. Static Analysis (Smell Detection & Linter Logic)
+      const lines = sourceCode.split('\n');
+      lines.forEach((line, idx) => {
+          const trimmed = line.trim();
+          
+          // Legacy JS checks
+          if (line.includes('var ')) {
+              decorations.push({ line: idx, message: "Use 'let' or 'const'", type: 'warning' });
+              logs.push(`[Line ${idx + 1}] Warning: 'var' usage is discouraged in ES6+.`);
+          }
+          
+          // Type safety
+          if (line.includes(': any')) {
+              decorations.push({ line: idx, message: "Avoid 'any' type", type: 'warning' });
+              logs.push(`[Line ${idx + 1}] Weak Type: Explicit 'any' detected.`);
+          }
+          
+          // Debugging leftovers
+          if (line.includes('console.log')) {
+              decorations.push({ line: idx, message: "Console log", type: 'info' });
+          }
+          if (line.includes('TODO') || line.includes('FIXME')) {
+              decorations.push({ line: idx, message: "Pending Task", type: 'info' });
+              logs.push(`[Line ${idx + 1}] Note: Pending task found.`);
+          }
+
+          // React Antipatterns
+          if (trimmed.startsWith('useEffect') && !line.includes('[')) {
+             decorations.push({ line: idx, message: "Missing dependency array?", type: 'error' });
+             logs.push(`[Line ${idx + 1}] Risk: useEffect missing dependency array (runs on every render).`);
+          }
+          
+          if (line.includes('dangerouslySetInnerHTML')) {
+             decorations.push({ line: idx, message: "XSS Vulnerability Risk", type: 'error' });
+             logs.push(`[Line ${idx + 1}] Security: dangerouslySetInnerHTML used.`);
+          }
+
+          if (line.includes('style={{')) {
+             decorations.push({ line: idx, message: "Inline styles (perf)", type: 'info' });
+          }
+          
+          // Logic Errors
+          if (trimmed.startsWith('if') && trimmed.includes('=') && !trimmed.includes('==') && !trimmed.includes('!=')) {
+             // Basic check for assignment in condition (if (x = 5))
+             const conditionContent = trimmed.substring(trimmed.indexOf('(') + 1, trimmed.lastIndexOf(')'));
+             if (conditionContent.includes('=') && !conditionContent.includes('==') && !conditionContent.includes('>') && !conditionContent.includes('<')) {
+                 decorations.push({ line: idx, message: "Assignment in condition?", type: 'error' });
+                 logs.push(`[Line ${idx + 1}] Error: Possible assignment in conditional statement.`);
+             }
+          }
+      });
+
+      const mockConsole = {
+          log: (...args: any[]) => logs.push(`[Runtime] ${args.map(a => String(a)).join(' ')}`),
+          warn: (...args: any[]) => logs.push(`[Runtime Warn] ${args.map(a => String(a)).join(' ')}`),
+          error: (...args: any[]) => logs.push(`[Runtime Error] ${args.map(a => String(a)).join(' ')}`),
+      };
+
+      try {
+          // 2. Runtime Evaluation (Limited)
+          // We strip imports/exports/types to make it runnable as a script body for basic logic testing
+          const runnableCode = sourceCode
+              .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
+              .replace(/export\s+default\s+/g, '')
+              .replace(/export\s+/g, '')
+              .replace(/interface\s+\w+\s*{[^}]*}/g, '')
+              .replace(/type\s+\w+\s*=.*/g, '');
+
+          // Wrap in a function to capture console and avoid global pollution
+          // eslint-disable-next-line no-new-func
+          const func = new Function('console', `
+              try {
+                  ${runnableCode}
+              } catch (e) {
+                  throw e;
+              }
+          `);
+          
+          // Only execute if it looks like safe JS/TS logic (simple heuristic)
+          // Avoid executing React components directly as they expect DOM/React env
+          if (!sourceCode.includes('return <') && !sourceCode.includes('useContext')) {
+             func(mockConsole);
+             if (!logs.some(l => l.includes('[Runtime]'))) {
+                 logs.push("[Success] Syntax check passed.");
+             }
+          } else {
+             logs.push("[Info] React Component detected. Runtime check skipped (Static analysis only).");
+          }
+
+      } catch (e: any) {
+          logs.push(`[Runtime Exception] ${e.message}`);
+          // Attempt to map error to last line or specific line if possible
+          decorations.push({ line: lines.length - 1, message: `Exception: ${e.message}`, type: 'error' });
+      }
+
+      setLiveDecorations(decorations);
+      setInterpreterLogs(logs);
+      if (onInterpreterOutput) onInterpreterOutput(logs);
+  };
+
   // Determine file extension for basic label
   const ext = fileName.split('.').pop() || 'TXT';
   const langColor = ext === 'tsx' || ext === 'ts' ? 'text-blue-400' : ext === 'css' ? 'text-cyan-400' : ext === 'json' ? 'text-yellow-400' : 'text-gray-400';
@@ -137,6 +274,11 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
           if (lensRef.current) {
             lensRef.current.scrollTop = scrollTop;
             lensRef.current.scrollLeft = scrollLeft;
+          }
+
+          if (decorationRef.current) {
+            decorationRef.current.scrollTop = scrollTop;
+            decorationRef.current.scrollLeft = scrollLeft;
           }
           
           // Sync Minimap Scroll
@@ -477,6 +619,25 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
       ));
   };
 
+  const renderDecorations = () => {
+      return liveDecorations.map((deco, i) => {
+          const color = deco.type === 'error' ? 'red' : deco.type === 'warning' ? 'yellow' : 'blue';
+          return (
+              <div 
+                key={i}
+                className="absolute left-0 right-0 pointer-events-none group"
+                style={{ top: `${deco.line * 24}px`, height: '24px' }}
+              >
+                  <div className={`w-full h-full border-b-2 border-dotted border-${color}-500/50 absolute bottom-0`}></div>
+                  {/* Tooltip on Hover */}
+                  <div className={`absolute right-4 top-0 text-[10px] bg-${color}-900/90 text-${color}-200 px-2 py-0.5 rounded shadow-lg border border-${color}-500/30 transform translate-x-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all z-50 whitespace-nowrap`}>
+                      <span className="font-bold uppercase tracking-wider">{deco.type}:</span> {deco.message}
+                  </div>
+              </div>
+          );
+      });
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-300 font-mono relative" style={{ fontSize: fontSize }}>
       {/* Hidden Mirror for Caret Positioning */}
@@ -512,6 +673,18 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
         </div>
         <div className="flex items-center gap-2">
           {isLoadingGhost && <div className="flex items-center gap-1 text-[10px] text-primary-400 animate-pulse font-bold tracking-wider"><Sparkles size={10}/> AI THINKING...</div>}
+          
+          {/* Live Toggle */}
+          {interpreterEnabled && (
+              <button 
+                onClick={() => setShowLivePanel(!showLivePanel)}
+                className={`flex items-center gap-1 text-[10px] font-bold tracking-wider px-2 py-0.5 rounded border transition-all ${showLivePanel ? 'bg-purple-900/20 text-purple-400 border-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.2)]' : 'bg-gray-800 text-gray-500 border-gray-700 hover:text-purple-400'}`}
+                title="Toggle Live Critique Panel"
+              >
+                  {showLivePanel ? <Eye size={10}/> : <EyeOff size={10}/>} CRITIQUE
+              </button>
+          )}
+
           {isVim && <div className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[9px] uppercase font-bold border border-green-900 rounded">VIM</div>}
           <button 
              onClick={() => setShowMinimap(!showMinimap)}
@@ -534,13 +707,22 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
           {lines.map((_, i) => {
             const lineNum = i + 1;
             const hasBreakpoint = breakpoints.includes(lineNum);
+            // Check for decoration on this line
+            const decoration = liveDecorations.find(d => d.line === i);
+            
             return (
               <div 
                 key={i} 
-                className={`leading-6 relative hover:text-white cursor-pointer transition-colors ${highlightedLine === lineNum ? 'text-yellow-400 font-bold bg-yellow-900/10' : ''}`}
+                className={`leading-6 relative hover:text-white cursor-pointer transition-colors flex justify-end gap-1 ${highlightedLine === lineNum ? 'text-yellow-400 font-bold bg-yellow-900/10' : ''}`}
                 onClick={() => onToggleBreakpoint?.(lineNum)}
               >
-                 {hasBreakpoint && <div className="absolute left-2 top-1.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-red-500/50 shadow-lg z-20 animate-pulse"></div>}
+                 {hasBreakpoint && <div className="absolute left-1 top-1.5 w-2.5 h-2.5 bg-red-500 rounded-full shadow-red-500/50 shadow-lg z-20 animate-pulse"></div>}
+                 
+                 {decoration && (
+                     <div className={`mr-1 mt-1 ${decoration.type === 'error' ? 'text-red-500' : decoration.type === 'warning' ? 'text-yellow-500' : 'text-blue-500'}`}>
+                         {decoration.type === 'error' ? <XCircle size={8}/> : decoration.type === 'warning' ? <AlertTriangle size={8}/> : <Info size={8}/>}
+                     </div>
+                 )}
                  <span className={hasBreakpoint ? 'invisible' : ''}>{lineNum}</span>
               </div>
             );
@@ -566,6 +748,15 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 {highlightCode(code)}
                 <br />
              </pre>
+
+             {/* Live Decorations Overlay */}
+             <div 
+                ref={decorationRef}
+                className="absolute inset-0 p-4 pt-4 m-0 leading-6 font-mono whitespace-pre pointer-events-none overflow-hidden scrollbar-none"
+                style={{ fontSize }}
+             >
+                 {renderDecorations()}
+             </div>
 
              {/* CodeLens Overlay */}
              <div 
@@ -663,6 +854,29 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 </div>
             )}
         </div>
+        
+        {/* Interpreter Output Panel (Live Critique) - Conditional on showLivePanel */}
+        {interpreterEnabled && showLivePanel && (
+            <div className="w-1/3 bg-gray-900 border-l border-gray-800 flex flex-col font-mono text-xs overflow-hidden animate-in slide-in-from-right-10 duration-200">
+                <div className="bg-gray-850 p-2 border-b border-gray-800 font-bold text-gray-400 uppercase tracking-wider flex justify-between items-center">
+                    <span className="flex items-center gap-2"><ShieldAlert size={10} className="text-purple-500"/> Live Critique</span>
+                    <span className="text-[9px] text-gray-600 flex items-center gap-1"><div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div> Watching</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {interpreterLogs.map((log, i) => (
+                        <div key={i} className={`break-all py-0.5 border-b border-gray-800/50 last:border-0 ${log.includes('Error') || log.includes('Exception') || log.includes('Risk') ? 'text-red-400 bg-red-900/10 px-1 rounded' : log.includes('Warning') || log.includes('Weak Type') ? 'text-yellow-400' : log.includes('[Critique]') ? 'text-purple-300 font-bold' : 'text-gray-300'}`}>
+                            {log}
+                        </div>
+                    ))}
+                    {interpreterLogs.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-2 opacity-50">
+                            <FileWarning size={24}/>
+                            <span>No issues detected.</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
         
         {/* Minimap */}
         {showMinimap && (

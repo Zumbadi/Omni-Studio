@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { PanelBottom, Columns, Mic, GitBranch, HelpCircle, Layout, Loader2, Sparkles, Command } from 'lucide-react';
+import { PanelBottom, Columns, Mic, GitBranch, HelpCircle, Layout, Loader2, Sparkles, Command, Database } from 'lucide-react';
 import { MOCK_COMMITS, MOCK_EXTENSIONS, MOCK_SNIPPETS, DEFAULT_AGENTS } from '../constants';
 import { Project, ProjectType, Extension, GitCommit as GitCommitType, Snippet, KnowledgeDoc } from '../types';
 import { CodeEditorHandle } from '../components/CodeEditor';
@@ -28,6 +28,8 @@ import { logActivity } from '../utils/activityLogger';
 import { ChatWidget } from '../components/ChatWidget';
 import { EditorArea } from '../components/EditorArea';
 import { getFilePath } from '../utils/fileHelpers';
+import { AgentHUD } from '../components/AgentHUD';
+import { MemoryGauge } from '../components/MemoryGauge';
 
 interface WorkspaceProps {
   project: Project | null;
@@ -124,6 +126,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       reorderOpenFiles, closeOtherTabs
   } = useFileSystem(project);
   
+  // Calculate total project size for Memory Gauge
+  const projectStats = useMemo(() => {
+      const all = getAllFiles(files);
+      const totalChars = all.reduce((acc, f) => acc + (f.node.content?.length || 0), 0);
+      return { count: all.length, size: totalChars };
+  }, [files]);
+
   // --- LAYOUT & RESIZING ---
   const { 
       sidebarWidth, rightPanelWidth, bottomPanelHeight, splitRatio, startResizing 
@@ -136,6 +145,11 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   // Zen Mode State
   const [isZenMode, setIsZenMode] = useState(false);
   const [preZenLayout, setPreZenLayout] = useState(layout);
+
+  // Extensions State
+  const [extensions, setExtensions] = useState<Extension[]>(MOCK_EXTENSIONS);
+  const [isInterpreterEnabled, setIsInterpreterEnabled] = useState(MOCK_EXTENSIONS.find(e => e.id === 'e4')?.installed || false);
+  const [interpreterLogs, setInterpreterLogs] = useState<string[]>([]);
 
   const toggleZenMode = useCallback(() => {
       if (isZenMode) {
@@ -332,6 +346,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       projectType: project?.type || ProjectType.REACT_WEB,
       projectRules: project?.aiRules,
       mcpContext,
+      interpreterOutput: interpreterLogs, // Pass live logs for Sentinel
       addToast,
       setChatInput: (val) => setChatInput(val), 
       setIsChatOpen: (val) => setIsChatOpen(val), 
@@ -372,7 +387,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       files, activeFile, activeModel, editorSelection, setEditorSelection,
       onStartAgentTask: handleAgentSlashCommand,
       runTests, // Pass runTests here
-      mcpContext // Pass Knowledge Base Context
+      mcpContext, // Pass Knowledge Base Context
   });
 
   const { handleCommand: baseHandleCommand, handleAiFix } = useTerminal({
@@ -747,6 +762,32 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
           setLayout(p => ({...p, showBottom: true}));
       }
   };
+
+  const handleGenerateTests = () => {
+      if (!contextMenu.fileId) return;
+      const file = findFileById(files, contextMenu.fileId);
+      if (!file) return;
+
+      const testFileName = file.name.replace(/\.(tsx|ts|js|jsx)$/, '') + '.test.tsx';
+      const path = getFilePath(files, file.id);
+      const testPath = path ? path.replace(file.name, testFileName) : testFileName;
+      
+      if (setActiveAgentTask) {
+          setActiveAgentTask({
+              id: `test-gen-${Date.now()}`,
+              type: 'custom',
+              name: `Create comprehensive unit tests for ${file.name} using Jest/React Testing Library`,
+              status: 'running',
+              totalFiles: 1,
+              processedFiles: 0,
+              logs: [`Analyzing ${file.name} for test cases...`],
+              fileList: [{ name: testFileName, path: testPath, status: 'pending' }]
+          });
+      }
+      setContextMenu({ ...contextMenu, visible: false });
+      addToast('info', `Generating tests for ${file.name}...`);
+      setLayout(p => ({ ...p, showBottom: true }));
+  };
   
   const handleToggleRoadmapTask = (phaseId: string, taskId: string) => {
       setRoadmap(prev => prev.map(p => {
@@ -761,6 +802,14 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
   const handleUpdateKnowledgeDoc = (doc: KnowledgeDoc) => setKnowledgeDocs(prev => prev.map(d => d.id === doc.id ? doc : d));
   const handleDeleteKnowledgeDoc = (id: string) => setKnowledgeDocs(prev => prev.filter(d => d.id !== id));
 
+  const handleToggleExtension = (id: string) => {
+      setExtensions(prev => prev.map(e => e.id === id ? { ...e, installed: !e.installed } : e));
+      if (id === 'e4') { // Live Interpreter
+          setIsInterpreterEnabled(prev => !prev);
+          if (isInterpreterEnabled) setInterpreterLogs([]); // Clear logs on disable
+      }
+  };
+
   if (!project) return <div className="flex-1 flex items-center justify-center text-gray-500">Select a project to begin</div>;
 
   return (
@@ -769,6 +818,9 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
       
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       
+      {/* Heads-Up Display for Agent Activity */}
+      <AgentHUD task={activeAgentTask} agent={activeAgent} />
+
       {/* Modals */}
       {showConnectModal && <ConnectModal onClose={() => setShowConnectModal(false)} onConnectLocal={handleConnectLocal} onConnectGitHub={handleConnectGitHub} />}
       <NewItemModal isOpen={newItemModal.isOpen} type={newItemModal.type} onClose={() => setNewItemModal({ ...newItemModal, isOpen: false })} onCreate={handleCreateItem} />
@@ -798,7 +850,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
             onPermanentDelete={() => { if(contextMenu.fileId) permanentlyDeleteFile(contextMenu.fileId); }} 
             onTogglePin={() => { if(contextMenu.fileId) toggleFilePin(contextMenu.fileId); setContextMenu({...contextMenu, visible:false}); }}
             onRefactor={handleRefactorFile}
-            onGenerateTests={() => { /* Trigger tests gen task */ }}
+            onGenerateTests={handleGenerateTests}
             onDownload={() => { /* Single file download */ }}
             onNewFile={() => { setNewItemModal({ isOpen: true, type: 'file' }); setContextMenu({...contextMenu, visible:false}); }}
             onNewFolder={() => { setNewItemModal({ isOpen: true, type: 'folder' }); setContextMenu({...contextMenu, visible:false}); }}
@@ -832,7 +884,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                 
                 searchQuery={searchQuery} onSearch={setSearchQuery} searchResults={searchResults} onResultClick={(id, line) => { onFileClickWrapper(id); setTimeout(() => editorRef.current?.scrollToLine(line), 100); }} onReplace={handleReplace} onReplaceAll={handleReplaceAll}
                 debugVariables={debugVariables} breakpoints={breakpoints} onRemoveBreakpoint={(l) => setBreakpoints(p => p.filter(b => b !== l))}
-                extensions={MOCK_EXTENSIONS} onToggleExtension={() => {}}
+                extensions={extensions} onToggleExtension={handleToggleExtension}
                 assets={assets} activeAgentTask={activeAgentTask} agentHistory={taskHistory} onStartAgentTask={handleStartAgentTask} onCancelAgentTask={handleCancelAgentTask} activeAgent={activeAgent}
                 snippets={snippets} onAddSnippet={() => setSnippets(p => [...p, {id:`s-${Date.now()}`, name:'New Snippet', code: editorSelection, language:'ts'}])} onDeleteSnippet={(id) => setSnippets(p => p.filter(s => s.id !== id))} onInsertSnippet={(c) => updateFileContent(activeFileId, (activeFile?.content || '') + '\n' + c)}
                 onInsertAsset={handleInsertAsset}
@@ -857,6 +909,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
                     testResults={testResults} isRunningTests={isRunningTests} onRunTests={runTests}
                     isZenMode={isZenMode} onToggleZenMode={toggleZenMode}
                     onSaveAll={handleExplicitSave}
+                    interpreterEnabled={isInterpreterEnabled}
+                    onInterpreterOutput={(logs) => setInterpreterLogs(logs)}
                 />
             </div>
         )}
@@ -890,6 +944,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({ project, onDeleteProject, 
             <div className="flex items-center gap-2"><GitBranch size={10} /><span>{currentBranch}</span></div>
             <div className="hidden md:block w-px h-3 bg-gray-700"></div>
             <div className="hidden md:block">Ln {cursorPos.line}, Col {cursorPos.col}</div>
+            <div className="hidden md:block w-px h-3 bg-gray-700"></div>
+            <MemoryGauge filesCount={projectStats.count} totalChars={projectStats.size} />
         </div>
         <div className="flex items-center gap-4">
            <button onClick={() => setShowShortcuts(true)} title="Shortcuts (?)"><HelpCircle size={10}/></button>

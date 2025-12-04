@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AppView, Project, ProjectType, FileNode } from './types';
 import { MOCK_PROJECTS } from './constants';
@@ -9,6 +10,7 @@ import JSZip from 'jszip';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { Login } from './components/Login';
 import { useDebounce } from './hooks/useDebounce';
+import { OnboardingTour } from './components/OnboardingTour';
 
 // Lazy Load Heavy Components for Performance Optimization
 const Workspace = lazy(() => import('./pages/Workspace').then(m => ({ default: m.Workspace })));
@@ -57,6 +59,7 @@ const App: React.FC = () => {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showTeamManager, setShowTeamManager] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showTour, setShowTour] = useState(false);
 
   // Remove the initial loader from the DOM once React mounts
   useEffect(() => {
@@ -66,6 +69,11 @@ const App: React.FC = () => {
           loader.style.opacity = '0';
           loader.style.pointerEvents = 'none';
           setTimeout(() => loader.remove(), 600);
+      }
+      
+      // Check for first visit
+      if (!localStorage.getItem('omni_tour_seen')) {
+          setTimeout(() => setShowTour(true), 1000);
       }
   }, []);
 
@@ -118,6 +126,7 @@ const App: React.FC = () => {
   const handleLogin = () => {
     localStorage.setItem('omni_auth', 'true');
     setIsAuthenticated(true);
+    if (!localStorage.getItem('omni_tour_seen')) setShowTour(true);
   };
 
   const handleLogout = () => {
@@ -206,6 +215,8 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen bg-gray-950 text-gray-100 font-sans selection:bg-primary-500/30 overflow-hidden flex-col md:flex-row">
+      <OnboardingTour onClose={() => setShowTour(false)} />
+      
       {/* Mobile Top Bar */}
       <div className="md:hidden h-14 border-b border-gray-800 flex items-center px-4 bg-gray-950 sticky top-0 z-40 justify-between shrink-0">
          <div className="flex items-center">

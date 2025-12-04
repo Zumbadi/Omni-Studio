@@ -138,25 +138,40 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
 
   let appDefined = false;
 
-  // 2. Identify and alias the default export
+  // 2. Identify and alias the default export to 'App'
+  // Handle "export default Identifier;" separate from "export default function/class..."
   
-  // Case A: Named Function
-  const namedFuncMatch = finalCode.match(/export\s+default\s+function\s+([a-zA-Z0-9_]+)/);
-  if (namedFuncMatch) {
-      const name = namedFuncMatch[1];
-      finalCode = finalCode.replace(/export\s+default\s+function/, 'function');
+  // Strategy: Identify what kind of export default it is, strip the keyword, and ensure 'App' is defined.
+
+  // Case A: export default function App() {} OR export default class App {}
+  const namedMatch = finalCode.match(/export\s+default\s+(function|class)\s+([a-zA-Z0-9_$]+)/);
+  if (namedMatch) {
+      const type = namedMatch[1];
+      const name = namedMatch[2];
+      
+      // Remove "export default" leaving "function Name..."
+      finalCode = finalCode.replace(new RegExp(`export\\s+default\\s+${type}\\s+${name}`), `${type} ${name}`);
+      
       if (name !== 'App') {
           finalCode += `\nconst App = ${name};`;
       }
       appDefined = true;
+  } 
+  
+  // Case B: export default function() {} OR export default () => {} (Anonymous)
+  else if (finalCode.match(/export\s+default\s+(function|class|\()/)) {
+      finalCode = finalCode.replace(/export\s+default\s+/, 'const App = ');
+      appDefined = true;
   }
-
-  // Case B: Named Class
-  if (!appDefined) {
-      const namedClassMatch = finalCode.match(/export\s+default\s+class\s+([a-zA-Z0-9_]+)/);
-      if (namedClassMatch) {
-          const name = namedClassMatch[1];
-          finalCode = finalCode.replace(/export\s+default\s+class/, 'class');
+  
+  // Case C: export default Identifier;
+  else {
+      const idMatch = finalCode.match(/export\s+default\s+([a-zA-Z0-9_$]+)\s*;?/);
+      if (idMatch) {
+          const name = idMatch[1];
+          // Remove the export statement entirely
+          finalCode = finalCode.replace(/export\s+default\s+[a-zA-Z0-9_$]+\s*;?/, '');
+          
           if (name !== 'App') {
               finalCode += `\nconst App = ${name};`;
           }
@@ -164,27 +179,7 @@ export const generatePreviewHtml = (code: string, isNative: boolean, files: File
       }
   }
 
-  // Case C: Anonymous or Expression
-  if (!appDefined) {
-      // Look for export default function() {...}
-      if (finalCode.match(/export\s+default\s+function\s*\(/)) {
-          finalCode = finalCode.replace(/export\s+default\s+function/, 'const App = function');
-          appDefined = true;
-      } 
-      // Look for export default class {}
-      else if (finalCode.match(/export\s+default\s+class\s*\{/)) {
-          finalCode = finalCode.replace(/export\s+default\s+class/, 'const App = class');
-          appDefined = true;
-      }
-      // Look for export default () => ... or export default identifier
-      else if (finalCode.match(/export\s+default\s+/)) {
-          // Replace 'export default' with 'const App ='
-          finalCode = finalCode.replace(/export\s+default\s+/, 'const App = ');
-          appDefined = true;
-      }
-  }
-
-  // 3. Remove any remaining export keywords (named exports)
+  // 3. Remove any remaining export keywords (named exports from non-bundled parts)
   finalCode = finalCode.replace(/^\s*export\s+/gm, '');
 
   // 4. Asset Resolution (Images/Svgs)

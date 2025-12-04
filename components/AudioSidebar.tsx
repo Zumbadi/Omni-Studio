@@ -78,7 +78,7 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
       const isContinuation = !!ttsInput.trim();
       const prompt = isContinuation ? ttsInput : `Generate lyrics for a ${genre} song with structure ${songStructure || 'standard'}`;
       const newLyrics = await generateLyrics(prompt, genre, isContinuation ? ttsInput : undefined);
-      setTtsInput(prev => isContinuation ? (prev.trim() + "\n" + newLyrics) : newLyrics);
+      setTtsInput(isContinuation ? (ttsInput.trim() + "\n" + newLyrics) : newLyrics);
       setIsGeneratingLyrics(false);
   };
 

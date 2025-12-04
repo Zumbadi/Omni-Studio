@@ -331,6 +331,7 @@ export interface AgentContext {
   projectRules?: string; 
   relatedCode?: string; 
   mcpContext?: string; // Context from Knowledge Base / MCP
+  interpreterOutput?: string[]; // Live Interpreter output for Sentinel
   runTests?: (files?: string[]) => Promise<any>;
   handleCommand?: (cmd: string) => void;
 }

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Play, CheckCircle, XCircle, Clock, RefreshCw, Check, Filter, AlertCircle } from 'lucide-react';
+import { Play, CheckCircle, XCircle, Clock, RefreshCw, Check, Filter, AlertCircle, FileCode } from 'lucide-react';
 import { TestResult, FileNode } from '../types';
 import { Button } from './Button';
 
@@ -9,25 +9,39 @@ interface TestRunnerPanelProps {
   onOpenFile: (id: string) => void;
   results: TestResult[];
   isRunning: boolean;
-  onRunTests: () => void;
+  onRunTests: (files?: string[]) => void;
+  activeFile?: FileNode;
 }
 
-export const TestRunnerPanel: React.FC<TestRunnerPanelProps> = ({ files, onOpenFile, results, isRunning, onRunTests }) => {
+export const TestRunnerPanel: React.FC<TestRunnerPanelProps> = ({ files, onOpenFile, results, isRunning, onRunTests, activeFile }) => {
   const [filter, setFilter] = useState<'all' | 'failed'>('all');
 
   const filteredResults = filter === 'all' ? results : results.filter(r => r.status === 'fail');
   const totalPassed = results.reduce((acc, r) => acc + r.passed, 0);
   const totalFailed = results.reduce((acc, r) => acc + r.failed, 0);
 
+  const isTestFile = activeFile?.name.includes('.test.') || activeFile?.name.includes('.spec.');
+
+  const handleRunCurrent = () => {
+      if (activeFile && isTestFile) {
+          onRunTests([activeFile.name]);
+      }
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-950 font-sans">
         {/* Toolbar */}
         <div className="flex items-center justify-between p-2 border-b border-gray-800 bg-gray-900/50">
             <div className="flex items-center gap-2">
-                <Button size="sm" onClick={onRunTests} disabled={isRunning} className={isRunning ? 'opacity-70' : ''}>
+                <Button size="sm" onClick={() => onRunTests()} disabled={isRunning} className={isRunning ? 'opacity-70' : ''}>
                     {isRunning ? <RefreshCw size={12} className="animate-spin mr-2"/> : <Play size={12} className="mr-2"/>}
                     Run All Tests
                 </Button>
+                {activeFile && isTestFile && (
+                    <Button size="sm" variant="secondary" onClick={handleRunCurrent} disabled={isRunning} className={isRunning ? 'opacity-70' : ''}>
+                        <FileCode size={12} className="mr-2"/> Run Current
+                    </Button>
+                )}
                 <div className="h-4 w-px bg-gray-700 mx-2"></div>
                 <div className="flex gap-1 bg-gray-800 rounded p-0.5">
                     <button onClick={() => setFilter('all')} className={`px-2 py-0.5 text-[10px] rounded ${filter === 'all' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>All</button>

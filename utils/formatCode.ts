@@ -26,7 +26,6 @@ export const formatCode = (code: string): string => {
     const closeBraces = (line.match(/[})\]]/g) || []).length;
     
     // Simple heuristic: net gain in braces increases indent
-    // Exclude self-closing tags or one-liners might need better regex, but this is a basic prettifier
     indentLevel += openBraces - closeBraces;
     
     if (indentLevel < 0) indentLevel = 0;

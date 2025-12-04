@@ -206,12 +206,15 @@ export const AudioStudio: React.FC = () => {
       const voice = voices.find(v => v.id === selectedVoice) || voices[0];
       const audioUrl = await generateSpeech(ttsInput, voice, styleReference);
       
+      // Estimate duration based on word count (~15 chars per second average speaking rate)
+      const estimatedDuration = Math.max(2, ttsInput.length / 15);
+
       if (audioUrl) {
           const newTrack: AudioTrack = {
               id: `tts-${Date.now()}`,
               name: `TTS: ${ttsInput.substring(0, 10)}... (${voice.name})`,
               type: 'voiceover',
-              duration: 10,
+              duration: parseFloat(estimatedDuration.toFixed(1)),
               startOffset: 0,
               audioUrl,
               volume: 1.0,
@@ -239,12 +242,15 @@ export const AudioStudio: React.FC = () => {
           songStructure
       );
 
+      // Estimate duration for song based on structure or lyrics
+      const estimatedSongDuration = ttsInput.length > 50 ? Math.max(30, ttsInput.length / 10) : 30;
+
       if (mainAudioUrl) {
           const mainTrack: AudioTrack = {
               id: `song-${Date.now()}`,
               name: `${genre} Instrumental (${songStructure || 'Standard'})`,
               type: 'music',
-              duration: 30, // Mock duration
+              duration: parseFloat(estimatedSongDuration.toFixed(1)),
               startOffset: 0,
               audioUrl: mainAudioUrl,
               volume: 0.8,
@@ -265,7 +271,7 @@ export const AudioStudio: React.FC = () => {
                        id: `voc-${Date.now()}`,
                        name: `${voice.name} Vocals`,
                        type: 'voiceover',
-                       duration: 30, // Should ideally match instrumental, mock for now
+                       duration: parseFloat(estimatedSongDuration.toFixed(1)), // Match instrumental roughly
                        startOffset: 0, // Aligned with music
                        audioUrl: vocalUrl,
                        volume: 1.0,

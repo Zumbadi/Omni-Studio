@@ -1,297 +1,884 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { ProjectType, Voice, ChatMessage, FileNode, AIAgent, ProjectPhase, TableDef } from "../types";
+import { GoogleGenAI, Type, Schema, Modality, LiveServerMessage } from "@google/genai";
+import { ProjectType, AIAgent, ProjectPhase, AgentContext, Voice, Scene, ChatMessage } from '../types';
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // --- Helpers ---
+const cleanJson = (text: string) => {
+  if (!text) return '';
+  let cleaned = text.replace(/```json\s*|```JSON\s*|```\s*/g, '').replace(/```/g, '');
+  
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  const start = (firstBrace === -1) ? firstBracket : (firstBracket === -1) ? firstBrace : Math.min(firstBrace, firstBracket);
+  
+  const lastBrace = cleaned.lastIndexOf('}');
+  const lastBracket = cleaned.lastIndexOf(']');
+  const end = Math.max(lastBrace, lastBracket);
 
-const getApiKey = (): string => {
-    let key = '';
-    try {
-        // Safe access to process.env for browser environments
-        // @ts-ignore
-        if (typeof process !== 'undefined' && process && process.env) {
-            // @ts-ignore
-            key = process.env.API_KEY || '';
-        }
-    } catch (e) {
-        // Ignore error if process is not defined
+  if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.substring(start, end + 1);
+  }
+  
+  return cleaned.trim();
+};
+
+const getMimeType = (base64String: string, defaultType: string): string => {
+    if (base64String.includes(';base64,')) {
+        return base64String.split(';base64,')[0].replace('data:', '');
     }
+    return defaultType;
+};
+
+// --- Live API (Real-time Voice) ---
+
+export class LiveSession {
+  private active = false;
+  private inputContext: AudioContext | null = null;
+  private outputContext: AudioContext | null = null;
+  private session: any; // LiveSession interface from SDK
+  private nextStartTime = 0;
+  private sources = new Set<AudioBufferSourceNode>();
+  private mediaStream: MediaStream | null = null;
+  private processor: ScriptProcessorNode | null = null;
+  private inputSource: MediaStreamAudioSourceNode | null = null;
+  
+  // Audio Analysis
+  private inputAnalyser: AnalyserNode | null = null;
+  private outputAnalyser: AnalyserNode | null = null;
+
+  constructor(
+      private onMessage: (text: string, isFinal: boolean) => void,
+      private onInterrupt?: () => void,
+      private onVolume?: (inputVol: number, outputVol: number) => void
+  ) {}
+
+  async connect() {
+    this.active = true;
+    this.inputContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+    this.outputContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     
-    if (!key && typeof localStorage !== 'undefined') {
-        key = localStorage.getItem('omni_gemini_key') || '';
+    // Setup Input Analysis
+    this.inputAnalyser = this.inputContext.createAnalyser();
+    this.inputAnalyser.fftSize = 32;
+    this.inputAnalyser.smoothingTimeConstant = 0.5;
+
+    // Setup Output Analysis
+    this.outputAnalyser = this.outputContext.createAnalyser();
+    this.outputAnalyser.fftSize = 32;
+    this.outputAnalyser.smoothingTimeConstant = 0.5;
+
+    // Start Analysis Loop
+    this.startAnalysis();
+
+    // Initial connection promise
+    const sessionPromise = ai.live.connect({
+      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      callbacks: {
+        onopen: () => {
+           console.log("Live Session Opened");
+           this.startInputStreaming(sessionPromise);
+        },
+        onmessage: (msg: LiveServerMessage) => {
+           this.handleServerMessage(msg);
+        },
+        onclose: () => {
+            console.log("Live Session Closed");
+            this.disconnect();
+        },
+        onerror: (e) => console.error("Live Session Error", e)
+      },
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
+        },
+        inputAudioTranscription: {} // Enable input transcription for feedback
+      }
+    });
+    
+    this.session = await sessionPromise;
+  }
+
+  private startAnalysis() {
+      const updateVolume = () => {
+          if (!this.active) return;
+          
+          let inVol = 0;
+          let outVol = 0;
+
+          if (this.inputAnalyser) {
+              const data = new Uint8Array(this.inputAnalyser.frequencyBinCount);
+              this.inputAnalyser.getByteFrequencyData(data);
+              inVol = data.reduce((a, b) => a + b, 0) / data.length;
+          }
+
+          if (this.outputAnalyser) {
+              const data = new Uint8Array(this.outputAnalyser.frequencyBinCount);
+              this.outputAnalyser.getByteFrequencyData(data);
+              outVol = data.reduce((a, b) => a + b, 0) / data.length;
+          }
+
+          if (this.onVolume) {
+              this.onVolume(inVol, outVol);
+          }
+          
+          requestAnimationFrame(updateVolume);
+      };
+      updateVolume();
+  }
+
+  private startInputStreaming(sessionPromise: Promise<any>) {
+      if (!this.inputContext || !this.mediaStream) return;
+
+      this.inputSource = this.inputContext.createMediaStreamSource(this.mediaStream);
+      
+      // Connect to Analyser
+      if (this.inputAnalyser) {
+          this.inputSource.connect(this.inputAnalyser);
+      }
+
+      this.processor = this.inputContext.createScriptProcessor(4096, 1, 1);
+      
+      this.processor.onaudioprocess = (e) => {
+          if(!this.active) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcmData = this.float32ToInt16(inputData);
+          const base64 = this.arrayBufferToBase64(pcmData.buffer);
+          
+          const blob = {
+              data: base64,
+              mimeType: 'audio/pcm;rate=16000'
+          };
+
+          // Ensure session is resolved before sending
+          sessionPromise.then(s => s.sendRealtimeInput({ media: blob }));
+      };
+      
+      this.inputSource.connect(this.processor);
+      this.processor.connect(this.inputContext.destination);
+  }
+
+  private async handleServerMessage(message: LiveServerMessage) {
+      // Handle Audio Output
+      const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+      if (audioData && this.outputContext) {
+          const buffer = await this.decodeAudio(audioData, this.outputContext);
+          this.playBuffer(buffer);
+      }
+
+      // Handle Input Transcription (User Speech)
+      if (message.serverContent?.inputTranscription) {
+          this.onMessage(message.serverContent.inputTranscription.text || '', false);
+      }
+      
+      // Handle Turn Completion
+      if (message.serverContent?.turnComplete) {
+          this.onMessage('', true);
+      }
+
+      // Handle Interruption
+      if (message.serverContent?.interrupted) {
+          console.log("Model interrupted by user");
+          this.sources.forEach(source => {
+              try { source.stop(); } catch(e) {}
+          });
+          this.sources.clear();
+          this.nextStartTime = 0;
+          if (this.onInterrupt) this.onInterrupt();
+      }
+  }
+
+  private playBuffer(buffer: AudioBuffer) {
+      if (!this.outputContext) return;
+      
+      const currentTime = this.outputContext.currentTime;
+      if (this.nextStartTime < currentTime) {
+          this.nextStartTime = currentTime;
+      }
+      
+      const source = this.outputContext.createBufferSource();
+      source.buffer = buffer;
+      
+      // Connect to Analyser then Destination
+      if (this.outputAnalyser) {
+          source.connect(this.outputAnalyser);
+          this.outputAnalyser.connect(this.outputContext.destination);
+      } else {
+          source.connect(this.outputContext.destination);
+      }
+      
+      source.start(this.nextStartTime);
+      this.nextStartTime += buffer.duration;
+      
+      this.sources.add(source);
+      source.onended = () => this.sources.delete(source);
+  }
+
+  disconnect() {
+      this.active = false;
+      this.sources.forEach(s => s.stop());
+      this.sources.clear();
+      
+      this.processor?.disconnect();
+      this.inputSource?.disconnect();
+      this.mediaStream?.getTracks().forEach(t => t.stop());
+      
+      this.inputContext?.close();
+      this.outputContext?.close();
+      
+      if (this.session && typeof this.session.close === 'function') {
+          this.session.close();
+      }
+  }
+
+  // --- Audio Utils ---
+  
+  private float32ToInt16(float32: Float32Array) {
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+          const s = Math.max(-1, Math.min(1, float32[i]));
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+  }
+
+  private arrayBufferToBase64(buffer: ArrayBuffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      const len = bytes.byteLength;
+      for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+  }
+
+  private async decodeAudio(base64: string, ctx: AudioContext): Promise<AudioBuffer> {
+      const binaryString = atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const int16 = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(int16.length);
+      for(let i=0; i<int16.length; i++) {
+          float32[i] = int16[i] / 32768.0;
+      }
+      
+      const buffer = ctx.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
+      return buffer;
+  }
+}
+
+// --- Media Generation ---
+
+export const generateImage = async (prompt: string): Promise<string> => {
+  const maxRetries = 3;
+  let attempt = 0;
+  
+  while (attempt < maxRetries) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: prompt }] },
+      });
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        }
+      }
+      return '';
+    } catch (e) {
+      console.error(`Image Gen Error (Attempt ${attempt + 1})`, e);
+      attempt++;
+      if (attempt >= maxRetries) return '';
+      await new Promise(r => setTimeout(r, 1000 * attempt));
     }
-    return key;
+  }
+  return '';
 };
 
-const getAiClient = () => {
-  const apiKey = getApiKey();
-  // Fallback to a dummy key if none found to prevent initialization crash
-  return new GoogleGenAI({ apiKey: apiKey || 'dummy' });
+export const editImage = async (base64Image: string, prompt: string): Promise<string> => {
+  try {
+    const mimeType = getMimeType(base64Image, 'image/png');
+    const data = base64Image.split(',')[1] || base64Image;
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data } },
+          { text: `Edit instructions: ${prompt}` }
+        ]
+      }
+    });
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
+    }
+    return '';
+  } catch (e) {
+    console.error("Image Edit Error", e);
+    return '';
+  }
 };
 
-const cleanJson = (text: string): string => {
-    if (!text) return '{}';
-    let cleaned = text.trim();
-    cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '');
-    const firstBrace = cleaned.search(/[{[]/);
-    if (firstBrace !== -1) {
-        cleaned = cleaned.substring(firstBrace);
-        const lastCurly = cleaned.lastIndexOf('}');
-        const lastSquare = cleaned.lastIndexOf(']');
-        const end = Math.max(lastCurly, lastSquare);
-        if (end !== -1) {
-            cleaned = cleaned.substring(0, end + 1);
+export const generateVideo = async (prompt: string, imageBase64?: string): Promise<string> => {
+  try {
+    // Check if API key is selected for Veo
+    if ((window as any).aistudio && (window as any).aistudio.hasSelectedApiKey) {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+            await (window as any).aistudio.openSelectKey();
         }
     }
-    return cleaned;
+
+    const currentAi = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    let operation;
+    if (imageBase64) {
+        const data = imageBase64.split(',')[1] || imageBase64;
+        const mimeType = getMimeType(imageBase64, 'image/png');
+
+        operation = await currentAi.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: prompt,
+            image: {
+                imageBytes: data,
+                mimeType: mimeType
+            },
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: '16:9'
+            }
+        });
+    } else {
+        operation = await currentAi.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: prompt,
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: '16:9'
+            }
+        });
+    }
+
+    while (!operation.done) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        operation = await currentAi.operations.getVideosOperation({operation: operation});
+    }
+
+    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (downloadLink) {
+        const url = new URL(downloadLink);
+        url.searchParams.append('key', process.env.API_KEY || '');
+        
+        const videoRes = await fetch(url.toString());
+        const blob = await videoRes.blob();
+        return URL.createObjectURL(blob);
+    }
+    return '';
+  } catch (e) {
+    console.error("Video Gen Error", e);
+    return '';
+  }
 };
 
-const safeParseJSON = (jsonString: string, fallback: any = {}) => {
-    try {
-        return JSON.parse(cleanJson(jsonString));
-    } catch (e) {
-        console.error("JSON Parsing Error:", e);
-        return fallback;
-    }
-};
-
-// --- PCM to WAV Converter ---
-const pcmToWav = (base64PCM: string, sampleRate: number = 24000): string => {
-    if (!base64PCM) return "";
-    let binaryString;
-    try {
-        binaryString = atob(base64PCM);
-    } catch (e) {
-        console.error("Failed to decode base64 PCM", e);
-        return "";
-    }
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-
-    const wavHeader = new ArrayBuffer(44);
-    const view = new DataView(wavHeader);
-
-    const writeString = (view: DataView, offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
+export const generateSpeech = async (text: string, voice: Voice, styleReference?: string): Promise<string> => {
+  try {
+    const config: any = {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+            voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: voice.apiMapping || 'Kore' }
+            }
         }
     };
 
-    // RIFF chunk descriptor
-    writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + bytes.length, true);
-    writeString(view, 8, 'WAVE');
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-preview-tts',
+        contents: { parts: [{ text }] },
+        config
+    });
 
-    // fmt sub-chunk
-    writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, 1, true); // Mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-
-    // data sub-chunk
-    writeString(view, 36, 'data');
-    view.setUint32(40, bytes.length, true);
-
-    const wavBytes = new Uint8Array(wavHeader.byteLength + bytes.length);
-    wavBytes.set(new Uint8Array(wavHeader), 0);
-    wavBytes.set(bytes, wavHeader.byteLength);
-
-    const blob = new Blob([wavBytes], { type: 'audio/wav' });
-    return URL.createObjectURL(blob);
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+            return `data:audio/wav;base64,${part.inlineData.data}`;
+        }
+    }
+    return '';
+  } catch (e) {
+    console.error("TTS Error", e);
+    return '';
+  }
 };
 
-// --- CORE GENERATION SERVICES ---
+export const generateSoundEffect = async (prompt: string): Promise<string> => {
+    return await generateSpeech(`[Sound Effect: ${prompt}]`, { id: 'sfx', name: 'SFX', gender: 'robot', style: 'custom', isCloned: false });
+};
 
-export const generateProjectScaffold = async (description: string, type: ProjectType): Promise<any[]> => {
-    const client = getAiClient();
-    const prompt = `Generate a JSON directory structure for a new ${type} project.
-    Description: ${description}.
-    
-    Format must be a recursive JSON array of nodes:
-    [{ "name": "filename", "type": "file" | "directory", "content": "string (file content)", "children": [] }]
-    
-    Include essential configuration files (package.json, tsconfig.json, etc.) and a basic source structure with placeholder code.
-    IMPORTANT: Return ONLY the raw JSON.`;
+export const generateBackgroundMusic = async (prompt: string): Promise<string> => {
+    return await generateSpeech(`[Background Music: ${prompt}]`, { id: 'music', name: 'Music', gender: 'robot', style: 'custom', isCloned: false });
+};
 
+export const generateSong = async (
+    lyrics: string, 
+    styleRef?: string, 
+    voiceId?: string, 
+    youtubeLink?: string, 
+    genre?: string,
+    voiceStyle?: string, 
+    songStructure?: string
+): Promise<string> => {
+    return await generateSpeech(`[Song Generation: ${genre}, ${songStructure}] \n\n ${lyrics.substring(0, 100)}...`, { id: 'song', name: 'Song', gender: 'robot', style: 'custom', isCloned: false });
+};
+
+export const generateDrumPattern = async (prompt: string): Promise<boolean[][]> => {
     try {
-        const response = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
+            contents: `Generate a drum pattern for: "${prompt}". Return a JSON 5x16 boolean array (Kick, Snare, HiHat, Clap, Bass). Example: [[true, false, ...], ...]`,
+            config: {
+                responseMimeType: 'application/json'
+            }
         });
-        
-        return safeParseJSON(response.text || '[]', []);
-    } catch (e) {
-        console.error("Scaffold Error", e);
+        const text = cleanJson(response.text || '[]');
+        return JSON.parse(text);
+    } catch {
         return [];
     }
 };
 
-export const generateCodeResponse = async (
-  prompt: string, 
-  currentCode: string, 
-  projectType: ProjectType, 
-  fileStructure: string, 
-  modelName: string,
-  onStream: (chunk: string) => void,
-  onMetadata: (meta: any) => void,
-  attachedImage?: string,
-  history: ChatMessage[] = [],
-  useSearch = false,
-  useMaps = false
-) => {
-    const client = getAiClient();
-    
-    let targetModel = modelName;
-    if (modelName.includes('Flash')) targetModel = 'gemini-2.5-flash';
-    if (modelName.includes('Pro')) targetModel = 'gemini-3-pro-preview';
-    if (!targetModel) targetModel = 'gemini-2.5-flash';
-
-    const systemInstruction = `You are Omni-Studio, an expert AI software architect and developer.
-Project Type: ${projectType}
-File Structure:
-${fileStructure}
-
-Your goal is to provide high-quality, production-ready code.
-If editing code, output ONLY the code block or a diff if requested.
-If asked to explain, provide concise, clear explanations.
-Do not use markdown formatting for the code block unless it's part of a larger explanation.
-`;
-
-    const contents = [];
-    
-    history.forEach(msg => {
-        if (msg.role !== 'system' && msg.role !== 'critic') {
-            contents.push({
-                role: msg.role === 'model' ? 'model' : 'user',
-                parts: [{ text: msg.text }]
-            });
-        }
+export const generateAudioPrompt = async (desc: string, type: 'voice' | 'sfx' | 'music'): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Create a detailed audio prompt for a ${type} generator based on this scene: "${desc}". Keep it under 20 words.`
     });
+    return response.text || '';
+};
 
-    const parts: any[] = [];
-    if (attachedImage) {
-        const base64Data = attachedImage.split(',')[1] || attachedImage;
-        parts.push({ 
-            inlineData: { 
-                mimeType: 'image/png', 
-                data: base64Data 
-            } 
-        });
-    }
-    
-    let textPrompt = prompt;
-    if (currentCode) {
-        textPrompt += `\n\nCurrent File Content:\n\`\`\`\n${currentCode}\n\`\`\``;
-    }
-    parts.push({ text: textPrompt });
-    
-    contents.push({ role: 'user', parts });
+export const generateLyrics = async (prompt: string, genre: string, context?: string): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Write song lyrics. Genre: ${genre}. Prompt: ${prompt}. ${context ? `Context: ${context}` : ''}`
+    });
+    return response.text || '';
+};
 
-    const tools: any[] = [];
-    if (useSearch) tools.push({ googleSearch: {} });
-    
+export const generateDatabaseSchema = async (prompt: string): Promise<any[]> => {
     try {
-        const responseStream = await client.models.generateContentStream({
-            model: targetModel,
-            contents: contents,
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Design a normalized database schema for: "${prompt}".
+            Return strictly a JSON array of Table objects: 
+            [{ 
+                "name": "tableName", 
+                "columns": [
+                    {"name": "colName", "type": "DataType", "isPk": boolean, "isFk": boolean, "references": "RelatedTable"}
+                ] 
+            }]
+            Supported types: UUID, VARCHAR, TEXT, INTEGER, BOOLEAN, TIMESTAMP, FLOAT.`,
+            config: { responseMimeType: 'application/json' }
+        });
+        const text = cleanJson(response.text || '[]');
+        return JSON.parse(text);
+    } catch {
+        return [];
+    }
+};
+
+export const generateMigrationCode = async (schema: any[], type: 'sql'|'prisma'|'mongoose'): Promise<string> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate ${type} code for this schema:
+            ${JSON.stringify(schema, null, 2)}
+            
+            Return ONLY the code. No markdown formatting if possible.`
+        });
+        return cleanJson(response.text || '');
+    } catch {
+        return '// Error generating code';
+    }
+};
+
+// --- Analysis & Utility ---
+
+export const analyzeMediaStyle = async (mediaBase64: string, type: 'image' | 'video' | 'audio'): Promise<string> => {
+    try {
+        const mimeType = getMimeType(mediaBase64, type === 'image' ? 'image/png' : type === 'video' ? 'video/mp4' : 'audio/wav');
+        const data = mediaBase64.split(',')[1] || mediaBase64;
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType, data } },
+                    { text: "Analyze the style, mood, and technical details of this media in one concise sentence." }
+                ]
+            }
+        });
+        return response.text || 'Analysis failed';
+    } catch {
+        return 'Analysis unavailable';
+    }
+};
+
+export const analyzeCharacterFeatures = async (image: string): Promise<string> => {
+    return analyzeMediaStyle(image, 'image');
+};
+
+export const removeBackground = async (image: string): Promise<string> => {
+    try {
+        return await editImage(image, "Remove the background and make it solid white or transparent.");
+    } catch {
+        return image; 
+    }
+};
+
+export const transcribeAudio = async (audioUrl: string): Promise<string> => {
+    try {
+        let blob: Blob;
+        
+        if (audioUrl.startsWith('data:')) {
+            const arr = audioUrl.split(',');
+            const mime = arr[0].match(/:(.*?);/)?.[1] || 'audio/wav';
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while (n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+            }
+            blob = new Blob([u8arr], { type: mime });
+        } else {
+            const response = await fetch(audioUrl);
+            blob = await response.blob();
+        }
+
+        const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+        });
+        
+        const data = base64.split(',')[1];
+        const mimeType = blob.type || 'audio/wav';
+
+        const aiRes = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType, data } },
+                    { text: "Transcribe this audio file verbatim. Provide only the text." }
+                ]
+            }
+        });
+        
+        return aiRes.text || "No transcription generated.";
+    } catch (e) {
+        console.error("Transcription failed", e);
+        return "Transcription failed. Please try again.";
+    }
+};
+
+export const detectIntent = async (text: string): Promise<'chat' | 'task' | 'command'> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Classify intent: "${text}". Options: chat, task, command. Return only the label.`,
+    });
+    const result = response.text?.trim().toLowerCase();
+    if (result?.includes('task')) return 'task';
+    if (result?.includes('command')) return 'command';
+    return 'chat';
+};
+
+// --- Code & Text Generation ---
+
+export const generateCodeResponse = async (
+    prompt: string, 
+    currentCode: string, 
+    projectType: ProjectType, 
+    fileStructure: string, 
+    modelName: string,
+    onStream: (chunk: string) => void,
+    onMetadata: (meta: any) => void,
+    image?: string,
+    history: ChatMessage[] = [],
+    useSearch = false,
+    useMaps = false
+) => {
+    try {
+        const userSystemPrompt = localStorage.getItem('omni_system_prompt') || '';
+        const systemPrompt = `${userSystemPrompt ? `User Instruction: ${userSystemPrompt}\n\n` : ''}You are Omni-Studio, an elite senior software engineer. Project Type: ${projectType}.
+        Available Files:\n${fileStructure}\n
+        Current File Content:\n${currentCode}\n
+        
+        Rules:
+        1. Write production-ready, bug-free code.
+        2. Use strictly typed TypeScript where possible.
+        3. If modifying code, output ONLY the changed file content with // filename: [path] comment at the top.
+        4. Be concise and precise.
+        5. For the entry component (App.tsx), prefer "export default function App() {}" to ensure runtime compatibility.
+        6. Do not use external CSS files unless necessary; prefer Tailwind classes or inline styles.
+        7. Ensure all imports are relative (e.g. './components/Button') and not absolute unless standard library.
+        `;
+
+        const model = modelName.includes('3-pro') ? 'gemini-3-pro-preview' : 'gemini-2.5-flash';
+        
+        const tools: any[] = [];
+        if (useSearch) tools.push({ googleSearch: {} });
+        if (useMaps) tools.push({ googleMaps: {} }); 
+
+        const parts: any[] = [{ text: prompt }];
+        if (image) {
+            parts.unshift({ inlineData: { mimeType: getMimeType(image, 'image/png'), data: image.split(',')[1] } });
+        }
+
+        const responseStream = await ai.models.generateContentStream({
+            model,
+            contents: [
+                { role: 'user', parts: [{ text: systemPrompt }] },
+                ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.text }] })),
+                { role: 'user', parts }
+            ],
             config: {
-                systemInstruction,
                 tools: tools.length > 0 ? tools : undefined
             }
         });
 
         for await (const chunk of responseStream) {
-            if (chunk.text) {
-                onStream(chunk.text);
-            }
-            if (chunk.groundingMetadata) {
-                onMetadata(chunk.groundingMetadata);
+            if (chunk.text) onStream(chunk.text);
+            if (chunk.candidates?.[0]?.groundingMetadata) {
+                onMetadata(chunk.candidates[0].groundingMetadata);
             }
         }
-    } catch (e: any) {
-        console.error("Gemini API Error:", e);
-        onStream(`\n\n[Error: ${e.message || "Failed to generate response."}]\n`);
+    } catch (e) {
+        console.error("Gen Code Error", e);
+        onStream("// Error generating response. Please check console.");
     }
 };
 
 export const critiqueCode = async (code: string, task: string) => {
-    const client = getAiClient();
-    const prompt = `You are a Senior Code Reviewer. Review the following code based on the task: "${task}".
-    Code:
-    ${code}
-    
-    Provide a JSON response with:
-    - score (0-100)
-    - issues (array of strings)
-    - suggestions (array of strings)
-    - fixCode (optional string, corrected code if score < 80)`;
-
     try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Review this code for bugs, security issues, and performance. Task: ${task}.
+            Code:\n${code}\n
+            Return JSON: { "score": number, "issues": string[], "suggestions": string[], "fixCode": string (optional) }`,
+            config: {
+                responseMimeType: 'application/json'
+            }
         });
-        return safeParseJSON(response.text || '{}');
-    } catch (e) {
+        const text = cleanJson(response.text || '{}');
+        return JSON.parse(text);
+    } catch {
         return null;
     }
 };
 
-// --- AGENT WORKFLOWS ---
-
-export const planAgentTask = async (agent: AIAgent, task: string, fileStructure: string, projectType: ProjectType) => {
-    const client = getAiClient();
-    const prompt = `You are ${agent.name}, a Project Manager.
-    Project Type: ${projectType}
-    Files: ${fileStructure}
-    Task: ${task}
-    
-    Create a plan. Return JSON:
-    {
-        "strategy": "Step-by-step strategy description",
-        "filesToEdit": ["path/to/file1", "path/to/file2"],
-        "requiresSearch": boolean
-    }`;
-
+export const generateProjectScaffold = async (description: string, type: ProjectType): Promise<any[]> => {
     try {
-        const response = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
+            contents: `Generate a file structure for a ${type} project. Description: ${description}.
+            Return strictly a JSON array of FileNode objects: { name: string, type: 'file'|'directory', children?: FileNode[], content?: string }.
+            Include essential config files (package.json, tsconfig.json) and basic src structure with placeholder content.
+            Ensure App.tsx exports default function App.`,
+            config: {
+                responseMimeType: 'application/json'
+            }
         });
-        return safeParseJSON(response.text || '{}', { strategy: "Manual intervention", filesToEdit: [], requiresSearch: false });
-    } catch (e) {
-        return { strategy: "Error planning task", filesToEdit: [], requiresSearch: false };
+        const text = cleanJson(response.text || '[]');
+        return JSON.parse(text);
+    } catch {
+        return [];
     }
 };
 
-export const analyzeFile = async (agent: AIAgent, fileName: string, content: string, task: string, context: any) => {
-    const client = getAiClient();
-    const prompt = `Role: ${agent.role}. Task: ${task}.
-    Analyze ${fileName}:
-    ${content.substring(0, 5000)}
-    
-    Context: ${JSON.stringify(context.terminalLogs)}
-    
-    Output brief analysis findings.`;
-
+export const generateProjectPlan = async (desc: string, type: ProjectType): Promise<ProjectPhase[]> => {
     try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Create a phased roadmap for a ${type} project: "${desc}".
+            Return strictly JSON array of ProjectPhase: { id: string, title: string, status: 'pending', goals: string[], tasks: {id: string, text: string, done: false}[] }`,
+            config: {
+                responseMimeType: 'application/json'
+            }
         });
-        return response.text || "No analysis provided.";
-    } catch (e) {
-        return "Analysis failed.";
+        const text = cleanJson(response.text || '[]');
+        return JSON.parse(text);
+    } catch {
+        return [];
+    }
+};
+
+export const generateTerminalCommand = async (query: string, type: ProjectType): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Translate this natural language request into a terminal command for a ${type} project: "${query}". Return ONLY the command.`
+    });
+    return response.text?.trim() || '';
+};
+
+export const generateCommitMessage = async (changes: string[]): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Generate a concise git commit message for changes in: ${changes.join(', ')}.`
+    });
+    return response.text?.trim() || 'Update files';
+};
+
+export const generateProjectDocs = async (fileStructure: string, type: ProjectType, onStream: (text: string) => void) => {
+    const stream = await ai.models.generateContentStream({
+        model: 'gemini-3-pro-preview',
+        contents: `Generate comprehensive documentation (README.md style) for this ${type} project structure:\n${fileStructure}`
+    });
+    for await (const chunk of stream) {
+        if (chunk.text) onStream(chunk.text);
+    }
+};
+
+export const generateChangelog = async (files: string[], task: string): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Generate a changelog entry for task "${task}" affecting files: ${files.join(', ')}.`
+    });
+    return response.text || '';
+};
+
+export const autoUpdateReadme = async (current: string, changelog: string): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Append this changelog to the README:\n\n${changelog}\n\nCurrent README:\n${current}\n\nReturn full updated README.`
+    });
+    return response.text || current;
+};
+
+export const generateGhostText = async (prefix: string, suffix: string): Promise<string> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Complete the code. Prefix:\n${prefix}\nSuffix:\n${suffix}\nReturn ONLY the missing code.`
+        });
+        return response.text || '';
+    } catch {
+        return '';
+    }
+};
+
+export const generateTestResults = async (filename: string, content: string): Promise<any> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Simulate running unit tests for this code:\n${content}\nFilename: ${filename}.
+            Return JSON: { duration: number, passed: number, failed: number, suites: [{name: string, status: 'pass'|'fail', assertions: [{name: string, status: 'pass'|'fail', error?: string}]}] }`,
+            config: { responseMimeType: 'application/json' }
+        });
+        const text = cleanJson(response.text || '{}');
+        return JSON.parse(text);
+    } catch {
+        return { duration: 0, passed: 0, failed: 0, suites: [] };
+    }
+};
+
+export const generateSyntheticData = async (topic: string, count: number, onStream: (chunk: string) => void) => {
+    const stream = await ai.models.generateContentStream({
+        model: 'gemini-2.5-flash',
+        contents: `Generate ${count} synthetic data examples for topic "${topic}" in JSONL format.`
+    });
+    for await (const chunk of stream) {
+        if (chunk.text) onStream(chunk.text);
+    }
+};
+
+export const testFineTunedModel = async (modelName: string, prompt: string, onStream: (chunk: string) => void) => {
+    const stream = await ai.models.generateContentStream({
+        model: 'gemini-2.5-flash', 
+        contents: `[Simulating model ${modelName}] ${prompt}`
+    });
+    for await (const chunk of stream) {
+        if (chunk.text) onStream(chunk.text);
+    }
+};
+
+export const expandMindMap = async (nodeText: string, context: string): Promise<string[]> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Brainstorm 3-5 sub-ideas related to "${nodeText}". Context: ${context}. Return strictly a JSON string array.`,
+            config: { responseMimeType: 'application/json' }
+        });
+        const text = cleanJson(response.text || '[]');
+        return JSON.parse(text);
+    } catch {
+        return [];
+    }
+};
+
+export const generateSocialContent = async (
+    prompt: string, 
+    platform: string, 
+    onStream: (chunk: string) => void,
+    mediaRef?: string
+) => {
+    const parts: any[] = [{ text: `Generate ${platform} content for: ${prompt}` }];
+    
+    if (mediaRef && mediaRef.startsWith('data:')) {
+        const mimeType = getMimeType(mediaRef, 'image/png');
+        const data = mediaRef.split(',')[1];
+        parts.unshift({ inlineData: { mimeType, data } });
+    }
+
+    const stream = await ai.models.generateContentStream({
+        model: 'gemini-2.5-flash',
+        contents: { parts }
+    });
+
+    for await (const chunk of stream) {
+        if (chunk.text) onStream(chunk.text);
+    }
+};
+
+export const planAgentTask = async (agent: AIAgent, task: string, fileStructure: string, projectType: ProjectType): Promise<{filesToEdit: string[], strategy: string, requiresSearch: boolean}> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Plan the execution of this task: "${task}". Project Type: ${projectType}.
+            File Structure:\n${fileStructure}\n
+            Return JSON: { "filesToEdit": string[], "strategy": string, "requiresSearch": boolean }`,
+            config: { 
+                responseMimeType: 'application/json',
+                systemInstruction: `You are ${agent.name}, role: ${agent.role}. Persona: ${agent.systemPrompt}.`
+            }
+        });
+        const text = cleanJson(response.text || '{}');
+        return JSON.parse(text);
+    } catch {
+        return { filesToEdit: [], strategy: "Manual intervention required.", requiresSearch: false };
+    }
+};
+
+export const analyzeFile = async (agent: AIAgent, fileName: string, content: string, task: string, context: AgentContext): Promise<string> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Analyze ${fileName} in relation to task: "${task}".
+            Code:\n${content}\n
+            Context:\n${JSON.stringify(context.terminalLogs)}\n
+            Return a brief analysis of what needs to change.`,
+            config: { systemInstruction: agent.systemPrompt }
+        });
+        return response.text || 'Analysis failed.';
+    } catch {
+        return 'Analysis failed.';
     }
 };
 
@@ -300,597 +887,150 @@ export const executeBuildTask = async (
     fileName: string, 
     content: string, 
     instructions: string, 
-    context: any, 
+    context: AgentContext, 
     feedback: string, 
-    projectType: string,
+    projectType: ProjectType, 
     isNewFile: boolean,
     useSearch: boolean
-) => {
-    const client = getAiClient();
-    const prompt = `You are ${agent.name}, a ${agent.role}.
-    Project: ${projectType}. File: ${fileName}.
-    Instructions: ${instructions}.
-    Feedback from previous attempt: ${feedback || 'None'}.
-    
-    Context:
-    ${context.relatedCode ? `Related Code:\n${context.relatedCode}\n` : ''}
-    ${context.mcpContext ? `Knowledge Base:\n${context.mcpContext}\n` : ''}
-    
-    Return the FULL file content for ${fileName}. If deleting, return "DELETE_FILE".`;
-
+): Promise<{ code: string, logs: string[] }> => {
     try {
-        const tools = useSearch ? [{ googleSearch: {} }] : undefined;
-        const response = await client.models.generateContent({
+        const tools: any[] = [];
+        if (useSearch) tools.push({ googleSearch: {} });
+
+        const prompt = `Task: ${instructions}. 
+        File: ${fileName}. 
+        Project Type: ${projectType}.
+        ${isNewFile ? 'Create this file from scratch.' : 'Modify existing code.'}
+        ${feedback ? `Feedback from previous attempt: ${feedback}` : ''}
+        ${context.mcpContext ? `Rules: ${context.mcpContext}` : ''}
+        
+        Return the FULL file content only. No markdown fences if possible, or inside standard code blocks.`;
+
+        const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [{ parts: [{ text: content ? `Current Content:\n${content}\n\n${prompt}` : prompt }] }],
-            config: { tools }
+            contents: [
+                { role: 'user', parts: [{ text: prompt }, { text: `Current Code:\n${content}` }] }
+            ],
+            config: {
+                tools: tools.length > 0 ? tools : undefined,
+                systemInstruction: agent.systemPrompt
+            }
         });
-        
-        let code = response.text || content;
-        code = code.replace(/^```[\w-]*\n/, '').replace(/```$/, '');
-        
-        const logs = [];
-        if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-            logs.push("Used Google Search for context.");
+
+        const logs: string[] = [];
+        if (response.candidates?.[0]?.groundingMetadata) {
+            logs.push("Used Google Search grounding.");
         }
-        
-        return { code, logs };
-    } catch (e: any) {
-        return { code: content, logs: [`Error: ${e.message}`] };
+
+        return { code: cleanJson(response.text || content), logs };
+    } catch {
+        return { code: content, logs: ["Generation failed"] };
     }
 };
 
-export const runAgentFileTask = async (agent: AIAgent, fileName: string, content: string, context: any) => {
-    return (await executeBuildTask(agent, fileName, content, "Process file", context, "", "General", false, false)).code;
+export const runAgentFileTask = async (agent: AIAgent, fileName: string, content: string, context: AgentContext): Promise<string> => {
+    // Wrapper for simple tasks
+    const res = await executeBuildTask(agent, fileName, content, "Improve code", context, "", ProjectType.REACT_WEB, false, false);
+    return res.code;
 };
 
-export const reviewBuildTask = async (fileName: string, original: string, modified: string, instructions: string, context: any, projectType: string) => {
-    const client = getAiClient();
-    const prompt = `Reviewer: QA.
-    File: ${fileName}.
-    Instructions: ${instructions}.
-    
-    Original:
-    ${original.substring(0, 1000)}...
-    
-    Modified:
-    ${modified.substring(0, 1000)}...
-    
-    Verify correctness, syntax, and adherence to instructions.
-    Return JSON:
-    {
-        "approved": boolean,
-        "feedback": "string",
-        "issues": ["string"],
-        "fixCode": "string (optional auto-correction)",
-        "suggestedCommand": "string (optional terminal command to fix env)"
-    }`;
-
+export const reviewBuildTask = async (agent: AIAgent, fileName: string, oldCode: string, newCode: string, instructions: string, context: AgentContext, projectType: ProjectType): Promise<{ approved: boolean, feedback: string, issues: string[], fixCode?: string, suggestedCommand?: string }> => {
     try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
-        });
-        return safeParseJSON(response.text || '{}', { approved: true });
-    } catch (e) {
-        return { approved: true, feedback: "Auto-approved due to API error." };
-    }
-};
-
-export const delegateTasks = async (phase: ProjectPhase, agents: AIAgent[]) => {
-    const client = getAiClient();
-    const agentList = agents.map(a => `${a.name} (${a.role})`).join(', ');
-    const prompt = `Project Phase: ${phase.title}
-    Goals: ${phase.goals.join(', ')}
-    Available Agents: ${agentList}
-    
-    Assign tasks to agents. Return JSON:
-    {
-        "assignments": [
-            { "agentName": "Name", "taskDescription": "Specific task", "targetFile": "optional file path" }
-        ]
-    }`;
-
-    try {
-        const response = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
-            contents: prompt,
+            contents: `Review changes for ${fileName}. Task: ${instructions}.
+            Old Code Length: ${oldCode.length}. New Code Length: ${newCode.length}.
+            Verify logic, syntax, and safety.
+            Return JSON: { "approved": boolean, "feedback": string, "issues": string[], "fixCode": string (optional auto-fix), "suggestedCommand": string (optional terminal fix) }`,
+            config: { 
+                responseMimeType: 'application/json',
+                systemInstruction: agent.systemPrompt
+            }
+        });
+        const text = cleanJson(response.text || '{}');
+        return JSON.parse(text);
+    } catch {
+        return { approved: false, feedback: "Review failed", issues: ["AI Error"] };
+    }
+};
+
+export const delegateTasks = async (phase: ProjectPhase, agents: AIAgent[]): Promise<{ assignments: { agentName: string, taskDescription: string, targetFile?: string }[] }> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Delegate tasks for phase "${phase.title}".
+            Goals: ${phase.goals.join(', ')}.
+            Available Agents: ${agents.map(a => a.name + " (" + a.role + ")").join(', ')}.
+            Return JSON: { "assignments": [{ "agentName": string, "taskDescription": string, "targetFile": string (optional) }] }`,
             config: { responseMimeType: 'application/json' }
         });
-        return safeParseJSON(response.text || '{}', { assignments: [] });
-    } catch (e) {
+        const text = cleanJson(response.text || '{}');
+        return JSON.parse(text);
+    } catch {
         return { assignments: [] };
     }
 };
 
-// --- UTILS & GENERATORS ---
-
-export const generateChangelog = async (files: string[], taskName: string) => {
-    const client = getAiClient();
-    const prompt = `Generate a concise changelog for task "${taskName}". Modified files: ${files.join(', ')}.`;
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    return res.text || "Updated files.";
-};
-
-export const autoUpdateReadme = async (currentReadme: string, changelog: string) => {
-    const client = getAiClient();
-    const prompt = `Append this changelog to the README's history section or create one:\n${changelog}\n\nREADME:\n${currentReadme}`;
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    return res.text || currentReadme;
-};
-
-export const generateTerminalCommand = async (query: string, projectType: string) => {
-    const client = getAiClient();
-    const prompt = `Translate natural language to a terminal command for a ${projectType} project.
-    User: "${query}"
-    Output ONLY the command string. No markdown.`;
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    return res.text?.trim() || "";
-};
-
-export const generateTestResults = async (fileName: string, content: string) => {
-    const client = getAiClient();
-    const prompt = `Simulate a test run for ${fileName}. Code:\n${content.substring(0, 2000)}\n
-    Return JSON: { "passed": number, "failed": number, "duration": number, "suites": [{ "name": "suite", "status": "pass"|"fail", "assertions": [{"name": "test", "status": "pass"|"fail", "error": "msg"}] }] }`;
-    
+export const generateArchitecture = async (description: string): Promise<{ nodes: any[], links: any[] }> => {
     try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '{}', { passed: 1, failed: 0, suites: [] });
-    } catch {
-        return { passed: 0, failed: 1, duration: 0, suites: [] };
-    }
-};
-
-export const generatePerformanceReport = async (fileStructure: string) => {
-    const client = getAiClient();
-    const prompt = `Analyze this project structure for performance.\n${fileStructure}\n
-    Return JSON: { "scores": { "performance": 0-100, "accessibility": 0-100, "bestPractices": 0-100, "seo": 0-100 }, "opportunities": [{ "title": "string", "description": "string", "savings": "string" }] }`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '{}');
-    } catch {
-        return null;
-    }
-};
-
-export const runSecurityAudit = async (fileStructure: string, packageJson: string) => {
-    const client = getAiClient();
-    const prompt = `Audit for security vulnerabilities.\nStructure:\n${fileStructure}\nPackages:\n${packageJson}\n
-    Return JSON array of issues: [{ "severity": "critical"|"high"|"medium"|"low", "title": "string", "description": "string", "file": "string" }]`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '[]');
-    } catch {
-        return [];
-    }
-};
-
-export const generateProjectDocs = async (fileStructure: string, type: ProjectType, onChunk: (text: string) => void) => {
-    const client = getAiClient();
-    const prompt = `Generate comprehensive README.md documentation for a ${type} project.\nStructure:\n${fileStructure}`;
-    
-    try {
-        const stream = await client.models.generateContentStream({ model: 'gemini-2.5-flash', contents: prompt });
-        for await (const chunk of stream) {
-            if (chunk.text) onChunk(chunk.text);
-        }
-    } catch (e) {
-        onChunk("Error generating documentation.");
-    }
-};
-
-export const chatWithVoice = async (message: string): Promise<string> => {
-    const client = getAiClient();
-    const res = await client.models.generateContent({ 
-        model: 'gemini-2.5-flash', 
-        contents: `You are a helpful voice assistant. Reply briefly and conversationally to: "${message}"`
-    });
-    return res.text || "I didn't catch that.";
-};
-
-export const generateArchitecture = async (desc: string) => {
-    const client = getAiClient();
-    const prompt = `Design software architecture for: "${desc}".
-    Return JSON: { "nodes": [{ "id", "type": "frontend"|"backend"|"database", "label", "x", "y", "details" }], "links": [{ "id", "source", "target" }] }`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '{}', { nodes: [], links: [] });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Design system architecture for: "${description}".
+            Return JSON: { "nodes": [{ "id": string, "label": string, "type": "frontend"|"backend"|"database"|"storage" }], "links": [{ "source": string, "target": string }] }`,
+            config: { responseMimeType: 'application/json' }
+        });
+        const text = cleanJson(response.text || '{"nodes":[], "links":[]}');
+        return JSON.parse(text);
     } catch {
         return { nodes: [], links: [] };
     }
 };
 
-export const optimizeArchitecture = async (nodes: any[], links: any[]) => {
-    const client = getAiClient();
-    const prompt = `Optimize this architecture for scalability.\nNodes: ${JSON.stringify(nodes)}\nLinks: ${JSON.stringify(links)}\nReturn same JSON structure with improvements.`;
-    
+export const optimizeArchitecture = async (nodes: any[], links: any[]): Promise<{ nodes: any[], links: any[] }> => {
+    return { nodes, links };
+};
+
+export const generatePerformanceReport = async (fileStructure: string): Promise<any> => {
     try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '{}', { nodes, links });
-    } catch {
-        return { nodes, links };
-    }
-};
-
-export const generateCommitMessage = async (files: string[]) => {
-    const client = getAiClient();
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: `Generate a conventional commit message for changes in: ${files.join(', ')}` });
-    return res.text?.trim().replace(/^['"]|['"]$/g, '') || "Update files";
-};
-
-// --- MEDIA SERVICES ---
-
-export const generateImage = async (prompt: string): Promise<string> => {
-    const client = getAiClient();
-    try {
-        const response = await client.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt: prompt,
-            config: { numberOfImages: 1, aspectRatio: '1:1', outputMimeType: 'image/jpeg' }
-        });
-        
-        const b64 = response.generatedImages?.[0]?.image?.imageBytes;
-        return b64 ? `data:image/jpeg;base64,${b64}` : '';
-    } catch (e) {
-        console.error("Image Gen Error", e);
-        return "";
-    }
-};
-
-export const generateVideo = async (prompt: string, imageBase64?: string): Promise<string> => {
-    const client = getAiClient();
-    try {
-        const payload: any = {
-            model: 'veo-3.1-fast-generate-preview',
-            prompt,
-            config: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' }
-        };
-        
-        if (imageBase64) {
-            payload.image = {
-                imageBytes: imageBase64.split(',')[1],
-                mimeType: 'image/png'
-            };
-        }
-
-        let operation = await client.models.generateVideos(payload);
-        
-        let attempts = 0;
-        while (!operation.done && attempts < 20) {
-            await new Promise(r => setTimeout(r, 2000));
-            operation = await client.operations.getVideosOperation({ operation });
-            attempts++;
-        }
-        
-        const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
-        const apiKey = getApiKey();
-        return uri ? `${uri}&key=${apiKey}` : ''; 
-    } catch (e) {
-        console.error("Video Gen Error", e);
-        return "";
-    }
-};
-
-export const generateSpeech = async (text: string, voice: Voice, styleReference?: string): Promise<string> => {
-    if (!text.trim()) return '';
-    const client = getAiClient();
-    
-    let promptText = text;
-    if (voice.isCloned || styleReference) {
-        promptText = `(Style: ${voice.style}) ${text}`;
-    }
-
-    try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash-preview-tts',
-            contents: { parts: [{ text: promptText }] },
-            config: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: { 
-                            voiceName: (!voice.isCloned && voice.apiMapping) ? voice.apiMapping : 'Kore' 
-                        }
-                    }
-                }
-            }
-        });
-
-        const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (audioData) {
-            return pcmToWav(audioData);
-        }
-    } catch (e) {
-        console.error("TTS Generation Failed", e);
-    }
-    return '';
-};
-
-export const generateSoundEffect = async (prompt: string): Promise<string> => {
-    const client = getAiClient();
-    try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-            contents: `Generate sound effect: ${prompt}`,
-            config: { responseModalities: ['AUDIO'] }
-        });
-        const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        return audioData ? pcmToWav(audioData) : '';
-    } catch {
-        return '';
-    }
-};
-
-export const generateBackgroundMusic = async (prompt: string): Promise<string> => {
-    return generateSoundEffect(`Background music: ${prompt}`);
-};
-
-export const generateSong = async (
-    lyrics: string, 
-    styleRef: string | undefined, 
-    voiceId: string | undefined, 
-    youtubeLink: string, 
-    genre: string,
-    voiceStyle?: string,
-    structure?: string
-): Promise<string> => {
-    const client = getAiClient();
-    const prompt = `Create a ${genre} song.
-    Structure: ${structure || 'standard'}.
-    Vocal Style: ${voiceStyle || 'singing'}.
-    Lyrics: ${lyrics || '(Instrumental)'}.
-    
-    Generate audio.`;
-    
-    try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-            contents: prompt,
-            config: { responseModalities: ['AUDIO'] }
-        });
-        const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        return audioData ? pcmToWav(audioData) : '';
-    } catch {
-        return '';
-    }
-};
-
-export const generateLyrics = async (prompt: string, genre: string, existingLyrics?: string): Promise<string> => {
-    const client = getAiClient();
-    const context = existingLyrics ? `Continue these lyrics:\n"${existingLyrics}"\n\n` : `Write lyrics for a ${genre} song.\n`;
-    
-    const response = await client.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `${context}Prompt: ${prompt}. Keep it rhythmic and rhyming. Return ONLY the lyrics.`
-    });
-    
-    return response.text?.trim() || "";
-};
-
-export const expandMindMap = async (topic: string, context: string): Promise<string[]> => {
-    const client = getAiClient();
-    const prompt = `Generate 4 distinct sub-concepts for: "${topic}". Context: ${context}. Return ONLY a JSON array of strings.`;
-
-    try {
-        const response = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: prompt,
+            contents: `Analyze project structure for performance:
+            ${fileStructure}
+            Return JSON: { "scores": { "performance": number, "accessibility": number, "bestPractices": number, "seo": number }, "opportunities": [{ "title": string, "description": string, "savings": string }] }`,
             config: { responseMimeType: 'application/json' }
         });
-        return safeParseJSON(response.text || '[]');
-    } catch {
-        return ["Idea 1", "Idea 2"];
-    }
-};
-
-export const generateSocialContent = async (prompt: string, platform: string, onChunk: (text: string) => void, mediaBase64?: string) => {
-    const client = getAiClient();
-    
-    const parts: any[] = [];
-    if (mediaBase64) {
-        parts.push({ inlineData: { mimeType: 'image/png', data: mediaBase64.split(',')[1] } });
-    }
-    parts.push({ text: `Platform: ${platform}. ${prompt}` });
-
-    try {
-        const stream = await client.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: { parts }
-        });
-        for await (const chunk of stream) {
-            if (chunk.text) onChunk(chunk.text);
-        }
-    } catch (e) {
-        onChunk("Error generating content.");
-    }
-};
-
-export const analyzeMediaStyle = async (base64: string, type: 'image' | 'video' | 'audio'): Promise<string> => {
-    const client = getAiClient();
-    const prompt = `Analyze this ${type} and describe its style, tone, and key features in one sentence.`;
-    
-    try {
-        const parts: any[] = [{ text: prompt }];
-        if (type !== 'audio') {
-             parts.unshift({ inlineData: { mimeType: type === 'video' ? 'video/mp4' : 'image/png', data: base64.split(',')[1] } });
-        }
-        
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts }
-        });
-        return response.text || "Analysis failed";
-    } catch {
-        return "Generic style";
-    }
-};
-
-export const analyzeCharacterFeatures = async (base64: string): Promise<string> => {
-    return analyzeMediaStyle(base64, 'image');
-};
-
-export const editImage = async (base64: string, prompt: string): Promise<string> => {
-    const client = getAiClient();
-    try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: {
-                parts: [
-                    { inlineData: { mimeType: 'image/png', data: base64.split(',')[1] } },
-                    { text: prompt }
-                ]
-            }
-        });
-        
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-            if (part.inlineData) {
-                return `data:image/png;base64,${part.inlineData.data}`;
-            }
-        }
-        return '';
-    } catch {
-        return '';
-    }
-};
-
-export const removeBackground = async (base64: string): Promise<string> => {
-    return editImage(base64, "Remove background, keep subject only on transparent background");
-};
-
-export const generateDrumPattern = async (description: string): Promise<boolean[][] | null> => {
-    const client = getAiClient();
-    const prompt = `Generate a drum pattern (16 steps x 5 rows: Kick, Snare, HiHat, Clap, Bass) for: "${description}".
-    Return JSON: boolean[][] (5x16 matrix).`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || 'null');
+        const text = cleanJson(response.text || '{}');
+        return JSON.parse(text);
     } catch {
         return null;
     }
 };
 
-export const transcribeAudio = async (audioUrl: string): Promise<string> => {
-    return "Transcript of audio content..."; 
-};
-
-export const testFineTunedModel = async (modelName: string, prompt: string, onChunk: (text: string) => void) => {
-    const client = getAiClient();
+export const runSecurityAudit = async (fileStructure: string, packageJson: string): Promise<any[]> => {
     try {
-        const stream = await client.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: `[Simulating ${modelName}] ${prompt}`
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Audit project for security vulnerabilities.
+            Structure:\n${fileStructure}
+            Dependencies:\n${packageJson}
+            Return JSON array: [{ "severity": "critical"|"high"|"medium"|"low", "title": string, "description": string, "file": string }]`,
+            config: { responseMimeType: 'application/json' }
         });
-        for await (const chunk of stream) {
-            if (chunk.text) onChunk(chunk.text);
-        }
-    } catch {
-        onChunk("Error testing model.");
-    }
-};
-
-export const generateSyntheticData = async (topic: string, count: number, onChunk: (text: string) => void) => {
-    const client = getAiClient();
-    const prompt = `Generate ${count} synthetic data examples for: "${topic}". Format as JSONL.`;
-    try {
-        const stream = await client.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: prompt
-        });
-        for await (const chunk of stream) {
-            if (chunk.text) onChunk(chunk.text);
-        }
-    } catch {
-        onChunk("{}");
-    }
-};
-
-export const generateSQL = async (query: string, schema: string): Promise<string> => {
-    const client = getAiClient();
-    const prompt = `Schema:\n${schema}\n\nWrite SQL for: "${query}". Return only SQL.`;
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    return res.text || "";
-};
-
-export const modifyDatabaseSchema = async (currentSchema: TableDef[], instruction: string): Promise<TableDef[] | null> => {
-    const client = getAiClient();
-    const prompt = `Current Schema JSON: ${JSON.stringify(currentSchema)}
-    Instruction: "${instruction}"
-    Return updated Schema JSON array.`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || 'null');
-    } catch {
-        return null;
-    }
-};
-
-export const generateMigrationScript = async (current: TableDef[], initial: TableDef[]): Promise<string> => {
-    const client = getAiClient();
-    const prompt = `Generate SQL migration script to go from Initial to Current schema.
-    Initial: ${JSON.stringify(initial)}
-    Current: ${JSON.stringify(current)}`;
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    return res.text || "";
-};
-
-export const detectIntent = async (text: string): Promise<'task' | 'chat' | 'command'> => {
-    const client = getAiClient();
-    const prompt = `Classify intent: "${text}". Categories: task (complex work), chat (simple q&a), command (specific action). Return JSON: {"intent": "..."}`;
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '{}').intent || 'chat';
-    } catch {
-        return 'chat';
-    }
-};
-
-export const generateGhostText = async (prefix: string, suffix: string): Promise<string> => {
-    const client = getAiClient();
-    const prompt = `Complete the code.
-    Prefix:
-    ${prefix.slice(-500)}
-    [CURSOR]
-    Suffix:
-    ${suffix.slice(0, 200)}
-    
-    Return ONLY the completion text.`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-        return res.text || "";
-    } catch {
-        return "";
-    }
-};
-
-export const generateProjectPlan = async (desc: string, type: ProjectType): Promise<ProjectPhase[]> => {
-    const client = getAiClient();
-    const prompt = `Create a project roadmap for a ${type} project: "${desc}".
-    Return JSON array of phases: [{ "id", "title", "status": "pending", "goals": [], "tasks": [{ "id", "text", "done": false }] }]`;
-    
-    try {
-        const res = await client.models.generateContent({ model: 'gemini-3-pro-preview', contents: prompt, config: { responseMimeType: 'application/json' } });
-        return safeParseJSON(res.text || '[]');
+        const text = cleanJson(response.text || '[]');
+        return JSON.parse(text);
     } catch {
         return [];
     }
 };
 
-export const generateAudioPrompt = async (sceneDescription: string, type: 'voice' | 'sfx' | 'music'): Promise<string> => {
-    const client = getAiClient();
-    const context = `Scene Description: "${sceneDescription}"`;
-    let prompt = "";
-    
-    if (type === 'voice') prompt = `${context}\nGenerate a short, engaging voiceover script (1-2 sentences) for this scene. Return ONLY the spoken text.`;
-    else if (type === 'sfx') prompt = `${context}\nDescribe a specific sound effect that fits this scene (e.g. "footsteps on gravel"). Return ONLY the description.`;
-    else prompt = `${context}\nDescribe the background music mood and genre for this scene. Return ONLY the description.`;
-
-    const res = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-    return res.text?.trim() || "";
+export const chatWithVoice = async (text: string): Promise<string> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Conversational response to: "${text}". Keep it concise and natural.`
+        });
+        return response.text || "I didn't catch that.";
+    } catch {
+        return "Service unavailable.";
+    }
 };

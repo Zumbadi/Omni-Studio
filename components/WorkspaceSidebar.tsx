@@ -95,6 +95,14 @@ export const WorkspaceSidebar = memo(({
       setActiveActivity(activity);
   };
 
+  const handleEmptyTrash = () => {
+      if (onFileOps.onEmptyTrash) {
+          if (confirm("Are you sure you want to permanently delete all items in the trash? This cannot be undone.")) {
+              onFileOps.onEmptyTrash();
+          }
+      }
+  };
+
   return (
     <>
       {/* Activity Bar: 
@@ -159,6 +167,7 @@ export const WorkspaceSidebar = memo(({
                             onFileClick={onFileClick} 
                             onContextMenu={onContextMenu}
                             {...onFileOps}
+                            onEmptyTrash={handleEmptyTrash}
                         />
                   </div>
               )}
@@ -169,7 +178,7 @@ export const WorkspaceSidebar = memo(({
               {activeActivity === 'ASSETS' && <AssetsPanel assets={assets} onInsertAsset={onInsertAsset} />}
               {activeActivity === 'AGENTS' && <AgentsPanel activeTask={activeAgentTask} history={agentHistory} onStartTask={onStartAgentTask} onCancelTask={onCancelAgentTask} activeAgent={activeAgent} />}
               {activeActivity === 'SNIPPETS' && <SnippetsPanel snippets={snippets} onAddSnippet={onAddSnippet} onDeleteSnippet={onDeleteSnippet} onInsertSnippet={onInsertSnippet} />}
-              {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddKnowledgeDoc={onAddKnowledgeDoc} onUpdateKnowledgeDoc={onUpdateKnowledgeDoc} onDeleteKnowledgeDoc={onDeleteKnowledgeDoc} />}
+              {activeActivity === 'KNOWLEDGE' && <KnowledgePanel docs={knowledgeDocs} onAddDoc={onAddKnowledgeDoc} onUpdateDoc={onUpdateKnowledgeDoc} onDeleteDoc={onDeleteKnowledgeDoc} />}
             </div>
         </>
       )}

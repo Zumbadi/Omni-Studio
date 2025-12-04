@@ -26,7 +26,7 @@ export const Settings: React.FC = () => {
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   
   const [temperature, setTemperature] = useState(0.7);
-  const [systemPrompt, setSystemPrompt] = useState("You are an expert React developer.");
+  const [systemPrompt, setSystemPrompt] = useState(() => localStorage.getItem('omni_system_prompt') || "You are an expert React developer.");
   const [customModels, setCustomModels] = useState<any[]>([]);
   const [apiProviders, setApiProviders] = useState<ApiProvider[]>([]);
   const [isSaved, setIsSaved] = useState(false);
@@ -101,6 +101,7 @@ export const Settings: React.FC = () => {
   const handleSave = () => {
       localStorage.setItem('omni_active_model', activeModel);
       localStorage.setItem('omni_gemini_key', geminiKey);
+      localStorage.setItem('omni_system_prompt', systemPrompt);
       
       // Save Editor Config
       const editorConfig = { fontSize, tabSize, vimMode };
@@ -448,7 +449,7 @@ export const Settings: React.FC = () => {
             <h2>Danger Zone</h2>
           </div>
           <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-400">Reset the entire workspace, deleting all projects, settings, and agents.</p>
+              <p className="text-sm text-gray-400">Reset the entire workspace, deleting all projects, settings, and data.</p>
               <Button variant="danger" onClick={handleFactoryReset}>Factory Reset</Button>
           </div>
         </section>

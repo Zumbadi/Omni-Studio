@@ -236,28 +236,21 @@ export const MediaStudio: React.FC = () => {
       const scene = selectedPost?.scenes?.find(s => s.id === sceneId);
       if (!scene) return;
       
-      // Veo API Key Check using platform globals
-      if ((window as any).aistudio) {
-          try {
-              const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-              if (!hasKey) {
-                  const success = await (window as any).aistudio.openSelectKey();
-                  // We continue regardless, as generateVideo will fail gracefully or the user might have set ENV var
-              }
-          } catch (e) {
-              console.error("Veo Key Selection Error", e);
-          }
-      }
-      
       handleUpdateScene(sceneId, { status: 'generating' });
       
-      const video = await generateVideo(scene.description, scene.imageUrl);
-      
-      if (video) {
-          handleUpdateScene(sceneId, { videoUrl: video, status: 'done' });
-      } else {
+      try {
+          // Service handles API Key selection and polling logic
+          const video = await generateVideo(scene.description, scene.imageUrl);
+          if (video) {
+              handleUpdateScene(sceneId, { videoUrl: video, status: 'done' });
+          } else {
+              handleUpdateScene(sceneId, { status: 'pending' });
+              alert("Video generation returned no result. Please try again.");
+          }
+      } catch (e) {
+          console.error("Video Generation Failed", e);
           handleUpdateScene(sceneId, { status: 'pending' });
-          alert("Video generation failed or timed out. Please try again.");
+          alert("Video generation failed. Please ensure you have selected a valid API key with Veo access.");
       }
   };
 
@@ -274,12 +267,15 @@ export const MediaStudio: React.FC = () => {
           audioUrl = await generateBackgroundMusic(prompt);
       }
 
+      // Estimate duration
+      const estimatedDuration = Math.max(2, prompt.length / 15);
+
       if (audioUrl) {
           const newTrack: AudioTrack = {
               id: `tr-${Date.now()}`,
               name: `${type.toUpperCase()}: ${prompt.substring(0,10)}`,
               type: type === 'voice' ? 'voiceover' : type === 'sfx' ? 'sfx' : 'music',
-              duration: 5, // Mock duration
+              duration: parseFloat(estimatedDuration.toFixed(1)),
               startOffset: currentTime,
               audioUrl,
               volume: 1.0,

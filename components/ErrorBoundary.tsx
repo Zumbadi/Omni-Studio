@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -10,15 +10,11 @@ interface ErrorBoundaryState {
   error: any | null;
 }
 
-export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = {
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = {
     hasError: false,
     error: null
   };
-
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -42,7 +38,6 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   render() {
     if (this.state.hasError) {
-      // Safely stringify error to avoid [object Object]
       const errorMessage = this.state.error instanceof Error 
         ? this.state.error.message 
         : typeof this.state.error === 'object' && this.state.error !== null
@@ -51,7 +46,6 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
       return (
         <div className="h-screen w-screen bg-gray-950 flex flex-col items-center justify-center text-white p-6 relative overflow-hidden">
-          {/* Background Noise */}
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
           
           <div className="bg-red-900/20 border border-red-800 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl relative z-10 backdrop-blur-xl animate-in zoom-in duration-300">

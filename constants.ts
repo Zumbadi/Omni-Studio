@@ -278,6 +278,7 @@ export const MOCK_EXTENSIONS: Extension[] = [
   { id: 'e1', name: 'Prettier', description: 'Code formatter', publisher: 'esbenp', downloads: '34M', installed: true, icon: 'P' },
   { id: 'e2', name: 'ESLint', description: 'Linting utility', publisher: 'Microsoft', downloads: '28M', installed: true, icon: 'E' },
   { id: 'e3', name: 'Docker', description: 'Container support', publisher: 'Microsoft', downloads: '19M', installed: false, icon: 'D' },
+  { id: 'e4', name: 'Live Interpreter', description: 'Real-time code evaluation', publisher: 'Omni', downloads: '10K', installed: true, icon: '⚡' },
 ];
 
 export const MOCK_SNIPPETS: Snippet[] = [

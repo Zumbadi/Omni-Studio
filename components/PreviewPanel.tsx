@@ -99,7 +99,7 @@ export const PreviewPanel = memo(({
                     envVars={envVars}
                 />
             )}
-            {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} />}
+            {activeTab === 'database' && <DatabaseStudio projectType={project.type} files={files} onSaveFile={onSaveFile} />}
             {activeTab === 'architecture' && <ArchitectureDesigner projectDescription={project.description} files={files} onOpenFile={onOpenFile} />}
             {activeTab === 'deploy' && (
                 <DeploymentConsole 

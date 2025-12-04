@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Film, Music, RotateCcw, RotateCw, Pause, Play, Loader2, Download, Scissors, Copy, Trash2, Clock, Sliders, Wand2, Layers, ArrowRightLeft, Plus, Volume2, Monitor, Clapperboard, FileText, Image as ImageIcon, Mic, Video, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Film, Music, RotateCcw, RotateCw, Pause, Play, Loader2, Download, Scissors, Copy, Trash2, Clock, Sliders, Wand2, Layers, ArrowRightLeft, Plus, Volume2, Monitor, Clapperboard, FileText, Image as ImageIcon, Mic, Video, ArrowLeft, ArrowRight, Maximize } from 'lucide-react';
 import { Button } from './Button';
 import { SocialPost, AudioTrack, Scene, Voice } from '../types';
 
@@ -37,6 +37,15 @@ interface MediaDirectorViewProps {
   onDeleteAudioTrack?: (trackId: string) => void;
 }
 
+const LOADING_MESSAGES = [
+    "Initializing neural renderer...",
+    "Dreaming up frames...",
+    "Applying cinematic lighting...",
+    "Synthesizing motion vectors...",
+    "Polishing pixels...",
+    "Almost there..."
+];
+
 export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
   selectedPost, audioTracks, currentTime, setCurrentTime, isPreviewPlaying, setIsPreviewPlaying,
   isRendering, renderProgress, onSelectAudio, onUndo, onRedo, onRenderMovie,
@@ -57,6 +66,8 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioMode, setAudioMode] = useState<'voice' | 'sfx' | 'music'>('voice');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>(voices[0]?.id || 'def');
+  
+  const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
 
   // Calculate Timeline Metrics
   const scenes = selectedPost?.scenes || [];
@@ -75,6 +86,16 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
   // Determine Active Scene for Player
   const activeScene = sceneMetrics.find(s => currentTime >= s.startTime && currentTime < s.endTime) || sceneMetrics[sceneMetrics.length - 1];
   
+  useEffect(() => {
+      let interval: any;
+      if (activeScene?.status === 'generating') {
+          interval = setInterval(() => {
+              setLoadingMsgIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+          }, 3000);
+      }
+      return () => clearInterval(interval);
+  }, [activeScene?.status]);
+
   useEffect(() => {
       if (activeScene) {
           if (audioMode === 'voice' && activeScene.audioScript) {
@@ -137,6 +158,16 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
       }
   };
 
+  const handleFullscreen = () => {
+      if (videoRef.current) {
+          if (videoRef.current.requestFullscreen) {
+              videoRef.current.requestFullscreen();
+          } else if ((videoRef.current as any).webkitRequestFullscreen) {
+              (videoRef.current as any).webkitRequestFullscreen();
+          }
+      }
+  };
+
   const formatTime = (time: number) => {
       const mins = Math.floor(time / 60);
       const secs = Math.floor(time % 60);
@@ -171,7 +202,8 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
                             {activeScene?.status === 'generating' ? (
                                 <>
                                     <Loader2 size={48} className="animate-spin mb-4 text-purple-500" />
-                                    <div className="text-sm font-mono animate-pulse text-purple-300">Generating Media...</div>
+                                    <div className="text-sm font-mono animate-pulse text-purple-300">Generating Video...</div>
+                                    <div className="text-xs text-gray-500 mt-2 font-mono animate-pulse">{LOADING_MESSAGES[loadingMsgIndex]}</div>
                                 </>
                             ) : (
                                 <>
@@ -181,6 +213,31 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = ({
                             )}
                         </div>
                     )}
+                    
+                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                        {/* Fullscreen Button */}
+                        {activeScene?.videoUrl && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFullscreen(); }}
+                                className="bg-black/60 text-white p-2 rounded-full hover:bg-primary-600 transition-colors backdrop-blur-md"
+                                title="Fullscreen"
+                            >
+                                <Maximize size={16} />
+                            </button>
+                        )}
+                        {/* Video Download Button */}
+                        {activeScene?.videoUrl && (
+                            <a 
+                                href={activeScene.videoUrl} 
+                                download={`scene-${activeScene.id}.mp4`}
+                                className="bg-black/60 text-white p-2 rounded-full hover:bg-primary-600 transition-colors backdrop-blur-md"
+                                title="Download Video"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <Download size={16} />
+                            </a>
+                        )}
+                    </div>
                     
                     {/* Scene Text Overlay */}
                     <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded text-xs font-mono text-white/90 backdrop-blur-sm pointer-events-none">
