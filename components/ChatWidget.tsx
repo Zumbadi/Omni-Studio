@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, Zap, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Terminal, Container, Workflow, Paperclip, MapPin, Trash2, FileText, File, Move, Box, Clapperboard } from 'lucide-react';
+import { Minimize2, Maximize2, X, MessageSquare, ArrowRight, Image as ImageIcon, Bot, Loader2, Activity, Mic, Sparkles, Zap, Command, Code, Bug, Eraser, Volume2, Wand2, Play, Globe, Rocket, Book, Layers, Terminal, Container, Workflow, Paperclip, MapPin, Trash2, FileText, File, Move, Box, Clapperboard, AlignLeft } from 'lucide-react';
 import { Button } from './Button';
 import { ChatMessage, AgentTask, FileNode } from '../types';
 import { MessageRenderer } from './MessageRenderer';
@@ -47,6 +47,7 @@ const SLASH_COMMANDS = [
     { cmd: '/refactor', desc: 'Refactor current code', Icon: Code, color: 'text-blue-400' },
     { cmd: '/fix', desc: 'Analyze and fix bugs', Icon: Bug, color: 'text-red-400' },
     { cmd: '/explain', desc: 'Explain functionality', Icon: MessageSquare, color: 'text-green-400' },
+    { cmd: '/format', desc: 'Auto-format current file', Icon: AlignLeft, color: 'text-orange-300' },
     { cmd: '/docs', desc: 'Generate documentation', Icon: Book, color: 'text-teal-400' },
     { cmd: '/edit', desc: 'Edit attached image', Icon: Wand2, color: 'text-cyan-400' },
     { cmd: '/clear', desc: 'Clear chat history', Icon: Eraser, color: 'text-gray-500' },
@@ -139,15 +140,18 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   useEffect(() => {
       // 1. Slash Commands Detection
-      const slashMatch = input.match(/^\/(\w*)$/);
-      if (slashMatch) {
-          const query = slashMatch[1].toLowerCase();
-          const filtered = SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith('/' + query));
-          setFilteredCommands(filtered);
-          setShowCommands(filtered.length > 0);
-          setShowMentions(false);
-          setActiveIndex(0);
-          return;
+      if (input.startsWith('/')) {
+          const query = input.substring(1).toLowerCase();
+          // Filter if we are still typing the command (no space yet)
+          // Also handle case where input is just '/' (query is empty)
+          if (!input.includes(' ')) {
+              const filtered = SLASH_COMMANDS.filter(c => c.cmd.toLowerCase().startsWith('/' + query));
+              setFilteredCommands(filtered);
+              setShowCommands(filtered.length > 0);
+              setShowMentions(false);
+              setActiveIndex(0);
+              return;
+          }
       } 
       
       // 2. Mention Detection (@...)

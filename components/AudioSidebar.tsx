@@ -1,9 +1,10 @@
 
 import React, { useRef, useState } from 'react';
-import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid, Sparkles, Youtube, Edit2, Save, ArrowRight, Activity, FileMusic, Radio } from 'lucide-react';
+import { Music, Wand2, User, Check, Sliders, Upload, Zap, Mic, Volume2, Loader2, Grid, Sparkles, Youtube, Edit2, Save, ArrowRight, Activity, FileMusic, Radio, Settings2, Trash2, Mic2, Users, FileAudio, Keyboard, FileText } from 'lucide-react';
 import { Button } from './Button';
-import { Voice } from '../types';
+import { Voice, AudioTrack, PodcastConfig } from '../types';
 import { generateLyrics } from '../services/geminiService';
+import { AudioEffectsRack } from './AudioEffectsRack';
 
 export type AudioTab = 'mixer' | 'cloning' | 'pro' | 'sequencer' | 'music' | 'podcast';
 
@@ -40,14 +41,16 @@ interface AudioSidebarProps {
   setVoiceStyle?: (s: string) => void;
   songStructure?: string;
   setSongStructure?: (s: string) => void;
+  
   // Podcast Props
-  podcastTopic?: string;
-  setPodcastTopic?: (t: string) => void;
-  hostVoice?: string;
-  setHostVoice?: (v: string) => void;
-  guestVoice?: string;
-  setGuestVoice?: (v: string) => void;
+  podcastConfig?: PodcastConfig;
+  setPodcastConfig?: React.Dispatch<React.SetStateAction<PodcastConfig>>;
   onGeneratePodcast?: () => void;
+  
+  // Track Selection
+  selectedTrack?: AudioTrack | null;
+  onUpdateTrack?: (id: string, updates: Partial<AudioTrack>) => void;
+  onDeleteTrack?: (id: string) => void;
 }
 
 export const AudioSidebar: React.FC<AudioSidebarProps> = ({
@@ -56,10 +59,15 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
   mastering, setMastering, onUploadStyleRef, isRecording, startRecording, stopRecording, recordingTime, formatTime,
   onCloneFromFile, onGenerateSong, youtubeLink, setYoutubeLink, genre, setGenre, onUpdateVoice, className,
   voiceStyle, setVoiceStyle, songStructure, setSongStructure,
-  podcastTopic, setPodcastTopic, hostVoice, setHostVoice, guestVoice, setGuestVoice, onGeneratePodcast
+  podcastConfig, setPodcastConfig, onGeneratePodcast,
+  selectedTrack, onUpdateTrack, onDeleteTrack
 }) => {
   const cloneInputRef = useRef<HTMLInputElement>(null);
   const musicRefInputRef = useRef<HTMLInputElement>(null);
+  const introUploadRef = useRef<HTMLInputElement>(null);
+  const outroUploadRef = useRef<HTMLInputElement>(null);
+  const sourceUploadRef = useRef<HTMLInputElement>(null);
+  
   const [editingVoiceId, setEditingVoiceId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editSettings, setEditSettings] = useState({ stability: 0.5, similarity: 0.75 });
@@ -68,6 +76,7 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
   const GENRES = ["Trap Soul", "Neo Soul", "R&B", "Lofi", "Hip Hop", "Jazz", "Gospel", "Pop", "Rock", "Electronic"];
   const VOCAL_STYLES = ["Singing", "Rapping", "Spoken Word", "Screaming", "Whispering", "Autotune", "Choir", "Soulful"];
   const STRUCTURES = ["Intro-Verse-Chorus-Outro", "Verse-Chorus-Verse-Chorus", "Continuous Flow", "Drop-Breakdown-Build", "A-B-A-B-C-B"];
+  const PODCAST_STYLES = ['Casual Chat', 'Deep Dive', 'Debate', 'News Brief', 'Storytelling'];
 
   const handleStartEdit = (voice: Voice) => {
       setEditingVoiceId(voice.id);
@@ -92,10 +101,44 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
   };
 
   const triggerCloneInput = () => {
-      // Reset value to ensure onChange fires even if same file is selected
       if (cloneInputRef.current) {
           cloneInputRef.current.value = ''; 
           cloneInputRef.current.click();
+      }
+  };
+
+  const handleIntroUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && setPodcastConfig && podcastConfig) {
+          setPodcastConfig({
+              ...podcastConfig,
+              intro: { ...podcastConfig.intro, type: 'upload', file: file, content: file.name }
+          });
+      }
+  };
+
+  const handleOutroUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && setPodcastConfig && podcastConfig) {
+          setPodcastConfig({
+              ...podcastConfig,
+              outro: { ...podcastConfig.outro, type: 'upload', file: file, content: file.name }
+          });
+      }
+  };
+
+  const handleSourceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && setPodcastConfig && podcastConfig) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+              const text = ev.target?.result as string;
+              setPodcastConfig({
+                  ...podcastConfig,
+                  sourceMaterial: text
+              });
+          };
+          reader.readAsText(file);
       }
   };
 
@@ -116,87 +159,307 @@ export const AudioSidebar: React.FC<AudioSidebarProps> = ({
            <button onClick={() => setActiveTab('sequencer')} className={`col-span-2 py-1.5 text-[10px] font-medium rounded-md transition-colors ${activeTab === 'sequencer' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white'}`}>Beat Sequencer</button>
         </div>
 
-        {activeTab === 'mixer' && (
-           <div className="space-y-4 flex-1 overflow-y-auto">
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
-                 <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Wand2 size={14} className="text-purple-400"/> Text to Speech</h3>
-                 <textarea className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-gray-300 focus:outline-none resize-none h-24 mb-2 focus:border-primary-500" placeholder="Enter text to generate..." value={ttsInput} onChange={(e) => setTtsInput(e.target.value)} />
-                 <div className="mb-2">
-                    {styleReference && <div className="text-xs text-green-400 flex items-center gap-1 mb-2 bg-green-900/20 px-2 py-1 rounded"><Check size={10} /> Style Active</div>}
-                 </div>
-                 <select value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 mb-2">
-                    {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                 </select>
-                 <Button size="sm" className="w-full" onClick={onGenerateTTS} disabled={isGenerating}>
-                    {isGenerating ? <Loader2 size={14} className="animate-spin mr-2"/> : <Volume2 size={14} className="mr-2"/>} {isGenerating ? 'Generating...' : 'Generate Speech'}
-                 </Button>
-              </div>
-              
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm transition-all duration-300">
-                 <div className="flex justify-between items-center mb-3">
-                     <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2"><Activity size={14} className="text-green-400"/> AI Mastering</h3>
-                     <div className="relative inline-block w-8 mr-2 align-middle select-none transition duration-200 ease-in">
-                        <input type="checkbox" name="toggle" id="toggle" className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer" checked={mastering.enabled} onChange={(e) => setMastering({...mastering, enabled: e.target.checked})} style={{ right: mastering.enabled ? '0' : 'auto', left: mastering.enabled ? 'auto' : '0', borderColor: mastering.enabled ? '#10b981' : '#d1d5db' }}/>
-                        <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-4 rounded-full cursor-pointer ${mastering.enabled ? 'bg-green-400' : 'bg-gray-600'}`}></label>
-                     </div>
-                 </div>
-                 {mastering.enabled && (
-                     <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                         <div><div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Warmth (Low End)</span><span>{mastering.warmth}%</span></div><input type="range" min="0" max="100" value={mastering.warmth} onChange={(e) => setMastering({...mastering, warmth: parseInt(e.target.value)})} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-orange-500"/></div>
-                         <div><div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Clarity (Highs)</span><span>{mastering.clarity}%</span></div><input type="range" min="0" max="100" value={mastering.clarity} onChange={(e) => setMastering({...mastering, clarity: parseInt(e.target.value)})} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"/></div>
-                         <div><div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Punch (Dynamics)</span><span>{mastering.punch}%</span></div><input type="range" min="0" max="100" value={mastering.punch} onChange={(e) => setMastering({...mastering, punch: parseInt(e.target.value)})} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-500"/></div>
-                     </div>
-                 )}
-              </div>
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
-                 <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Sliders size={14} className="text-blue-400"/> Quick Actions</h3>
-                 <Button size="sm" variant="secondary" className="w-full mb-2" onClick={onSmartMix}>Auto-Mix (Ducking)</Button>
-              </div>
-           </div>
-        )}
-
-        {activeTab === 'podcast' && (
+        {activeTab === 'podcast' && podcastConfig && setPodcastConfig && (
             <div className="space-y-4 flex-1 overflow-y-auto">
                 <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
-                    <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Radio size={14} className="text-red-400"/> AI Podcast</h3>
+                    <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2"><Radio size={14} className="text-red-400"/> Podcast Studio</h3>
                     
-                    <div className="space-y-3">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-400 mb-1">Topic / Title</label>
+                    <div className="space-y-4">
+                        {/* Topic & Style */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-500 uppercase">Topic</label>
                             <input 
-                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary-500" 
+                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-primary-500 outline-none" 
                                 placeholder="e.g. Future of Tech"
-                                value={podcastTopic || ''}
-                                onChange={(e) => setPodcastTopic && setPodcastTopic(e.target.value)}
+                                value={podcastConfig.topic}
+                                onChange={(e) => setPodcastConfig({...podcastConfig, topic: e.target.value})}
                             />
-                        </div>
-
-                        <div>
-                            <label className="block text-xs font-medium text-gray-400 mb-1">Host Voice</label>
-                            <select value={hostVoice} onChange={(e) => setHostVoice && setHostVoice(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300">
-                                {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            
+                            <label className="text-xs font-bold text-gray-500 uppercase mt-2 block">Format / Style</label>
+                            <select 
+                                value={podcastConfig.style} 
+                                onChange={(e) => setPodcastConfig({...podcastConfig, style: e.target.value as any})} 
+                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 focus:border-primary-500 outline-none"
+                            >
+                                {PODCAST_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
 
-                        <div>
-                            <label className="block text-xs font-medium text-gray-400 mb-1">Guest Voice</label>
-                            <select value={guestVoice} onChange={(e) => setGuestVoice && setGuestVoice(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300">
-                                {voices.filter(v => v.id !== hostVoice).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                            </select>
+                        {/* Source Material (NotebookLM style) */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><FileText size={12}/> Source Material (Notebook)</label>
+                            <textarea 
+                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-primary-500 outline-none resize-none h-20"
+                                placeholder="Paste articles, notes, or facts here to ground the conversation..."
+                                value={podcastConfig.sourceMaterial}
+                                onChange={(e) => setPodcastConfig({...podcastConfig, sourceMaterial: e.target.value})}
+                            />
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => sourceUploadRef.current?.click()} className="text-[10px] text-primary-400 hover:text-white flex items-center gap-1">
+                                    <Upload size={10}/> Upload Text File
+                                </button>
+                                <input type="file" ref={sourceUploadRef} className="hidden" accept=".txt,.md,.json" onChange={handleSourceUpload} />
+                            </div>
                         </div>
 
-                        <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-3 text-[10px] text-blue-200">
-                            <p>Omni will generate a script, synthesize voices for both speakers, and arrange them on the timeline.</p>
+                        {/* Hosts Config */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Users size={12}/> Speakers</label>
+                            <div className="grid grid-cols-1 gap-2">
+                                <div className="bg-gray-900 p-2 rounded border border-gray-700">
+                                    <div className="text-[10px] text-primary-400 font-bold mb-1 uppercase">Host</div>
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex gap-2">
+                                            <input 
+                                                placeholder="Character Name" 
+                                                className="w-1/2 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                                                value={podcastConfig.host.characterName || podcastConfig.host.name}
+                                                onChange={e => setPodcastConfig({...podcastConfig, host: {...podcastConfig.host, characterName: e.target.value, name: e.target.value}})}
+                                            />
+                                            <select 
+                                                className="w-1/2 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300"
+                                                value={podcastConfig.host.voiceId}
+                                                onChange={e => setPodcastConfig({...podcastConfig, host: {...podcastConfig.host, voiceId: e.target.value}})}
+                                            >
+                                                {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-900 p-2 rounded border border-gray-700">
+                                    <div className="text-[10px] text-blue-400 font-bold mb-1 uppercase">Guest</div>
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex gap-2">
+                                            <input 
+                                                placeholder="Character Name" 
+                                                className="w-1/2 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                                                value={podcastConfig.guest.characterName || podcastConfig.guest.name}
+                                                onChange={e => setPodcastConfig({...podcastConfig, guest: {...podcastConfig.guest, characterName: e.target.value, name: e.target.value}})}
+                                            />
+                                            <select 
+                                                className="w-1/2 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300"
+                                                value={podcastConfig.guest.voiceId}
+                                                onChange={e => setPodcastConfig({...podcastConfig, guest: {...podcastConfig.guest, voiceId: e.target.value}})}
+                                            >
+                                                {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <Button size="sm" className="w-full" onClick={onGeneratePodcast} disabled={isGenerating || !podcastTopic}>
-                            {isGenerating ? <Loader2 size={14} className="animate-spin mr-2"/> : <Mic size={14} className="mr-2"/>} {isGenerating ? 'Producing...' : 'Create Episode'}
+                        {/* Intro/Outro Config */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><FileAudio size={12}/> Run of Show</label>
+                            
+                            {/* Intro */}
+                            <div className={`p-2 rounded border transition-colors ${podcastConfig.intro.enabled ? 'bg-gray-900 border-gray-600' : 'bg-gray-900/50 border-gray-800 opacity-60'}`}>
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-gray-300">Intro Segment</span>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={podcastConfig.intro.enabled} 
+                                        onChange={e => setPodcastConfig({...podcastConfig, intro: {...podcastConfig.intro, enabled: e.target.checked}})}
+                                        className="w-3 h-3 rounded bg-gray-700 border-gray-500 text-primary-500"
+                                    />
+                                </div>
+                                {podcastConfig.intro.enabled && (
+                                    <div className="space-y-2">
+                                        <div className="flex bg-gray-800 rounded p-0.5">
+                                            <button onClick={() => setPodcastConfig({...podcastConfig, intro: {...podcastConfig.intro, type: 'generated'}})} className={`flex-1 text-[9px] py-1 rounded ${podcastConfig.intro.type === 'generated' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>Generate TTS</button>
+                                            <button onClick={() => setPodcastConfig({...podcastConfig, intro: {...podcastConfig.intro, type: 'upload'}})} className={`flex-1 text-[9px] py-1 rounded ${podcastConfig.intro.type === 'upload' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>Upload File</button>
+                                        </div>
+                                        {podcastConfig.intro.type === 'generated' ? (
+                                            <>
+                                                <input 
+                                                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white placeholder-gray-500 mb-1"
+                                                    placeholder="Intro Script..."
+                                                    value={podcastConfig.intro.content}
+                                                    onChange={e => setPodcastConfig({...podcastConfig, intro: {...podcastConfig.intro, content: e.target.value}})}
+                                                />
+                                                <select 
+                                                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300"
+                                                    value={podcastConfig.intro.voiceId || podcastConfig.host.voiceId}
+                                                    onChange={e => setPodcastConfig({...podcastConfig, intro: {...podcastConfig.intro, voiceId: e.target.value}})}
+                                                >
+                                                    <option value="">Use Host Voice</option>
+                                                    {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                                </select>
+                                            </>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => introUploadRef.current?.click()} className="flex-1 bg-gray-800 border border-dashed border-gray-600 rounded py-2 text-[10px] text-gray-400 hover:text-white flex items-center justify-center gap-1">
+                                                    <Upload size={12}/> {podcastConfig.intro.file ? 'Intro File Loaded' : 'Upload Audio'}
+                                                </button>
+                                                <input type="file" ref={introUploadRef} className="hidden" accept="audio/*" onChange={handleIntroUpload} />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Outro */}
+                            <div className={`p-2 rounded border transition-colors ${podcastConfig.outro.enabled ? 'bg-gray-900 border-gray-600' : 'bg-gray-900/50 border-gray-800 opacity-60'}`}>
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-gray-300">Outro Segment</span>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={podcastConfig.outro.enabled} 
+                                        onChange={e => setPodcastConfig({...podcastConfig, outro: {...podcastConfig.outro, enabled: e.target.checked}})}
+                                        className="w-3 h-3 rounded bg-gray-700 border-gray-500 text-primary-500"
+                                    />
+                                </div>
+                                {podcastConfig.outro.enabled && (
+                                    <div className="space-y-2">
+                                        <div className="flex bg-gray-800 rounded p-0.5">
+                                            <button onClick={() => setPodcastConfig({...podcastConfig, outro: {...podcastConfig.outro, type: 'generated'}})} className={`flex-1 text-[9px] py-1 rounded ${podcastConfig.outro.type === 'generated' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>Generate TTS</button>
+                                            <button onClick={() => setPodcastConfig({...podcastConfig, outro: {...podcastConfig.outro, type: 'upload'}})} className={`flex-1 text-[9px] py-1 rounded ${podcastConfig.outro.type === 'upload' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>Upload File</button>
+                                        </div>
+                                        {podcastConfig.outro.type === 'generated' ? (
+                                            <>
+                                                <input 
+                                                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white placeholder-gray-500 mb-1"
+                                                    placeholder="Outro Script..."
+                                                    value={podcastConfig.outro.content}
+                                                    onChange={e => setPodcastConfig({...podcastConfig, outro: {...podcastConfig.outro, content: e.target.value}})}
+                                                />
+                                                <select 
+                                                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300"
+                                                    value={podcastConfig.outro.voiceId || podcastConfig.host.voiceId}
+                                                    onChange={e => setPodcastConfig({...podcastConfig, outro: {...podcastConfig.outro, voiceId: e.target.value}})}
+                                                >
+                                                    <option value="">Use Host Voice</option>
+                                                    {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                                </select>
+                                            </>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => outroUploadRef.current?.click()} className="flex-1 bg-gray-800 border border-dashed border-gray-600 rounded py-2 text-[10px] text-gray-400 hover:text-white flex items-center justify-center gap-1">
+                                                    <Upload size={12}/> {podcastConfig.outro.file ? 'Outro File Loaded' : 'Upload Audio'}
+                                                </button>
+                                                <input type="file" ref={outroUploadRef} className="hidden" accept="audio/*" onChange={handleOutroUpload} />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                checked={podcastConfig.bgMusic} 
+                                onChange={e => setPodcastConfig({...podcastConfig, bgMusic: e.target.checked})}
+                                className="w-3 h-3 rounded bg-gray-700 border-gray-500 text-primary-500 cursor-pointer"
+                            />
+                            <label className="text-xs text-gray-400">Auto-add Background Ambience</label>
+                        </div>
+
+                        <Button size="sm" className="w-full" onClick={onGeneratePodcast} disabled={isGenerating || !podcastConfig.topic}>
+                            {isGenerating ? <Loader2 size={14} className="animate-spin mr-2"/> : <Mic2 size={14} className="mr-2"/>} {isGenerating ? 'Producing Episode...' : 'Generate Episode'}
                         </Button>
                     </div>
                 </div>
             </div>
         )}
 
+        {/* ... (Rest of tabs remain same, just ensure they are after the podcast block if they were) ... */}
+        {activeTab === 'mixer' && selectedTrack && (
+            // ... (Mixer selected track content) ...
+            <>
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm animate-in fade-in slide-in-from-right-4">
+                    <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                            <Settings2 size={14} className="text-blue-400"/> Track Settings
+                        </h3>
+                        <button onClick={() => onDeleteTrack && onDeleteTrack(selectedTrack.id)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14}/></button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Name</label>
+                            <input 
+                                type="text" 
+                                value={selectedTrack.name}
+                                onChange={(e) => onUpdateTrack && onUpdateTrack(selectedTrack.id, { name: e.target.value })}
+                                className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:border-primary-500 outline-none"
+                            />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 flex justify-between">
+                                    <span>Volume</span> <span>{Math.round((selectedTrack.volume || 1) * 100)}%</span>
+                                </label>
+                                <input 
+                                    type="range" min="0" max="1" step="0.05"
+                                    value={selectedTrack.volume ?? 1}
+                                    onChange={(e) => onUpdateTrack && onUpdateTrack(selectedTrack.id, { volume: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-gray-600 rounded appearance-none cursor-pointer accent-primary-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 flex justify-between">
+                                    <span>Pan</span> <span>{selectedTrack.pan || 0}</span>
+                                </label>
+                                <input 
+                                    type="range" min="-1" max="1" step="0.1"
+                                    value={selectedTrack.pan || 0}
+                                    onChange={(e) => onUpdateTrack && onUpdateTrack(selectedTrack.id, { pan: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-gray-600 rounded appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {onUpdateTrack && (
+                    <AudioEffectsRack track={selectedTrack} onUpdateTrack={onUpdateTrack} />
+                )}
+            </>
+        )}
+
+        {activeTab === 'mixer' && !selectedTrack && (
+            <div className="space-y-4 flex-1 overflow-y-auto">
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Wand2 size={14} className="text-purple-400"/> Text to Speech</h3>
+                    <textarea className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs text-gray-300 focus:outline-none resize-none h-24 mb-2 focus:border-primary-500" placeholder="Enter text to generate..." value={ttsInput} onChange={(e) => setTtsInput(e.target.value)} />
+                    <div className="mb-2">
+                        {styleReference && <div className="text-xs text-green-400 flex items-center gap-1 mb-2 bg-green-900/20 px-2 py-1 rounded"><Check size={10} /> Style Active</div>}
+                    </div>
+                    <select value={selectedVoice} onChange={(e) => setSelectedVoice(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 mb-2">
+                        {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                    <Button size="sm" className="w-full" onClick={onGenerateTTS} disabled={isGenerating}>
+                        {isGenerating ? <Loader2 size={14} className="animate-spin mr-2"/> : <Volume2 size={14} className="mr-2"/>} {isGenerating ? 'Generating...' : 'Generate Speech'}
+                    </Button>
+                </div>
+                
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm transition-all duration-300">
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2"><Activity size={14} className="text-green-400"/> AI Mastering</h3>
+                        <div className="relative inline-block w-8 mr-2 align-middle select-none transition duration-200 ease-in">
+                            <input type="checkbox" name="toggle" id="toggle" className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer" checked={mastering.enabled} onChange={(e) => setMastering({...mastering, enabled: e.target.checked})} style={{ right: mastering.enabled ? '0' : 'auto', left: mastering.enabled ? 'auto' : '0', borderColor: mastering.enabled ? '#10b981' : '#d1d5db' }}/>
+                            <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-4 rounded-full cursor-pointer ${mastering.enabled ? 'bg-green-400' : 'bg-gray-600'}`}></label>
+                        </div>
+                    </div>
+                    {mastering.enabled && (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                            <div><div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Warmth (Low End)</span><span>{mastering.warmth}%</span></div><input type="range" min="0" max="100" value={mastering.warmth} onChange={(e) => setMastering({...mastering, warmth: parseInt(e.target.value)})} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-orange-500"/></div>
+                            <div><div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Clarity (Highs)</span><span>{mastering.clarity}%</span></div><input type="range" min="0" max="100" value={mastering.clarity} onChange={(e) => setMastering({...mastering, clarity: parseInt(e.target.value)})} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"/></div>
+                            <div><div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>Punch (Dynamics)</span><span>{mastering.punch}%</span></div><input type="range" min="0" max="100" value={mastering.punch} onChange={(e) => setMastering({...mastering, punch: parseInt(e.target.value)})} className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-500"/></div>
+                        </div>
+                    )}
+                </div>
+                <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-sm">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2"><Sliders size={14} className="text-blue-400"/> Quick Actions</h3>
+                    <Button size="sm" variant="secondary" className="w-full mb-2" onClick={onSmartMix}>Auto-Mix (Ducking)</Button>
+                </div>
+            </div>
+        )}
+
+        {/* Cloning, Music, Sequencer tabs logic (same as before, just collapsed in this diff for brevity unless changed) */}
         {activeTab === 'sequencer' && (
             <div className="p-4 bg-gray-800 rounded-xl border border-gray-700 text-center text-xs text-gray-400">
                 <Grid size={24} className="mx-auto mb-2 text-primary-500"/>

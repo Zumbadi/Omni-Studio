@@ -117,6 +117,20 @@ export interface Voice {
   };
 }
 
+export interface AudioEffect {
+  id: string;
+  type: 'reverb' | 'delay' | 'distortion' | 'filter';
+  params: {
+    mix?: number;
+    time?: number;
+    feedback?: number;
+    frequency?: number;
+    gain?: number;
+    decay?: number;
+  };
+  active: boolean;
+}
+
 export interface AudioTrack {
   id: string;
   name: string;
@@ -127,6 +141,19 @@ export interface AudioTrack {
   volume?: number;
   muted?: boolean;
   solo?: boolean;
+  pan?: number;
+  effects?: AudioEffect[];
+}
+
+export interface PodcastConfig {
+    topic: string;
+    style: 'Deep Dive' | 'Debate' | 'News Brief' | 'Casual Chat' | 'Storytelling';
+    sourceMaterial?: string;
+    host: { voiceId: string; name: string; characterName?: string };
+    guest: { voiceId: string; name: string; characterName?: string };
+    intro: { enabled: boolean; type: 'generated' | 'upload'; content: string; file?: File; voiceId?: string };
+    outro: { enabled: boolean; type: 'generated' | 'upload'; content: string; file?: File; voiceId?: string };
+    bgMusic: boolean;
 }
 
 export interface TimelineClip {

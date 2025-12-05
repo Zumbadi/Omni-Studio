@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, memo } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, memo, useMemo } from 'react';
 import { Sparkles, MessageSquare, Zap, Wrench, Loader2, ChevronRight, Eye, GitCommit, Play, XCircle, AlertTriangle, AlertCircle, Info, EyeOff, ShieldAlert, FileWarning } from 'lucide-react';
 import { highlightCode } from '../utils/syntaxHighlight';
 
@@ -91,6 +91,9 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
   
   // Scroll Sync Ref for Performance
   const rafRef = useRef<number | null>(null);
+
+  // Memoize highlighted content
+  const highlightedContent = useMemo(() => highlightCode(code), [code]);
 
   // Forward internal ref methods to parent
   useImperativeHandle(ref, () => ({
@@ -745,7 +748,7 @@ export const CodeEditor = memo(forwardRef<CodeEditorHandle, CodeEditorProps>(({
                 className="absolute inset-0 p-4 pt-4 m-0 leading-6 font-mono whitespace-pre pointer-events-none text-gray-300 overflow-auto scrollbar-none"
                 style={{ fontSize, tabSize: tabSizeVal }}
              >
-                {highlightCode(code)}
+                {highlightedContent}
                 <br />
              </pre>
 

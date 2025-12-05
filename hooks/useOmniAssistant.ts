@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage, ProjectType, FileNode } from '../types';
 import { generateCodeResponse, critiqueCode, generateImage, generateSpeech, detectIntent, editImage, parseUICommand, generateFullCampaign } from '../services/geminiService';
 import { findRelevantContext } from '../utils/projectAnalysis';
-import { getAllFiles, findNodeByPath, normalizePath } from '../utils/fileHelpers';
+import { getAllFiles, findFileById, findNodeByPath, normalizePath } from '../utils/fileHelpers';
 import { useDebounce } from './useDebounce';
 import { extractSymbols, CodeSymbol } from '../utils/codeParser';
+import { formatCode } from '../utils/formatCode';
 
 interface UseOmniAssistantProps {
   projectId: string;
@@ -78,6 +79,21 @@ export const useOmniAssistant = ({
   const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 1024);
   const [enableCritic, setEnableCritic] = useState(true);
   const [attachedImage, setAttachedImage] = useState<string | undefined>(undefined);
+
+  const persistGeneratedAsset = (type: 'image' | 'video' | 'audio', url: string, description: string) => {
+      try {
+          const existing = JSON.parse(localStorage.getItem('omni_generated_assets') || '[]');
+          const newAsset = {
+              id: `gen-${Date.now()}`,
+              type,
+              url,
+              description,
+              date: new Date().toISOString()
+          };
+          localStorage.setItem('omni_generated_assets', JSON.stringify([newAsset, ...existing].slice(0, 100)));
+          window.dispatchEvent(new Event('omniAssetsUpdated'));
+      } catch (e) { console.error("Failed to persist asset", e); }
+  };
 
   const runCritique = async (code: string, task: string) => {
       const criticRes = await critiqueCode(code, task);
@@ -177,14 +193,27 @@ export const useOmniAssistant = ({
     const tempId = 'temp-' + Date.now();
     setChatHistory(prev => [...prev, { id: tempId, role: 'model', text: '', timestamp: Date.now() }]);
     
-    await generateCodeResponse(
-      finalPrompt, currentCode, projectType, fileStructure, activeModel, 
-      (chunk) => { responseText += chunk; setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, text: responseText } : msg)); },
-      (metadata) => { if(metadata) setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, groundingMetadata: metadata } : msg)); },
-      attachedImage, chatHistory, useSearch, useMaps
-    );
+    try {
+        await generateCodeResponse(
+          finalPrompt, currentCode, projectType, fileStructure, activeModel, 
+          (chunk) => { responseText += chunk; setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, text: responseText } : msg)); },
+          (metadata) => { if(metadata) setChatHistory(prev => prev.map(msg => msg.id === tempId ? { ...msg, groundingMetadata: metadata } : msg)); },
+          attachedImage, chatHistory, useSearch, useMaps
+        );
+        
+        if (enableCritic && !useSearch && !useMaps && responseText.length > 50) runCritique(responseText, finalPrompt);
+    } catch (e: any) {
+        console.error("Assistant Error", e);
+        const errText = e?.message || "Unknown error";
+        
+        // Specific handling for 429/Quota errors thrown from service
+        if (errText.includes('429') || errText.includes('Quota') || errText.includes('RESOURCE_EXHAUSTED')) {
+             addSystemMessage("⚠️ **API Quota Exceeded**: You have reached the request limit. Please wait a moment or check your plan.");
+        } else {
+             addSystemMessage(`⚠️ Error: ${errText}`);
+        }
+    }
     
-    if (enableCritic && !useSearch && !useMaps) runCritique(responseText, finalPrompt);
     setAttachedImage(undefined);
     setEditorSelection('');
     setIsGenerating(false);
@@ -205,6 +234,7 @@ export const useOmniAssistant = ({
             addSystemMessage(`Generating image for: "${argText}"...`);
             const imgUrl = await generateImage(argText);
             if (imgUrl) {
+                persistGeneratedAsset('image', imgUrl, argText);
                 setChatHistory(prev => [...prev, {
                     id: `img-${Date.now()}`,
                     role: 'model',
@@ -242,6 +272,7 @@ export const useOmniAssistant = ({
             addSystemMessage(`Editing image with: "${argText}"...`);
             const imgUrl = await editImage(attachedImage, argText);
             if (imgUrl) {
+                persistGeneratedAsset('image', imgUrl, `Edited: ${argText}`);
                 setChatHistory(prev => [...prev, {
                     id: `img-${Date.now()}`,
                     role: 'model',
@@ -262,6 +293,7 @@ export const useOmniAssistant = ({
             addSystemMessage(`Synthesizing speech...`);
             const audioUrl = await generateSpeech(argText, { id: 'def', name: 'Default', gender: 'female', style: 'narrative', isCloned: false });
             if (audioUrl) {
+                persistGeneratedAsset('audio', audioUrl, `TTS: ${argText}`);
                 setChatHistory(prev => [...prev, {
                     id: `tts-${Date.now()}`,
                     role: 'model',
@@ -327,8 +359,7 @@ export const useOmniAssistant = ({
         if (command === '/docker') {
              setIsGenerating(true);
              addSystemMessage("Analyzing dependencies to generate Docker configuration...");
-             // ... docker logic (omitted for brevity, same as previous) ...
-             setIsGenerating(false);
+             triggerGeneration("Generate a production-ready Dockerfile and docker-compose.yml for this project. Explain the build stages.");
              return;
         }
         
@@ -368,6 +399,29 @@ export const useOmniAssistant = ({
         if (command === '/clear') {
             setChatHistory([]);
             localStorage.removeItem(`omni_chat_${projectId}`);
+            return;
+        }
+
+        if (command === '/format') {
+            if (!activeFile?.content) {
+                addSystemMessage("No active file to format.");
+                return;
+            }
+            
+            setIsGenerating(true);
+            try {
+                // Local formatting heuristic
+                const formatted = formatCode(activeFile.content);
+                setChatHistory(prev => [...prev, {
+                    id: `fmt-${Date.now()}`,
+                    role: 'model',
+                    text: `**Formatted ${activeFile.name}:**\n\`\`\`typescript\n// filename: ${activeFile.name}\n${formatted}\n\`\`\``,
+                    timestamp: Date.now()
+                }]);
+            } catch (e) {
+                addSystemMessage("Formatting failed.");
+            }
+            setIsGenerating(false);
             return;
         }
     }

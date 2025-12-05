@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Wand2, Plus, Download, X, Loader2, Music, Trash2, Brain } from 'lucide-react';
+import { Play, Pause, Wand2, Plus, Download, X, Loader2, Music, Trash2, Brain, Database } from 'lucide-react';
 import { Button } from './Button';
 import { generateSoundEffect, generateDrumPattern } from '../services/geminiService';
 import { AudioTrack } from '../types';
@@ -148,6 +149,39 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
       }
       // Decode audio data (buffer needs to be a copy or owned)
       return await audioContextRef.current!.decodeAudioData(bytes.buffer.slice(0));
+  };
+
+  const handleLoadStandardKit = async () => {
+      if (!audioContextRef.current) return;
+      setIsGenerating(true);
+      
+      try {
+          // Retrieve from local storage assets created in AudioStudio
+          const savedAssetsStr = localStorage.getItem('omni_audio_assets');
+          const savedAssets = savedAssetsStr ? JSON.parse(savedAssetsStr) : [];
+          
+          const newBuffers: Record<string, AudioBuffer | null> = { ...buffers };
+          
+          for (const row of DRUM_ROWS) {
+              // Find asset with matching ID suffix or name content
+              const asset = savedAssets.find((a: any) => 
+                  a.id === `${row.toLowerCase()}-std` || 
+                  (a.name && a.name.toLowerCase().includes(row.toLowerCase()))
+              );
+              
+              if (asset && asset.audioUrl) {
+                  const buffer = await decodeBase64Audio(asset.audioUrl);
+                  newBuffers[row] = buffer;
+              }
+          }
+          
+          setBuffers(newBuffers);
+          alert("Standard Kit Loaded from Library!");
+      } catch (e) {
+          console.error(e);
+          alert("Could not load standard kit. Ensure Audio Studio is initialized.");
+      }
+      setIsGenerating(false);
   };
 
   const handleGenerateKit = async () => {
@@ -327,9 +361,12 @@ export const AudioBeatMaker: React.FC<AudioBeatMakerProps> = ({ onAddTrack, genr
        </div>
 
        <div className="flex gap-4 justify-end">
+           <Button variant="ghost" onClick={handleLoadStandardKit} disabled={isGenerating}>
+               <Database size={16} className="mr-2"/> Load Standard Kit
+           </Button>
            <Button variant="secondary" onClick={handleGenerateKit} disabled={isGenerating}>
                {isGenerating ? <Loader2 size={16} className="animate-spin mr-2"/> : <Music size={16} className="mr-2"/>} 
-               Generate Authentic Kit
+               AI Generate Kit
            </Button>
            <Button variant="secondary" onClick={handleGeneratePattern}>
                <Wand2 size={16} className="mr-2"/> Randomize

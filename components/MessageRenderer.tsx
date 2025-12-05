@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { memo } from 'react';
 import { Paperclip, CornerDownLeft, Sparkles, AlertTriangle, CheckCircle, XCircle, GitCompare, RotateCcw, Shield, Zap, Bot, User, Download, Globe, ExternalLink, PenTool, Terminal, MapPin } from 'lucide-react';
 import { ChatMessage } from '../types';
 
@@ -12,7 +12,7 @@ interface MessageRendererProps {
   onRevert?: () => void;
 }
 
-export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApplyCode, onAutoFix, onCompareCode, onApplyAll, onRevert }) => {
+const MessageRendererComponent: React.FC<MessageRendererProps> = ({ message, onApplyCode, onAutoFix, onCompareCode, onApplyAll, onRevert }) => {
   
   const getScoreColor = (score: number) => {
       if (score >= 90) return 'text-green-400 border-green-500/30 bg-green-900/20';
@@ -394,3 +394,5 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ message, onApp
     </div>
   );
 };
+
+export const MessageRenderer = memo(MessageRendererComponent);

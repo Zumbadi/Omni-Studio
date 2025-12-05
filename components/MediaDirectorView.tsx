@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { SocialPost, AudioTrack, Scene, Voice } from '../types';
 import { MediaDirectorPlayer } from './MediaDirectorPlayer';
 import { MediaDirectorInspector } from './MediaDirectorInspector';
 import { MediaDirectorTimeline } from './MediaDirectorTimeline';
 import { MediaBatchGenerator } from './MediaBatchGenerator';
-import { Wand2 } from 'lucide-react';
+import { Wand2, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface MediaDirectorViewProps {
   selectedPost: SocialPost | null;
@@ -49,20 +49,26 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = memo(({
 }) => {
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [showBatchGenerator, setShowBatchGenerator] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
-  // Calculate Metrics
+  // Calculate Metrics (Memoized for performance)
   const scenes = selectedPost?.scenes || [];
-  let accumulatedTime = 0;
-  const sceneMetrics = scenes.map(s => {
-      const start = accumulatedTime;
-      accumulatedTime += (s.duration || 5);
-      return { ...s, startTime: start, endTime: accumulatedTime };
-  });
+  const sceneMetrics = useMemo(() => {
+      let accumulatedTime = 0;
+      return scenes.map(s => {
+          const start = accumulatedTime;
+          accumulatedTime += (s.duration || 5);
+          return { ...s, startTime: start, endTime: accumulatedTime };
+      });
+  }, [scenes]);
   
-  const maxAudioDuration = audioTracks.reduce((acc, t) => Math.max(acc, t.startOffset + t.duration), 0);
-  const totalDuration = Math.max(accumulatedTime || 10, maxAudioDuration);
+  const maxAudioDuration = useMemo(() => {
+      return audioTracks.reduce((acc, t) => Math.max(acc, t.startOffset + t.duration), 0);
+  }, [audioTracks]);
 
-  // Active Scene Logic
+  const totalDuration = Math.max(sceneMetrics[sceneMetrics.length - 1]?.endTime || 10, maxAudioDuration);
+
+  // Active Scene Logic - this is fast enough to run on render, using the memoized metrics
   const activeScene = sceneMetrics.find(s => currentTime >= s.startTime && currentTime < s.endTime) || sceneMetrics[sceneMetrics.length - 1];
   
   // Loading Message Rotation
@@ -121,14 +127,19 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = memo(({
         {/* Top: Player & Inspector */}
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden relative">
             
-            {/* Toolbar Overlay for Batch Generator */}
-            <div className="absolute top-4 left-4 z-20">
+            {/* Toolbar Overlay */}
+            <div className="absolute top-4 left-4 z-20 flex gap-2">
                 <button 
                     onClick={() => setShowBatchGenerator(true)} 
                     className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-full shadow-lg border border-purple-400/50 backdrop-blur-md transition-all hover:scale-105"
                 >
                     <Wand2 size={14}/> <span className="text-xs font-bold">Magic Build</span>
                 </button>
+                <div className="flex items-center gap-1 bg-black/50 backdrop-blur-md rounded-full px-2 py-1 border border-white/10">
+                    <button onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} className="p-1 hover:text-primary-400 text-gray-300"><ZoomOut size={14}/></button>
+                    <span className="text-[10px] font-mono text-gray-400 w-8 text-center">{Math.round(zoom * 100)}%</span>
+                    <button onClick={() => setZoom(z => Math.min(3, z + 0.25))} className="p-1 hover:text-primary-400 text-gray-300"><ZoomIn size={14}/></button>
+                </div>
             </div>
 
             <MediaDirectorPlayer 
@@ -182,6 +193,7 @@ export const MediaDirectorView: React.FC<MediaDirectorViewProps> = memo(({
             onPublish={onPublish}
             historyIndex={historyIndex}
             historyLength={historyLength}
+            pixelsPerSecond={40 * zoom}
         />
     </div>
   );

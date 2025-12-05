@@ -1,6 +1,6 @@
 
-import React, { useRef, useState, useEffect, memo } from 'react';
-import { Film, Trash2, ArrowLeft, ArrowRight, Scissors, Copy, Plus, RotateCcw, RotateCw, Download, Share2, Loader2, Pause, Play, GripHorizontal } from 'lucide-react';
+import React, { useRef, useState, useEffect, memo, useMemo } from 'react';
+import { Film, Trash2, ArrowLeft, ArrowRight, Scissors, Copy, Plus, RotateCcw, RotateCw, Download, Share2, Loader2, Pause, Play, GripHorizontal, GripVertical } from 'lucide-react';
 import { Scene, AudioTrack } from '../types';
 
 interface MediaDirectorTimelineProps {
@@ -29,9 +29,8 @@ interface MediaDirectorTimelineProps {
   onPublish?: () => void;
   historyIndex: number;
   historyLength: number;
+  pixelsPerSecond?: number;
 }
-
-const PIXELS_PER_SECOND = 40;
 
 const formatTime = (time: number) => {
     const mins = Math.floor(time / 60);
@@ -44,27 +43,34 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
   scenes, audioTracks, currentTime, setCurrentTime, totalDuration, activeSceneId,
   onUpdateScene, onReorderScenes, onSplitScene, onDuplicateScene, onDeleteScene, cycleTransition,
   onUpdateAudioTrack, onDeleteAudioTrack,
-  isPlaying, onTogglePlay, onAddScene, onUndo, onRedo, onRenderMovie, isRendering, onPublish, historyIndex, historyLength
+  isPlaying, onTogglePlay, onAddScene, onUndo, onRedo, onRenderMovie, isRendering, onPublish, historyIndex, historyLength,
+  pixelsPerSecond = 40
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const [dragAudio, setDragAudio] = useState<{ id: string, startX: number, startOffset: number } | null>(null);
-
-  // Calculate Layout Metrics
-  let accumulatedTime = 0;
-  const sceneMetrics = scenes.map(s => {
-      const start = accumulatedTime;
-      accumulatedTime += (s.duration || 5);
-      return { ...s, startTime: start };
-  });
   
-  const totalWidth = totalDuration * PIXELS_PER_SECOND;
+  // Resize State
+  const [resizingScene, setResizingScene] = useState<{ id: string, startX: number, originalDuration: number } | null>(null);
+  const [resizingAudio, setResizingAudio] = useState<{ id: string, startX: number, originalDuration: number } | null>(null);
 
-  // Handle Audio Dragging
+  // Memoize scene metrics to prevent recalculation on every frame/render
+  const sceneMetrics = useMemo(() => {
+      let accumulatedTime = 0;
+      return scenes.map(s => {
+          const start = accumulatedTime;
+          accumulatedTime += (s.duration || 5);
+          return { ...s, startTime: start };
+      });
+  }, [scenes]);
+  
+  const totalWidth = totalDuration * pixelsPerSecond;
+
+  // Handle Dragging (Audio)
   useEffect(() => {
       const handleMouseMove = (e: MouseEvent) => {
           if (!dragAudio || !onUpdateAudioTrack) return;
           const deltaX = e.clientX - dragAudio.startX;
-          const deltaSeconds = deltaX / PIXELS_PER_SECOND;
+          const deltaSeconds = deltaX / pixelsPerSecond;
           const newOffset = Math.max(0, dragAudio.startOffset + deltaSeconds);
           onUpdateAudioTrack(dragAudio.id, { startOffset: newOffset });
       };
@@ -81,7 +87,43 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
           window.removeEventListener('mousemove', handleMouseMove);
           window.removeEventListener('mouseup', handleMouseUp);
       };
-  }, [dragAudio, onUpdateAudioTrack]);
+  }, [dragAudio, onUpdateAudioTrack, pixelsPerSecond]);
+
+  // Handle Resizing (Scene and Audio)
+  useEffect(() => {
+      const handleMouseMove = (e: MouseEvent) => {
+          if (resizingScene) {
+              const deltaX = e.clientX - resizingScene.startX;
+              const deltaSeconds = deltaX / pixelsPerSecond;
+              // Minimum duration 1s
+              const newDuration = Math.max(1, resizingScene.originalDuration + deltaSeconds);
+              onUpdateScene(resizingScene.id, { duration: newDuration });
+          }
+          if (resizingAudio && onUpdateAudioTrack) {
+              const deltaX = e.clientX - resizingAudio.startX;
+              const deltaSeconds = deltaX / pixelsPerSecond;
+              // Minimum duration 0.5s for audio
+              const newDuration = Math.max(0.5, resizingAudio.originalDuration + deltaSeconds);
+              onUpdateAudioTrack(resizingAudio.id, { duration: newDuration });
+          }
+      };
+
+      const handleMouseUp = () => {
+          setResizingScene(null);
+          setResizingAudio(null);
+          document.body.style.cursor = 'default';
+      };
+
+      if (resizingScene || resizingAudio) {
+          window.addEventListener('mousemove', handleMouseMove);
+          window.addEventListener('mouseup', handleMouseUp);
+          document.body.style.cursor = 'col-resize';
+      }
+      return () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseup', handleMouseUp);
+      };
+  }, [resizingScene, resizingAudio, onUpdateScene, onUpdateAudioTrack, pixelsPerSecond]);
 
   const getAudioColor = (type: string) => {
       if (type === 'voiceover') return 'bg-purple-600/80 border-purple-500/80 hover:bg-purple-600';
@@ -132,7 +174,7 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
                 {/* Time Ruler */}
                 <div className="h-6 border-b border-gray-800 flex items-end select-none">
                     {[...Array(Math.ceil(totalDuration) + 5)].map((_, i) => (
-                        <div key={i} className="absolute bottom-0 text-[9px] text-gray-500 border-l border-gray-800 pl-1 h-3" style={{ left: i * PIXELS_PER_SECOND }}>
+                        <div key={i} className="absolute bottom-0 text-[9px] text-gray-500 border-l border-gray-800 pl-1 h-3" style={{ left: i * pixelsPerSecond }}>
                             {i}s
                         </div>
                     ))}
@@ -141,7 +183,7 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
                 {/* Playhead */}
                 <div 
                     className="absolute top-0 bottom-0 w-px bg-red-500 z-30 pointer-events-none"
-                    style={{ left: currentTime * PIXELS_PER_SECOND }}
+                    style={{ left: currentTime * pixelsPerSecond }}
                 >
                     <div className="absolute -top-0 -left-1.5 w-3 h-3 bg-red-500 transform rotate-45 shadow-lg"></div>
                 </div>
@@ -153,20 +195,20 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
                             key={scene.id}
                             className={`absolute top-1 bottom-1 bg-gray-800 border rounded-md overflow-hidden group cursor-pointer transition-all ${activeSceneId === scene.id ? 'border-purple-500 ring-2 ring-purple-500/50 z-10' : 'border-gray-600 hover:border-gray-400'}`}
                             style={{ 
-                                left: scene.startTime * PIXELS_PER_SECOND, 
-                                width: scene.duration ? scene.duration * PIXELS_PER_SECOND : 5 * PIXELS_PER_SECOND 
+                                left: scene.startTime * pixelsPerSecond, 
+                                width: scene.duration ? scene.duration * pixelsPerSecond : 5 * pixelsPerSecond 
                             }}
                             onClick={() => {
                                 setCurrentTime(scene.startTime);
                             }}
                         >
                             {/* Thumbnail Strip */}
-                            <div className="absolute inset-0 flex opacity-70 transition-opacity group-hover:opacity-90">
+                            <div className="absolute inset-0 flex opacity-70 transition-opacity group-hover:opacity-90 pointer-events-none">
                                 {scene.imageUrl && <img src={scene.imageUrl} className="h-full w-full object-cover" />}
                                 {!scene.imageUrl && <div className="w-full h-full bg-gray-800 flex items-center justify-center"><Film size={16} className="text-gray-600"/></div>}
                             </div>
                             
-                            <div className="absolute top-1 left-2 text-[10px] font-bold text-white drop-shadow-md truncate max-w-full z-10">
+                            <div className="absolute top-1 left-2 text-[10px] font-bold text-white drop-shadow-md truncate max-w-full z-10 pointer-events-none">
                                 Scene {index + 1}
                             </div>
 
@@ -176,14 +218,27 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
                                     className="absolute right-0 top-0 bottom-0 w-6 hover:bg-white/20 cursor-pointer flex items-center justify-center z-20 transition-colors"
                                     onClick={(e) => { e.stopPropagation(); onUpdateScene(scene.id, { transition: cycleTransition(scene.transition || 'cut') }); }}
                                 >
-                                    {scene.transition === 'fade' ? <div className="w-0 h-0 border-l-[6px] border-l-transparent border-b-[10px] border-b-white/80"></div> : 
-                                     scene.transition === 'dissolve' ? <div className="w-3 h-3 rounded-full bg-white/60 backdrop-blur-sm"></div> : 
-                                     <div className="w-0.5 h-4 bg-black/50"></div>}
+                                    {scene.transition === 'fade' ? <div className="w-0 h-0 border-l-[6px] border-l-transparent border-b-[10px] border-b-white/80 pointer-events-none"></div> : 
+                                     scene.transition === 'dissolve' ? <div className="w-3 h-3 rounded-full bg-white/60 backdrop-blur-sm pointer-events-none"></div> : 
+                                     <div className="w-0.5 h-4 bg-black/50 pointer-events-none"></div>}
                                 </div>
                             )}
 
+                            {/* Resize Handle */}
+                            <div 
+                                className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-purple-500/50 z-30 transition-colors"
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    setResizingScene({ 
+                                        id: scene.id, 
+                                        startX: e.clientX, 
+                                        originalDuration: scene.duration || 5 
+                                    });
+                                }}
+                            />
+
                             {/* Context Actions */}
-                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 flex gap-1 z-20">
+                            <div className="absolute top-1 right-3 opacity-0 group-hover:opacity-100 flex gap-1 z-20">
                                 <button onClick={(e) => { e.stopPropagation(); onReorderScenes(index, index - 1); }} className="p-1 bg-black/60 rounded hover:bg-black text-white backdrop-blur-md" title="Move Left" disabled={index === 0}><ArrowLeft size={10}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); onReorderScenes(index, index + 1); }} className="p-1 bg-black/60 rounded hover:bg-black text-white backdrop-blur-md" title="Move Right" disabled={index === sceneMetrics.length - 1}><ArrowRight size={10}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); onSplitScene(index); }} className="p-1 bg-black/60 rounded hover:bg-black text-white backdrop-blur-md" title="Split"><Scissors size={10}/></button>
@@ -199,18 +254,30 @@ export const MediaDirectorTimeline: React.FC<MediaDirectorTimelineProps> = memo(
                     {audioTracks.map((track) => (
                         <div
                             key={track.id}
-                            className={`absolute h-8 rounded-full border flex items-center px-3 cursor-grab active:cursor-grabbing shadow-sm transition-all ${getAudioColor(track.type)}`}
+                            className={`absolute h-8 rounded-full border flex items-center px-3 cursor-grab active:cursor-grabbing shadow-sm transition-all group ${getAudioColor(track.type)}`}
                             style={{
-                                left: track.startOffset * PIXELS_PER_SECOND,
-                                width: Math.max(20, track.duration * PIXELS_PER_SECOND),
+                                left: track.startOffset * pixelsPerSecond,
+                                width: Math.max(20, track.duration * pixelsPerSecond),
                                 top: (['voiceover', 'music', 'sfx'].indexOf(track.type) * 40) + 10 + 'px'
                             }}
                             onMouseDown={(e) => {
+                                // Prevent dragging if clicking resize handle or delete
+                                if ((e.target as HTMLElement).classList.contains('audio-resize-handle') || (e.target as HTMLElement).closest('button')) return;
                                 setDragAudio({ id: track.id, startX: e.clientX, startOffset: track.startOffset });
                             }}
                         >
-                            <GripHorizontal size={10} className="mr-2 text-white/50 shrink-0" />
-                            <div className="truncate text-[10px] text-white font-medium w-full drop-shadow-md">{track.name}</div>
+                            <GripHorizontal size={10} className="mr-2 text-white/50 shrink-0 pointer-events-none" />
+                            <div className="truncate text-[10px] text-white font-medium w-full drop-shadow-md pointer-events-none">{track.name}</div>
+                            
+                            {/* Audio Resize Handle (Right) */}
+                            <div 
+                                className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-white/40 z-20 audio-resize-handle"
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    setResizingAudio({ id: track.id, startX: e.clientX, originalDuration: track.duration });
+                                }}
+                            />
+                            
                             {onDeleteAudioTrack && (
                                 <button 
                                     className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:text-red-200 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity"

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" class="dark">
   <head>
@@ -141,6 +142,36 @@
       @keyframes spin-reverse { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
       @keyframes pulse-core { 0%, 100% { opacity: 0.6; transform: scale(0.95); box-shadow: 0 0 30px rgba(99, 102, 241, 0.1); } 50% { opacity: 1; transform: scale(1.05); box-shadow: 0 0 60px rgba(99, 102, 241, 0.3); } }
       @keyframes pulse-text { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+      /* Animation Utilities (tailwindcss-animate simulation) */
+      .animate-in { animation-duration: 300ms; animation-fill-mode: forwards; opacity: 0; }
+      .fade-in { animation-name: fadeIn; }
+      .zoom-in { animation-name: zoomIn; }
+      .zoom-in-95 { animation-name: zoomIn95; }
+      .slide-in-from-bottom-2 { animation-name: slideInBottom2; }
+      .slide-in-from-bottom-4 { animation-name: slideInBottom4; }
+      .slide-in-from-bottom-10 { animation-name: slideInBottom10; }
+      .slide-in-from-left-2 { animation-name: slideInLeft2; }
+      .slide-in-from-left-10 { animation-name: slideInLeft10; }
+      .slide-in-from-right-4 { animation-name: slideInRight4; }
+      .slide-in-from-right-10 { animation-name: slideInRight10; }
+      .slide-in-from-top-1 { animation-name: slideInTop1; }
+      .slide-in-from-top-2 { animation-name: slideInTop2; }
+      .slide-in-from-top-4 { animation-name: slideInTop4; }
+
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes zoomIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+      @keyframes zoomIn95 { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+      @keyframes slideInBottom2 { from { transform: translateY(0.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes slideInBottom4 { from { transform: translateY(1rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes slideInBottom10 { from { transform: translateY(2.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes slideInLeft2 { from { transform: translateX(-0.5rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes slideInLeft10 { from { transform: translateX(-2.5rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes slideInRight4 { from { transform: translateX(1rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes slideInRight10 { from { transform: translateX(2.5rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes slideInTop1 { from { transform: translateY(-0.25rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes slideInTop2 { from { transform: translateY(-0.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes slideInTop4 { from { transform: translateY(-1rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
   <script type="importmap">
 {
@@ -168,5 +199,7 @@
             <div class="loader-subtext">Connecting to Neural Engine...</div>
         </div>
     </div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
+    

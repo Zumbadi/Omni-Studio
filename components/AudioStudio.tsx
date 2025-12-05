@@ -1,17 +1,18 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { X, FileText, LayoutTemplate, Play, Pause, Trash2, Menu, Music, FolderOpen } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { X, FileText, LayoutTemplate, Play, Pause, Trash2, Menu, Music, FolderOpen, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import { MOCK_VOICES } from '../constants';
-import { Voice, AudioTrack } from '../types';
-import { generateSpeech, transcribeAudio, analyzeMediaStyle, generateSong, generatePodcastScript } from '../services/geminiService';
+import { Voice, AudioTrack, PodcastConfig } from '../types';
+import { generateSpeech, transcribeAudio, analyzeMediaStyle, generateSong, generatePodcastScript, generateBackgroundMusic } from '../services/geminiService';
 import { AudioTimeline } from './AudioTimeline';
 import { AudioSidebar } from './AudioSidebar';
 import type { AudioTab } from './AudioSidebar';
 import { AudioBeatMaker } from './AudioBeatMaker';
-import { bufferToWav } from '../utils/audioHelpers';
+import { bufferToWav, SoundSynthesisService } from '../utils/audioHelpers';
 import { useDebounce } from '../hooks/useDebounce';
 import { MediaAssetsLibrary } from './MediaAssetsLibrary';
+import { useMediaTime } from '../hooks/useMediaTime';
 
 const blobToDataUri = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -26,6 +27,8 @@ export const AudioStudio: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AudioTab>('mixer');
   const [showAssets, setShowAssets] = useState(false); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [isInitializingLibrary, setIsInitializingLibrary] = useState(false);
   
   const [voices, setVoices] = useState<Voice[]>(() => {
     try {
@@ -47,6 +50,40 @@ export const AudioStudio: React.FC = () => {
       return [];
   });
 
+  // --- Auto-Initialize Sound Library ---
+  useEffect(() => {
+      const initLibrary = async () => {
+          if (audioAssets.length === 0 && !isInitializingLibrary) {
+              setIsInitializingLibrary(true);
+              console.log("Initializing Standard Audio Library...");
+              
+              try {
+                  const synth = new SoundSynthesisService();
+                  const newAssets = [
+                      { id: 'kick-std', name: 'Kick Drum (Standard)', type: 'sfx', description: 'Punchy synth kick', audioUrl: await synth.generateKick() },
+                      { id: 'snare-std', name: 'Snare Drum (Standard)', type: 'sfx', description: 'Crisp synth snare', audioUrl: await synth.generateSnare() },
+                      { id: 'hihat-std', name: 'HiHat (Standard)', type: 'sfx', description: 'Closed synth hat', audioUrl: await synth.generateHiHat() },
+                      { id: 'clap-std', name: 'Clap (Standard)', type: 'sfx', description: 'Digital clap', audioUrl: await synth.generateClap() },
+                      { id: 'bass-std', name: '808 Bass', type: 'sfx', description: 'Sub bass sine', audioUrl: await synth.generateBass() },
+                      { id: 'pad-std', name: 'Ambient Pad CMaj', type: 'music', description: 'Soft lush pad', audioUrl: await synth.generatePad() }
+                  ];
+                  
+                  const formattedAssets = newAssets.map(a => ({
+                      ...a,
+                      created: new Date().toISOString()
+                  }));
+                  
+                  setAudioAssets(prev => [...prev, ...formattedAssets]);
+              } catch (e) {
+                  console.error("Failed to initialize audio library", e);
+              }
+              setIsInitializingLibrary(false);
+          }
+      };
+      
+      initLibrary();
+  }, []); // Run once on mount
+
   const [tracks, setTracks] = useState<AudioTrack[]>(() => {
     try {
         const saved = localStorage.getItem('omni_audio_tracks');
@@ -62,7 +99,10 @@ export const AudioStudio: React.FC = () => {
     }
   });
   
-  const [isPlaying, setIsPlaying] = useState(false);
+  // Use centralized media timer
+  const totalDuration = useMemo(() => Math.max(...tracks.map(t => t.startOffset + t.duration), 30), [tracks]);
+  const { isPlaying, setIsPlaying, currentTime, setCurrentTime } = useMediaTime(totalDuration);
+  
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
 
   const [ttsInput, setTtsInput] = useState('');
@@ -77,9 +117,16 @@ export const AudioStudio: React.FC = () => {
   const [songStructure, setSongStructure] = useState('Intro-Verse-Chorus-Outro');
   
   // Podcast State
-  const [podcastTopic, setPodcastTopic] = useState('');
-  const [hostVoice, setHostVoice] = useState(voices[0].id);
-  const [guestVoice, setGuestVoice] = useState(voices[1]?.id || voices[0].id);
+  const [podcastConfig, setPodcastConfig] = useState<PodcastConfig>({
+      topic: '',
+      style: 'Casual Chat',
+      sourceMaterial: '',
+      host: { name: 'Host', voiceId: voices[0].id, characterName: 'Host' },
+      guest: { name: 'Guest', voiceId: voices[1]?.id || voices[0].id, characterName: 'Guest' },
+      intro: { enabled: true, type: 'generated', content: 'Welcome to the future!' },
+      outro: { enabled: true, type: 'generated', content: 'Thanks for listening!' },
+      bgMusic: false
+  });
 
   const [transcription, setTranscription] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -116,6 +163,7 @@ export const AudioStudio: React.FC = () => {
     saveTracks();
   }, [debouncedTracks]);
 
+  // ... (previous useEffects for voices, assets, recording, volume, playback sync) ...
   useEffect(() => {
     try {
         localStorage.setItem('omni_voices', JSON.stringify(voices));
@@ -168,18 +216,46 @@ export const AudioStudio: React.FC = () => {
       });
   }, [tracks]);
 
+  // Audio Playback Sync
   useEffect(() => {
-      Object.values(audioRefs.current).forEach(audio => {
-          const audioEl = audio as HTMLAudioElement;
-          if (isPlaying) {
-              audioEl.play().catch(e => console.log("Play error (expected if empty):", e));
-          } else {
-              audioEl.pause();
+      tracks.forEach(track => {
+          const audio = audioRefs.current[track.id];
+          if (audio) {
+              if (isPlaying) {
+                  const trackTime = currentTime - track.startOffset;
+                  if (trackTime >= 0 && trackTime < track.duration) {
+                      if (audio.paused) {
+                          audio.currentTime = trackTime;
+                          audio.play().catch(e => console.warn(e));
+                      }
+                  } else {
+                      if (!audio.paused) audio.pause();
+                  }
+              } else {
+                  if (!audio.paused) audio.pause();
+              }
           }
       });
-  }, [isPlaying]);
+  }, [isPlaying, tracks]);
 
-  const handleTogglePlay = () => setIsPlaying(p => !p);
+  // Seek Sync (When paused)
+  useEffect(() => {
+      if (!isPlaying) {
+          tracks.forEach(track => {
+              const audio = audioRefs.current[track.id];
+              if (audio) {
+                  const trackTime = currentTime - track.startOffset;
+                  if (trackTime >= 0 && trackTime <= track.duration) {
+                      audio.currentTime = trackTime;
+                  } else {
+                      audio.currentTime = 0;
+                  }
+              }
+          });
+      }
+  }, [currentTime, isPlaying, tracks]);
+
+  const handleTogglePlay = () => setIsPlaying(!isPlaying);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -192,7 +268,7 @@ export const AudioStudio: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isPlaying]);
 
   const addAsset = (track: AudioTrack) => {
       const newAsset = {
@@ -211,7 +287,6 @@ export const AudioStudio: React.FC = () => {
       const voice = voices.find(v => v.id === selectedVoice) || voices[0];
       const audioUrl = await generateSpeech(ttsInput, voice, styleReference);
       
-      // Estimate duration based on word count (~15 chars per second average speaking rate)
       const estimatedDuration = Math.max(2, ttsInput.length / 15);
 
       if (audioUrl) {
@@ -236,7 +311,6 @@ export const AudioStudio: React.FC = () => {
       const voice = voices.find(v => v.id === selectedVoice);
       const isInstrumental = !selectedVoice;
 
-      // 1. Generate Instrumental Track
       const mainAudioUrl = await generateSong(
           ttsInput, 
           styleReference, 
@@ -247,7 +321,6 @@ export const AudioStudio: React.FC = () => {
           songStructure
       );
 
-      // Estimate duration for song based on structure or lyrics
       const estimatedSongDuration = ttsInput.length > 50 ? Math.max(30, ttsInput.length / 10) : 30;
 
       if (mainAudioUrl) {
@@ -264,11 +337,8 @@ export const AudioStudio: React.FC = () => {
           setTracks(prev => [...prev, mainTrack]);
           addAsset(mainTrack);
 
-          // 2. Generate Vocal Track (if voice selected and lyrics present)
           if (!isInstrumental && selectedVoice && ttsInput.trim()) {
-               // Clone or use standard voice for singing
                const vocalPrompt = `(Singing in ${genre} style, vocal style: ${voiceStyle}) ${ttsInput}`;
-               // We pass styleReference if available to influence vocal tone as well
                const vocalUrl = await generateSpeech(vocalPrompt, voice!, styleReference);
                
                if (vocalUrl) {
@@ -276,8 +346,8 @@ export const AudioStudio: React.FC = () => {
                        id: `voc-${Date.now()}`,
                        name: `${voice.name} Vocals`,
                        type: 'voiceover',
-                       duration: parseFloat(estimatedSongDuration.toFixed(1)), // Match instrumental roughly
-                       startOffset: 0, // Aligned with music
+                       duration: parseFloat(estimatedSongDuration.toFixed(1)),
+                       startOffset: 0,
                        audioUrl: vocalUrl,
                        volume: 1.0,
                        muted: false
@@ -291,79 +361,163 @@ export const AudioStudio: React.FC = () => {
   };
 
   const handleGeneratePodcast = async () => {
-      if (!podcastTopic || !hostVoice || !guestVoice) return;
+      const { topic, host, guest, style, intro, outro, bgMusic, sourceMaterial } = podcastConfig;
+      if (!topic) return;
       setIsGenerating(true);
 
-      const host = voices.find(v => v.id === hostVoice) || voices[0];
-      const guest = voices.find(v => v.id === guestVoice) || voices[1];
+      try {
+          const hostVoice = voices.find(v => v.id === host.voiceId) || voices[0];
+          const guestVoice = voices.find(v => v.id === guest.voiceId) || voices[1];
 
-      // 1. Generate Script
-      const script = await generatePodcastScript(podcastTopic, host.name, guest.name);
-      
-      let currentOffset = 0;
-      const newTracks: AudioTrack[] = [];
+          let currentOffset = 0;
+          const newTracks: AudioTrack[] = [];
 
-      // 2. Generate Audio for each line
-      for (const line of script) {
-          const voice = line.speaker === host.name ? host : guest;
-          const audioUrl = await generateSpeech(line.text, voice);
-          const duration = Math.max(2, line.text.length / 15);
-
-          if (audioUrl) {
-              const track: AudioTrack = {
-                  id: `pod-${Date.now()}-${Math.random()}`,
-                  name: `${line.speaker}: ${line.text.substring(0, 15)}...`,
-                  type: 'voiceover',
-                  duration: duration,
-                  startOffset: currentOffset,
-                  audioUrl,
-                  volume: 1.0,
-                  muted: false
-              };
-              newTracks.push(track);
-              addAsset(track);
-              currentOffset += duration + 0.5; // Add slight pause between speakers
+          // 1. Handle Intro
+          if (intro.enabled) {
+              if (intro.type === 'generated' && intro.content) {
+                  const voice = intro.voiceId ? (voices.find(v => v.id === intro.voiceId) || hostVoice) : hostVoice;
+                  const url = await generateSpeech(intro.content, voice); 
+                  const duration = Math.max(3, intro.content.length / 15);
+                  if (url) {
+                      const track: AudioTrack = { id: `intro-${Date.now()}`, name: 'Podcast Intro', type: 'voiceover', duration, startOffset: 0, audioUrl: url, volume: 1.0, muted: false };
+                      newTracks.push(track);
+                      addAsset(track);
+                      currentOffset += duration;
+                  }
+              } else if (intro.type === 'upload' && intro.file) {
+                  const url = await blobToDataUri(intro.file);
+                  const tempAudio = new Audio(url);
+                  await new Promise(r => { tempAudio.onloadedmetadata = r; });
+                  const duration = tempAudio.duration || 10;
+                  
+                  const track: AudioTrack = { id: `intro-upl-${Date.now()}`, name: `Intro: ${intro.content}`, type: 'music', duration, startOffset: 0, audioUrl: url, volume: 1.0, muted: false };
+                  newTracks.push(track);
+                  addAsset(track);
+                  currentOffset += duration;
+              }
           }
-      }
 
-      setTracks(prev => [...prev, ...newTracks]);
-      setIsGenerating(false);
-      setActiveTab('mixer'); // Switch to mixer to see result
-      alert("Podcast Generated! Tracks added to timeline.");
+          // 2. Generate Main Script
+          // Use Character Names for the script generation context
+          const script = await generatePodcastScript(topic, host.characterName || host.name, guest.characterName || guest.name, style, sourceMaterial);
+          
+          if (!script || script.length === 0) {
+              console.warn("Failed to generate podcast script.");
+          }
+
+          for (const line of script) {
+              // Map character names back to voices
+              const isHost = line.speaker === (host.characterName || host.name);
+              const voice = isHost ? hostVoice : guestVoice;
+              
+              const audioUrl = await generateSpeech(line.text, voice);
+              const duration = Math.max(2, line.text.length / 15);
+
+              if (audioUrl) {
+                  const track: AudioTrack = {
+                      id: `pod-${Date.now()}-${Math.random()}`,
+                      name: `${line.speaker}: ${line.text.substring(0, 15)}...`,
+                      type: 'voiceover',
+                      duration: duration,
+                      startOffset: currentOffset,
+                      audioUrl,
+                      volume: 1.0,
+                      muted: false
+                  };
+                  newTracks.push(track);
+                  addAsset(track);
+                  currentOffset += duration + 0.5; // Small pause between speakers
+              } else {
+                  console.warn(`Failed to generate speech for line: ${line.text}`);
+              }
+          }
+
+          // 3. Handle Outro
+          if (outro.enabled) {
+              if (outro.type === 'generated' && outro.content) {
+                  const voice = outro.voiceId ? (voices.find(v => v.id === outro.voiceId) || hostVoice) : hostVoice;
+                  const url = await generateSpeech(outro.content, voice);
+                  const duration = Math.max(3, outro.content.length / 15);
+                  if (url) {
+                      const track: AudioTrack = { id: `outro-${Date.now()}`, name: 'Podcast Outro', type: 'voiceover', duration, startOffset: currentOffset, audioUrl: url, volume: 1.0, muted: false };
+                      newTracks.push(track);
+                      addAsset(track);
+                      currentOffset += duration;
+                  }
+              } else if (outro.type === 'upload' && outro.file) {
+                  const url = await blobToDataUri(outro.file);
+                  const tempAudio = new Audio(url);
+                  await new Promise(r => { tempAudio.onloadedmetadata = r; });
+                  const duration = tempAudio.duration || 10;
+
+                  const track: AudioTrack = { id: `outro-upl-${Date.now()}`, name: `Outro: ${outro.content}`, type: 'music', duration, startOffset: currentOffset, audioUrl: url, volume: 1.0, muted: false };
+                  newTracks.push(track);
+                  addAsset(track);
+                  currentOffset += duration;
+              }
+          }
+
+          // 4. Background Music
+          if (bgMusic) {
+              const bgUrl = await generateBackgroundMusic(`Soft ambient background music for ${style} podcast about ${topic}`);
+              if (bgUrl) {
+                  const bgTrack: AudioTrack = {
+                      id: `bg-music-${Date.now()}`,
+                      name: 'Background Ambience',
+                      type: 'music',
+                      duration: currentOffset, // Match total length
+                      startOffset: 0,
+                      audioUrl: bgUrl,
+                      volume: 0.2, // Lower volume for background
+                      muted: false
+                  };
+                  newTracks.push(bgTrack);
+                  addAsset(bgTrack);
+              }
+          }
+
+          setTracks(prev => [...prev, ...newTracks]);
+          setIsGenerating(false);
+          setActiveTab('mixer');
+          alert("Podcast Generated! Tracks assembled on timeline.");
+      } catch (e: any) {
+          console.error("Podcast Generation Error", e);
+          alert(`Failed to generate podcast: ${e.message || "Unknown Error"}`);
+          setIsGenerating(false);
+      }
   };
 
   const handleCloneFromFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      // ... (previous implementation)
       const file = e.target.files?.[0];
       if (!file) return;
       
       const reader = new FileReader();
       reader.onload = async (ev) => {
           const base64 = ev.target?.result as string;
-          // Analyze audio style to get a description
           const analysis = await analyzeMediaStyle(base64, 'audio');
           
           const newVoice: Voice = {
               id: `voice-${Date.now()}`,
               name: file.name.replace(/\.[^/.]+$/, ""),
-              gender: 'robot', // Default, will be overridden by style usage
+              gender: 'robot',
               style: 'custom',
               isCloned: true,
-              apiMapping: 'cloned_voice_id', // Placeholder for actual API reference
+              apiMapping: 'cloned_voice_id',
               settings: { stability: 0.5, similarity: 0.75 }
           };
           
           setVoices(prev => [...prev, newVoice]);
           setSelectedVoice(newVoice.id);
-          setStyleReference(analysis); // Set the analyzed style as the current reference
+          setStyleReference(analysis);
           alert(`Voice "${newVoice.name}" cloned successfully! Style Analysis: ${analysis}`);
-          
-          // Reset input target value so the same file can be selected again if needed
           e.target.value = '';
       };
       reader.readAsDataURL(file);
   };
 
   const startRecording = async () => {
+      // ... (previous implementation)
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           const mediaRecorder = new MediaRecorder(stream);
@@ -445,14 +599,31 @@ export const AudioStudio: React.FC = () => {
       const newTrack: AudioTrack = {
           id: `asset-${Date.now()}`,
           name: asset.description || asset.name || 'Imported Asset',
-          type: 'music',
-          duration: 10, // Default for imported assets without metadata
+          type: asset.type === 'sfx' ? 'sfx' : asset.type === 'music' ? 'music' : 'voiceover',
+          duration: 2, // Default duration if not known, ideally should be read from metadata
           startOffset: 0,
           audioUrl: asset.url || asset.audioUrl,
           volume: 1.0,
           muted: false
       };
+      
+      // Attempt to get real duration
+      const tempAudio = new Audio(newTrack.audioUrl);
+      tempAudio.onloadedmetadata = () => {
+          newTrack.duration = tempAudio.duration;
+          setTracks(prev => prev.map(t => t.id === newTrack.id ? { ...t, duration: tempAudio.duration } : t));
+      };
+      
       setTracks(prev => [...prev, newTrack]);
+  };
+
+  const handleUpdateTrack = (id: string, updates: Partial<AudioTrack>) => {
+      setTracks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  };
+
+  const handleDeleteTrack = (id: string) => {
+      setTracks(prev => prev.filter(t => t.id !== id));
+      if (selectedTrackId === id) setSelectedTrackId(null);
   };
 
   return (
@@ -500,13 +671,12 @@ export const AudioStudio: React.FC = () => {
               setVoiceStyle={setVoiceStyle}
               songStructure={songStructure}
               setSongStructure={setSongStructure}
-              podcastTopic={podcastTopic}
-              setPodcastTopic={setPodcastTopic}
-              hostVoice={hostVoice}
-              setHostVoice={setHostVoice}
-              guestVoice={guestVoice}
-              setGuestVoice={setGuestVoice}
+              podcastConfig={podcastConfig}
+              setPodcastConfig={setPodcastConfig}
               onGeneratePodcast={handleGeneratePodcast}
+              selectedTrack={tracks.find(t => t.id === selectedTrackId)}
+              onUpdateTrack={handleUpdateTrack}
+              onDeleteTrack={handleDeleteTrack}
            />
        </div>
 
@@ -517,21 +687,22 @@ export const AudioStudio: React.FC = () => {
                    <button onClick={() => setShowAssets(false)}><X size={16}/></button>
                </div>
                <div className="flex-1 overflow-y-auto p-2">
+                   {isInitializingLibrary && <div className="text-center text-xs text-blue-400 py-4 flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin"/> Synthesizing Default Kit...</div>}
                    {audioAssets.map((asset, i) => (
                        <div key={i} className="p-3 mb-2 bg-gray-800 rounded border border-gray-700 hover:border-primary-500 cursor-pointer group" onClick={() => handleAddTrackFromAsset(asset)}>
                            <div className="text-xs font-bold text-white mb-1 truncate">{asset.description || asset.name}</div>
                            <div className="flex justify-between items-center">
-                               <span className="text-[10px] text-gray-500">Audio • {new Date(asset.date || asset.created || Date.now()).toLocaleDateString()}</span>
+                               <span className="text-[10px] text-gray-500">{asset.type?.toUpperCase() || 'AUDIO'} • {new Date(asset.date || asset.created || Date.now()).toLocaleDateString()}</span>
                                <Play size={12} className="text-gray-400 group-hover:text-primary-400"/>
                            </div>
                        </div>
                    ))}
-                   {audioAssets.length === 0 && <div className="text-center text-gray-500 text-xs mt-10">No audio assets found.</div>}
+                   {audioAssets.length === 0 && !isInitializingLibrary && <div className="text-center text-gray-500 text-xs mt-10">No audio assets found.</div>}
                </div>
            </div>
        )}
 
-       <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
+       <div className="flex-1 flex flex-col min-w-0 bg-gray-900">
            <div className="md:hidden p-4 border-b border-gray-800 flex items-center bg-gray-900">
                <button onClick={() => setIsSidebarOpen(true)} className="text-gray-400 hover:text-white mr-4">
                    <Menu size={24} />
@@ -563,6 +734,11 @@ export const AudioStudio: React.FC = () => {
                   handleVolumeChange={(id, val) => setTracks(prev => prev.map(t => t.id === id ? { ...t, volume: val } : t))}
                   audioRefs={audioRefs}
                   mastering={mastering}
+                  selectedTrackId={selectedTrackId}
+                  onSelectTrack={setSelectedTrackId}
+                  currentTime={currentTime}
+                  setCurrentTime={setCurrentTime}
+                  totalDuration={totalDuration}
                />
            )}
        </div>

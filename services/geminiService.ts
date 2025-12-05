@@ -1,33 +1,61 @@
-import { GoogleGenAI, Type, Schema, Modality, LiveServerMessage, GenerateContentResponse } from "@google/genai";
-import { ProjectType, AIAgent, ProjectPhase, AgentContext, Voice, Scene, ChatMessage, AudioTrack, SocialPost } from '../types';
+
+import { GoogleGenAI, Type, Schema, Modality, LiveServerMessage, GenerateContentResponse, FunctionDeclaration } from "@google/genai";
+import { ProjectType, AIAgent, ProjectPhase, AgentContext, Voice, Scene, ChatMessage, AudioTrack, SocialPost, ArchNode, ArchLink, PerformanceReport, AuditIssue, TestResult } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // --- Helpers ---
 
-// Exponential Backoff Retry Helper
-const retryOperation = async <T>(operation: () => Promise<T>, retries = 3, delay = 2000): Promise<T> => {
+// Rate Limiter to prevent bursting (Client-side throttling)
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 4000; // Increased to 4 seconds to prevent 429s (approx 15 req/min)
+
+const throttle = async () => {
+  const now = Date.now();
+  const timeSinceLast = now - lastRequestTime;
+  if (timeSinceLast < MIN_REQUEST_INTERVAL) {
+    await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLast));
+  }
+  lastRequestTime = Date.now();
+};
+
+// Exponential Backoff Retry Helper with Jitter & Better Error Parsing
+const retryOperation = async <T>(operation: () => Promise<T>, retries = 5, delay = 5000): Promise<T> => {
   for (let i = 0; i < retries; i++) {
     try {
+      await throttle(); // Enforce rate limit before request
       return await operation();
     } catch (error: any) {
-      // Check for Rate Limit (429) or Quota Exceeded errors
+      // Parse Error Object (handle various SDK/API formats)
+      const errBody = error?.response?.data?.error || error?.error || error;
+      const code = errBody?.code || error?.status || error?.code;
+      const message = errBody?.message || error?.message || JSON.stringify(error);
+      
       const isRateLimit = 
-        error?.status === 429 || 
-        error?.code === 429 || 
-        error?.message?.includes('429') || 
-        error?.message?.includes('quota') ||
-        error?.message?.includes('RESOURCE_EXHAUSTED');
+        code === 429 || 
+        message.includes('429') || 
+        message.includes('quota') || 
+        message.includes('RESOURCE_EXHAUSTED') ||
+        error?.response?.status === 429;
+      
+      const isServerOverload = code === 503 || message.includes('503') || message.includes('overloaded');
 
-      if (isRateLimit && i < retries - 1) {
-        const waitTime = delay * Math.pow(2, i);
-        console.warn(`Gemini API Rate Limit (429). Retrying in ${waitTime}ms... (Attempt ${i + 1}/${retries})`);
-        await new Promise(r => setTimeout(r, waitTime));
-        continue;
+      if (isRateLimit || isServerOverload) {
+        if (i < retries - 1) {
+            // Add jitter: +/- 1000ms
+            const jitter = Math.random() * 1000;
+            // Exponential backoff: 5s, 10s, 20s...
+            const waitTime = (delay * Math.pow(2, i)) + jitter;
+            
+            console.warn(`Gemini API Warning (${isRateLimit ? 'Rate Limit' : 'Overload'}). Retrying in ${Math.round(waitTime)}ms... (Attempt ${i + 1}/${retries})`);
+            await new Promise(r => setTimeout(r, waitTime));
+            continue;
+        } else {
+            console.error("Max retries reached for API.");
+            throw new Error(`API Error: ${isRateLimit ? 'Rate Limit Exceeded' : 'Service Unavailable'}. Please try again later.`);
+        }
       }
       
-      // If it's the last retry or not a rate limit error, throw it
-      if (i === retries - 1) throw error;
       throw error;
     }
   }
@@ -102,31 +130,33 @@ export class LiveSession {
     // Start Analysis Loop
     this.startAnalysis();
 
-    // Initial connection promise
-    const sessionPromise = ai.live.connect({
-      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-      callbacks: {
-        onopen: () => {
-           console.log("Live Session Opened");
-           this.startInputStreaming(sessionPromise);
-        },
-        onmessage: (msg: LiveServerMessage) => {
-           this.handleServerMessage(msg);
-        },
-        onclose: () => {
-            console.log("Live Session Closed");
-            this.disconnect();
-        },
-        onerror: (e) => console.error("Live Session Error", e)
-      },
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
-        },
-        inputAudioTranscription: {} // Enable input transcription for feedback
-      }
-    });
+    // Initial connection promise with retry
+    const sessionPromise = retryOperation(async () => {
+        return await ai.live.connect({
+          model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+          callbacks: {
+            onopen: () => {
+               console.log("Live Session Opened");
+               this.startInputStreaming(sessionPromise);
+            },
+            onmessage: (msg: LiveServerMessage) => {
+               this.handleServerMessage(msg);
+            },
+            onclose: () => {
+                console.log("Live Session Closed");
+                this.disconnect();
+            },
+            onerror: (e) => console.error("Live Session Error", e)
+          },
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
+            },
+            inputAudioTranscription: {} // Enable input transcription for feedback
+          }
+        });
+    }, 3, 2000); // Retry connection up to 3 times
     
     this.session = await sessionPromise;
   }
@@ -442,13 +472,32 @@ export const generateSpeech = async (text: string, voice: Voice, styleReference?
   }
 };
 
-export const generatePodcastScript = async (topic: string, hostName: string, guestName: string): Promise<{speaker: string, text: string}[]> => {
+export const generatePodcastScript = async (
+    topic: string, 
+    hostName: string, 
+    guestName: string,
+    style: string = 'Casual Chat',
+    sourceMaterial: string = ''
+): Promise<{speaker: string, text: string}[]> => {
     try {
         const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `Generate a short podcast script (3-5 exchanges) about "${topic}". 
-            Host: ${hostName}. Guest: ${guestName}.
-            Return JSON array: [{"speaker": "${hostName}", "text": "..."}, ...]`,
+            contents: `Generate a podcast script (approx 5-8 exchanges) about "${topic}".
+            
+            Style: ${style}
+            Host Character: ${hostName}
+            Guest Character: ${guestName}
+            
+            ${sourceMaterial ? `Source Material / Context (Ground the discussion in this): \n"${sourceMaterial.substring(0, 3000)}..."\n` : ''}
+            
+            Style Guidelines:
+            - Deep Dive: Analytical, detailed, intellectual tone. Focus on unpacking complexity.
+            - Debate: Conflicting viewpoints, respectful but argumentative. Clear thesis and antithesis.
+            - News Brief: Quick, factual, rapid-fire information. Professional journalism tone.
+            - Casual Chat: Friendly, jokes, loose structure, interruptions, "um"s and "ah"s allowed.
+            - Storytelling: Narrative focused, descriptive, immersive.
+            
+            Return ONLY a JSON array of objects: [{"speaker": "${hostName}", "text": "..."}, ...]`,
             config: { responseMimeType: 'application/json' }
         }));
         const text = cleanJson(response.text || '[]');
@@ -938,373 +987,18 @@ export const parseUICommand = async (text: string): Promise<string> => {
     }
 };
 
-// --- Code & Text Generation ---
-
-export const generateCodeResponse = async (
-    prompt: string, 
-    currentCode: string, 
-    projectType: ProjectType, 
-    fileStructure: string, 
-    modelName: string,
-    onStream: (chunk: string) => void,
-    onMetadata: (meta: any) => void,
-    image?: string,
-    history: ChatMessage[] = [],
-    useSearch = false,
-    useMaps = false
-) => {
-    try {
-        const userSystemPrompt = localStorage.getItem('omni_system_prompt') || '';
-        const systemPrompt = `${userSystemPrompt ? `User Instruction: ${userSystemPrompt}\n\n` : ''}You are Omni-Studio, an elite senior software engineer. Project Type: ${projectType}.
-        Available Files:\n${fileStructure}\n
-        Current File Content:\n${currentCode}\n
-        
-        Rules:
-        1. Write production-ready, bug-free code.
-        2. Use strictly typed TypeScript where possible.
-        3. If modifying code, output ONLY the changed file content with // filename: [path] comment at the top.
-        4. Be concise and precise.
-        5. For the entry component (App.tsx), prefer "export default function App() {}" to ensure runtime compatibility.
-        6. Do not use external CSS files unless necessary; prefer Tailwind classes or inline styles.
-        7. Ensure all imports are relative (e.g. './components/Button') and not absolute unless standard library.
-        `;
-
-        const model = modelName.includes('3-pro') ? 'gemini-3-pro-preview' : 'gemini-2.5-flash';
-        
-        const tools: any[] = [];
-        if (useSearch) tools.push({ googleSearch: {} });
-        if (useMaps) tools.push({ googleMaps: {} }); 
-
-        const parts: any[] = [{ text: prompt }];
-        if (image) {
-            parts.unshift({ inlineData: { mimeType: getMimeType(image, 'image/png'), data: image.split(',')[1] } });
-        }
-
-        // Retry wrapper for stream initiation
-        const responseStream = await retryOperation<any>(() => ai.models.generateContentStream({
-            model,
-            contents: [
-                { role: 'user', parts: [{ text: systemPrompt }] },
-                ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.text }] })),
-                { role: 'user', parts }
-            ],
-            config: {
-                tools: tools.length > 0 ? tools : undefined
-            }
-        }));
-
-        for await (const chunk of responseStream) {
-            if (chunk.text) onStream(chunk.text);
-            if (chunk.candidates?.[0]?.groundingMetadata) {
-                onMetadata(chunk.candidates[0].groundingMetadata);
-            }
-        }
-    } catch (e) {
-        console.error("Gen Code Error", e);
-        onStream("// Error generating response. Quota may be exceeded.");
-    }
-};
-
-export const critiqueCode = async (code: string, task: string) => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Review this code for bugs, security issues, and performance. Task: ${task}.
-            Code:\n${code}\n
-            Return JSON: { "score": number, "issues": string[], "suggestions": string[], "fixCode": string (optional) }`,
-            config: {
-                responseMimeType: 'application/json'
-            }
-        }));
-        const text = cleanJson(response.text || '{}');
-        return JSON.parse(text);
-    } catch {
-        return null;
-    }
-};
-
-export const generateProjectScaffold = async (description: string, type: ProjectType): Promise<any[]> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Generate a file structure for a ${type} project. Description: ${description}.
-            Return strictly a JSON array of FileNode objects: { name: string, type: 'file'|'directory', children?: FileNode[], content?: string }.
-            Include essential config files (package.json, tsconfig.json) and basic src structure with placeholder content.
-            Ensure App.tsx exports default function App.`,
-            config: {
-                responseMimeType: 'application/json'
-            }
-        }));
-        const text = cleanJson(response.text || '[]');
-        return JSON.parse(text);
-    } catch {
-        return [];
-    }
-};
-
-export const generateProjectPlan = async (desc: string, type: ProjectType): Promise<ProjectPhase[]> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Create a phased roadmap for a ${type} project: "${desc}".
-            Return strictly JSON array of ProjectPhase: { id: string, title: string, status: 'pending', goals: string[], tasks: {id: string, text: string, done: false}[] }`,
-            config: {
-                responseMimeType: 'application/json'
-            }
-        }));
-        const text = cleanJson(response.text || '[]');
-        return JSON.parse(text);
-    } catch {
-        return [];
-    }
-};
-
-export const generateTerminalCommand = async (query: string, type: ProjectType): Promise<string> => {
-    const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Translate this natural language request into a terminal command for a ${type} project: "${query}". Return ONLY the command.`
-    }));
-    return response.text?.trim() || '';
-};
-
-export const generateCommitMessage = async (changes: string[]): Promise<string> => {
-    const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Generate a concise git commit message for changes in: ${changes.join(', ')}.`
-    }));
-    return response.text?.trim() || 'Update files';
-};
-
-export const generateProjectDocs = async (fileStructure: string, type: ProjectType, onStream: (text: string) => void) => {
-    const stream = await retryOperation<any>(() => ai.models.generateContentStream({
-        model: 'gemini-3-pro-preview',
-        contents: `Generate comprehensive documentation (README.md style) for this ${type} project structure:\n${fileStructure}`
-    }));
-    for await (const chunk of stream) {
-        if (chunk.text) onStream(chunk.text);
-    }
-};
-
-export const generateChangelog = async (files: string[], task: string): Promise<string> => {
-    const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Generate a changelog entry for task "${task}" affecting files: ${files.join(', ')}.`
-    }));
-    return response.text || '';
-};
-
-export const autoUpdateReadme = async (current: string, changelog: string): Promise<string> => {
-    const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Append this changelog to the README:\n\n${changelog}\n\nCurrent README:\n${current}\n\nReturn full updated README.`
-    }));
-    return response.text || current;
-};
-
-export const generateGhostText = async (prefix: string, suffix: string): Promise<string> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Complete the code. Prefix:\n${prefix}\nSuffix:\n${suffix}\nReturn ONLY the missing code.`
-        }));
-        return response.text || '';
-    } catch {
-        return '';
-    }
-};
-
-export const generateTestResults = async (filename: string, content: string): Promise<any> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Simulate running unit tests for this code:\n${content}\nFilename: ${filename}.
-            Return JSON: { duration: number, passed: number, failed: number, suites: [{name: string, status: 'pass'|'fail', assertions: [{name: string, status: 'pass'|'fail', error?: string}]}] }`,
-            config: { responseMimeType: 'application/json' }
-        }));
-        const text = cleanJson(response.text || '{}');
-        return JSON.parse(text);
-    } catch {
-        return { duration: 0, passed: 0, failed: 0, suites: [] };
-    }
-};
-
-export const generateSyntheticData = async (topic: string, count: number, onStream: (chunk: string) => void) => {
-    const stream = await retryOperation<any>(() => ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
-        contents: `Generate ${count} synthetic data examples for topic "${topic}" in JSONL format.`
-    }));
-    for await (const chunk of stream) {
-        if (chunk.text) onStream(chunk.text);
-    }
-};
-
-export const testFineTunedModel = async (modelName: string, prompt: string, onStream: (chunk: string) => void) => {
-    const stream = await retryOperation<any>(() => ai.models.generateContentStream({
-        model: 'gemini-2.5-flash', 
-        contents: `[Simulating model ${modelName}] ${prompt}`
-    }));
-    for await (const chunk of stream) {
-        if (chunk.text) onStream(chunk.text);
-    }
-};
-
-export const generateSocialContent = async (
-    prompt: string, 
-    platform: string, 
-    onStream: (chunk: string) => void,
-    mediaRef?: string
-) => {
-    const parts: any[] = [{ text: `Generate ${platform} content for: ${prompt}` }];
-    
-    if (mediaRef && mediaRef.startsWith('data:')) {
-        const mimeType = getMimeType(mediaRef, 'image/png');
-        const data = mediaRef.split(',')[1];
-        parts.unshift({ inlineData: { mimeType, data } });
-    }
-
-    const stream = await retryOperation<any>(() => ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
-        contents: { parts }
-    }));
-
-    for await (const chunk of stream) {
-        if (chunk.text) onStream(chunk.text);
-    }
-};
-
-export const planAgentTask = async (agent: AIAgent, task: string, fileStructure: string, projectType: ProjectType): Promise<{filesToEdit: string[], strategy: string, requiresSearch: boolean}> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Plan the execution of this task: "${task}". Project Type: ${projectType}.
-            File Structure:\n${fileStructure}\n
-            Return JSON: { "filesToEdit": string[], "strategy": string, "requiresSearch": boolean }`,
-            config: { 
-                responseMimeType: 'application/json',
-                systemInstruction: `You are ${agent.name}, role: ${agent.role}. Persona: ${agent.systemPrompt}.`
-            }
-        }));
-        const text = cleanJson(response.text || '{}');
-        return JSON.parse(text);
-    } catch {
-        return { filesToEdit: [], strategy: "Manual intervention required.", requiresSearch: false };
-    }
-};
-
-export const analyzeFile = async (agent: AIAgent, fileName: string, content: string, task: string, context: AgentContext): Promise<string> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Analyze ${fileName} in relation to task: "${task}".
-            Code:\n${content}\n
-            Context:\n${JSON.stringify(context.terminalLogs)}\n
-            Return a brief analysis of what needs to change.`,
-            config: { systemInstruction: agent.systemPrompt }
-        }));
-        return response.text || 'Analysis failed.';
-    } catch {
-        return 'Analysis failed.';
-    }
-};
-
-export const executeBuildTask = async (
-    agent: AIAgent, 
-    fileName: string, 
-    content: string, 
-    instructions: string, 
-    context: AgentContext, 
-    feedback: string, 
-    projectType: ProjectType, 
-    isNewFile: boolean, 
-    useSearch: boolean
-): Promise<{ code: string, logs: string[] }> => {
-    try {
-        const tools: any[] = [];
-        if (useSearch) tools.push({ googleSearch: {} });
-
-        const prompt = `Task: ${instructions}. 
-        File: ${fileName}. 
-        Project Type: ${projectType}.
-        ${isNewFile ? 'Create this file from scratch.' : 'Modify existing code.'}
-        ${feedback ? `Feedback from previous attempt: ${feedback}` : ''}
-        ${context.mcpContext ? `Rules: ${context.mcpContext}` : ''}
-        
-        Return the FULL file content only. No markdown fences if possible, or inside standard code blocks.`;
-
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [
-                { role: 'user', parts: [{ text: prompt }, { text: `Current Code:\n${content}` }] }
-            ],
-            config: {
-                tools: tools.length > 0 ? tools : undefined,
-                systemInstruction: agent.systemPrompt
-            }
-        }));
-
-        const logs: string[] = [];
-        if (response.candidates?.[0]?.groundingMetadata) {
-            logs.push("Used Google Search grounding.");
-        }
-
-        return { code: cleanJson(response.text || content), logs };
-    } catch {
-        return { code: content, logs: ["Generation failed"] };
-    }
-};
-
-export const runAgentFileTask = async (agent: AIAgent, fileName: string, content: string, context: AgentContext): Promise<string> => {
-    // Wrapper for simple tasks
-    const res = await executeBuildTask(agent, fileName, content, "Improve code", context, "", ProjectType.REACT_WEB, false, false);
-    return res.code;
-};
-
-export const reviewBuildTask = async (agent: AIAgent, fileName: string, oldCode: string, newCode: string, instructions: string, context: AgentContext, projectType: ProjectType): Promise<{ approved: boolean, feedback: string, issues: string[], fixCode?: string, suggestedCommand?: string }> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Review changes for ${fileName}. Task: ${instructions}.
-            Old Code Length: ${oldCode.length}. New Code Length: ${newCode.length}.
-            Verify logic, syntax, and safety.
-            Return JSON: { "approved": boolean, "feedback": string, "issues": string[], "fixCode": string (optional auto-fix), "suggestedCommand": string (optional terminal fix) }`,
-            config: { 
-                responseMimeType: 'application/json',
-                systemInstruction: agent.systemPrompt
-            }
-        }));
-        const text = cleanJson(response.text || '{}');
-        return JSON.parse(text);
-    } catch {
-        return { approved: false, feedback: "Review failed", issues: ["AI Error"] };
-    }
-};
-
-export const delegateTasks = async (phase: ProjectPhase, agents: AIAgent[]): Promise<{ assignments: { agentName: string, taskDescription: string, targetFile?: string }[] }> => {
-    try {
-        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Delegate tasks for phase "${phase.title}".
-            Goals: ${phase.goals.join(', ')}.
-            Available Agents: ${agents.map(a => a.name + " (" + a.role + ")").join(', ')}.
-            Return JSON: { "assignments": [{ "agentName": string, "taskDescription": string, "targetFile": string (optional) }] }`,
-            config: { responseMimeType: 'application/json' }
-        }));
-        const text = cleanJson(response.text || '{}');
-        return JSON.parse(text);
-    } catch {
-        return { assignments: [] };
-    }
-};
+// --- Architecture ---
 
 export const generateArchitecture = async (description: string): Promise<{ nodes: any[], links: any[] }> => {
     try {
         const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Design system architecture for: "${description}".
-            Return JSON: { "nodes": [{ "id": string, "label": string, "type": "frontend"|"backend"|"database"|"storage" }], "links": [{ "source": string, "target": string }] }`,
+            model: 'gemini-2.5-flash',
+            contents: `Generate a system architecture diagram for: "${description}".
+            Return JSON with "nodes" (id, label, type: frontend|backend|database|storage|function, details) and "links" (source, target).
+            Position nodes (x, y) roughly in a layout.`,
             config: { responseMimeType: 'application/json' }
         }));
-        const text = cleanJson(response.text || '{"nodes":[], "links":[]}');
+        const text = cleanJson(response.text || '{}');
         return JSON.parse(text);
     } catch {
         return { nodes: [], links: [] };
@@ -1312,50 +1006,463 @@ export const generateArchitecture = async (description: string): Promise<{ nodes
 };
 
 export const optimizeArchitecture = async (nodes: any[], links: any[]): Promise<{ nodes: any[], links: any[] }> => {
-    return { nodes, links };
-};
-
-export const generatePerformanceReport = async (fileStructure: string): Promise<any> => {
     try {
         const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `Analyze project structure for performance:
-            ${fileStructure}
-            Return JSON: { "scores": { "performance": number, "accessibility": number, "bestPractices": number, "seo": number }, "opportunities": [{ "title": string, "description": string, "savings": string }] }`,
+            contents: `Optimize this architecture for scalability and cost.
+            Current: ${JSON.stringify({nodes, links})}
+            Return updated JSON with "nodes" and "links".`,
             config: { responseMimeType: 'application/json' }
         }));
         const text = cleanJson(response.text || '{}');
         return JSON.parse(text);
     } catch {
+        return { nodes, links };
+    }
+};
+
+// --- Audit ---
+
+export const generatePerformanceReport = async (fileStructure: string): Promise<PerformanceReport | null> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Analyze this project structure for performance bottlenecks.
+            Structure:
+            ${fileStructure}
+            
+            Return JSON: {
+                "scores": { "performance": number, "accessibility": number, "bestPractices": number, "seo": number },
+                "opportunities": [{ "title": string, "description": string, "savings": string }]
+            }`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '{}'));
+    } catch {
         return null;
     }
 };
 
-export const runSecurityAudit = async (fileStructure: string, packageJson: string): Promise<any[]> => {
+export const runSecurityAudit = async (fileStructure: string, packageJson: string): Promise<AuditIssue[]> => {
     try {
         const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Audit project for security vulnerabilities.
-            Structure:\n${fileStructure}
-            Dependencies:\n${packageJson}
-            Return JSON array: [{ "severity": "critical"|"high"|"medium"|"low", "title": string, "description": string, "file": string }]`,
+            model: 'gemini-2.5-flash',
+            contents: `Perform a security audit.
+            Files:
+            ${fileStructure}
+            Package.json:
+            ${packageJson}
+            
+            Return JSON array of issues: [{ "id": string, "severity": "critical"|"high"|"medium"|"low", "title": string, "description": string, "file": string }]`,
             config: { responseMimeType: 'application/json' }
         }));
-        const text = cleanJson(response.text || '[]');
-        return JSON.parse(text);
+        return JSON.parse(cleanJson(response.text || '[]'));
     } catch {
         return [];
     }
 };
 
-export const chatWithVoice = async (text: string): Promise<string> => {
+// --- Docs ---
+
+export const generateProjectDocs = async (fileStructure: string, type: string, onChunk: (text: string) => void): Promise<void> => {
+    try {
+        const stream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: `Generate comprehensive documentation (README.md) for a ${type} project.
+            Structure:
+            ${fileStructure}
+            
+            Include: Overview, Setup, Architecture, and Key Features.`
+        });
+        for await (const chunk of stream) {
+            onChunk(chunk.text || '');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+// --- Git ---
+
+export const generateCommitMessage = async (modifiedFiles: string[]): Promise<string> => {
     try {
         const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `Conversational response to: "${text}". Keep it concise and natural.`
+            contents: `Generate a concise git commit message for changes in: ${modifiedFiles.join(', ')}. Follow Conventional Commits.`
         }));
-        return response.text || "I didn't catch that.";
+        return response.text?.trim() || 'Update files';
     } catch {
-        return "Service unavailable.";
+        return 'Update files';
+    }
+};
+
+// --- Scaffold ---
+
+export const generateProjectScaffold = async (description: string, type: string): Promise<any[]> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate a file structure for a ${type} project: "${description}".
+            Return a JSON array of file nodes. 
+            Format: [{ "name": "filename", "type": "file"|"directory", "children": [], "content": "string (for files)" }]
+            Provide valid boilerplate content for key files.`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '[]'));
+    } catch {
+        return [];
+    }
+};
+
+// --- Chat & Code ---
+
+export const generateCodeResponse = async (
+    prompt: string, 
+    currentCode: string, 
+    type: string, 
+    fileStructure: string, 
+    modelName: string,
+    onChunk: (text: string) => void,
+    onMetadata: (meta: any) => void,
+    attachedImage?: string,
+    history?: any[],
+    useSearch?: boolean,
+    useMaps?: boolean
+): Promise<void> => {
+    try {
+        const historyContext = history?.slice(-5).map(h => `${h.role}: ${h.text}`).join('\n') || '';
+        const parts: any[] = [{ text: `
+            Project Type: ${type}
+            File Structure:
+            ${fileStructure}
+            
+            Current File Code:
+            ${currentCode}
+            
+            Chat History:
+            ${historyContext}
+            
+            User Request: ${prompt}
+        ` }];
+
+        if (attachedImage) {
+            parts.push({ inlineData: { mimeType: 'image/png', data: attachedImage.split(',')[1] } });
+        }
+
+        const tools: any[] = [];
+        if (useSearch) tools.push({ googleSearch: {} });
+        if (useMaps) tools.push({ googleMaps: {} });
+
+        const config: any = {};
+        if (tools.length > 0) {
+            config.tools = tools;
+        }
+
+        const stream = await ai.models.generateContentStream({
+            model: modelName.includes('gemini') ? modelName : 'gemini-2.5-flash',
+            contents: { parts },
+            config
+        });
+
+        for await (const chunk of stream) {
+            onChunk(chunk.text || '');
+            if (chunk.candidates?.[0]?.groundingMetadata) {
+                onMetadata(chunk.candidates[0].groundingMetadata);
+            }
+        }
+    } catch (e) {
+        console.error(e);
+        onChunk(`Error: ${(e as any).message}`);
+    }
+};
+
+export const critiqueCode = async (code: string, task: string): Promise<any> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Critique this code based on task: "${task}".
+            Code:
+            ${code}
+            
+            Return JSON: { "score": number (0-100), "issues": string[], "suggestions": string[], "fixCode": string (optional optimized version) }`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '{}'));
+    } catch {
+        return null;
+    }
+};
+
+export const generateGhostText = async (prefix: string, suffix: string): Promise<string> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Complete this code.
+            Prefix:
+            ${prefix.slice(-500)}
+            Suffix:
+            ${suffix.slice(0, 200)}
+            
+            Return ONLY the missing code text. No markdown.`,
+        }));
+        return response.text || '';
+    } catch {
+        return '';
+    }
+};
+
+// --- Terminal ---
+
+export const generateTerminalCommand = async (query: string, projectType: string): Promise<string> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Translate this user request to a terminal command for a ${projectType} project.
+            Request: "${query}"
+            Return ONLY the command string.`
+        }));
+        return response.text?.trim() || '';
+    } catch {
+        return '';
+    }
+};
+
+// --- Fine Tuning ---
+
+export const generateSyntheticData = async (topic: string, count: number, onChunk: (text: string) => void): Promise<void> => {
+    try {
+        const stream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: `Generate ${count} synthetic training examples (JSONL format) for: "${topic}".
+            Format: {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}`
+        });
+        for await (const chunk of stream) {
+            onChunk(chunk.text || '');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+export const testFineTunedModel = async (modelName: string, prompt: string, onChunk: (text: string) => void): Promise<void> => {
+    // Simulate interaction since we can't actually call custom models easily in this demo setup without endpoint
+    try {
+        const stream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash', // Fallback for demo
+            contents: `[Simulating ${modelName}] ${prompt}`
+        });
+        for await (const chunk of stream) {
+            onChunk(chunk.text || '');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+// --- Agent Orchestrator ---
+
+export const planAgentTask = async (agent: any, task: string, fileStructure: string, projectType: string): Promise<{strategy: string, filesToEdit: string[], requiresSearch: boolean}> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `You are ${agent.name}, a ${agent.role}.
+            Task: "${task}"
+            Project Type: ${projectType}
+            Files:
+            ${fileStructure}
+            
+            Plan the execution. Identify which files need creation or modification.
+            Return JSON: { "strategy": string, "filesToEdit": string[], "requiresSearch": boolean }`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '{}'));
+    } catch {
+        return { strategy: "Manual check required", filesToEdit: [], requiresSearch: false };
+    }
+};
+
+export const runAgentFileTask = async (agent: any, fileName: string, fileContent: string, context: any): Promise<string> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: agent.model || 'gemini-2.5-flash',
+            contents: `You are ${agent.name} (${agent.role}).
+            Context: ${JSON.stringify(context.debugVariables || {})}
+            Task: Modify/Create ${fileName}.
+            Current Content:
+            ${fileContent}
+            
+            Return ONLY the new file content.`
+        }));
+        return cleanJson(response.text || fileContent);
+    } catch {
+        return fileContent;
+    }
+};
+
+export const executeBuildTask = async (agent: any, fileName: string, content: string, instructions: string, context: any, feedback: string, type: string, isNew: boolean, useSearch: boolean): Promise<{code: string, logs: string[]}> => {
+    try {
+        const tools = useSearch ? [{ googleSearch: {} }] : undefined;
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: agent.model || 'gemini-2.5-flash',
+            contents: `Agent: ${agent.name}
+            Task: ${instructions}
+            File: ${fileName}
+            Status: ${isNew ? 'New File' : 'Existing'}
+            Feedback: ${feedback}
+            Code:
+            ${content}
+            
+            Implement the requested changes/code. Return ONLY the code.`,
+            config: { tools }
+        }));
+        
+        let code = cleanJson(response.text || content);
+        if (code.startsWith('```')) {
+            code = code.replace(/^```\w*\n?/, '').replace(/```$/, '');
+        }
+        
+        return { code, logs: [] };
+    } catch (e: any) {
+        return { code: content, logs: [`Error: ${e.message}`] };
+    }
+};
+
+export const reviewBuildTask = async (agent: any, fileName: string, original: string, modified: string, instructions: string, context: any, type: string): Promise<any> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `You are ${agent.name} (Reviewer).
+            Instructions: ${instructions}
+            File: ${fileName}
+            
+            Original:
+            ${original.slice(0, 1000)}...
+            
+            Modified:
+            ${modified.slice(0, 1000)}...
+            
+            Verify the changes.
+            Return JSON: { "approved": boolean, "feedback": string, "issues": string[], "fixCode": string (optional), "suggestedCommand": string (optional) }`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '{}'));
+    } catch {
+        return { approved: false, feedback: "Review failed", issues: ["AI Error"] };
+    }
+};
+
+export const delegateTasks = async (phase: any, agents: any[]): Promise<{assignments: any[]}> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Phase: ${phase.title}
+            Goals: ${phase.goals.join(', ')}
+            Agents: ${JSON.stringify(agents.map((a: any) => ({name: a.name, role: a.role})))}
+            
+            Delegate tasks to agents.
+            Return JSON: { "assignments": [{ "agentName": string, "taskDescription": string, "targetFile": string }] }`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '{"assignments":[]}'));
+    } catch {
+        return { assignments: [] };
+    }
+};
+
+export const generateProjectPlan = async (description: string, type: string): Promise<ProjectPhase[]> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Create a development roadmap for a ${type} project: "${description}".
+            Return JSON array of phases: [{ "id": string, "title": string, "status": "pending", "goals": string[], "tasks": [{ "id": string, "text": string, "done": boolean }] }]`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '[]'));
+    } catch {
+        return [];
+    }
+};
+
+export const generateChangelog = async (files: string[], task: string): Promise<string> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate a changelog entry for task: "${task}". Modified files: ${files.join(', ')}.`
+        }));
+        return response.text || '';
+    } catch {
+        return `Updated ${files.length} files.`;
+    }
+};
+
+export const analyzeFile = async (agent: any, fileName: string, content: string, instructions: string, context: any): Promise<string> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: agent.model || 'gemini-2.5-flash',
+            contents: `Analyze ${fileName} for task: "${instructions}".
+            Content:
+            ${content.slice(0, 2000)}...
+            
+            Provide a brief summary of necessary changes.`
+        }));
+        return response.text || '';
+    } catch {
+        return '';
+    }
+};
+
+export const autoUpdateReadme = async (currentContent: string, changelog: string): Promise<string> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Append this changelog to the README (or create Recent Changes section).
+            Readme:
+            ${currentContent}
+            
+            Changelog:
+            ${changelog}
+            
+            Return full updated README.`
+        }));
+        return response.text || currentContent;
+    } catch {
+        return currentContent;
+    }
+};
+
+export const generateTestResults = async (fileName: string, content: string): Promise<TestResult | Partial<TestResult>> => {
+    try {
+        const response = await retryOperation<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Analyze this test file and its likely target code (inferred). Simulate a test run.
+            File: ${fileName}
+            Content:
+            ${content}
+            
+            Return JSON: { "passed": number, "failed": number, "duration": number, "suites": [{ "name": string, "status": "pass"|"fail", "assertions": [{ "name": string, "status": "pass"|"fail", "error": string }] }] }`,
+            config: { responseMimeType: 'application/json' }
+        }));
+        return JSON.parse(cleanJson(response.text || '{}'));
+    } catch {
+        return { passed: 0, failed: 1, duration: 0, suites: [] };
+    }
+};
+
+export const generateSocialContent = async (prompt: string, platform: string, onChunk: (text: string) => void, mediaData?: string): Promise<void> => {
+    try {
+        const parts: any[] = [{ text: prompt }];
+        if (mediaData) {
+            parts.push({ inlineData: { mimeType: 'image/png', data: mediaData.split(',')[1] } });
+        }
+        
+        const stream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: { parts }
+        });
+        for await (const chunk of stream) {
+            onChunk(chunk.text || '');
+        }
+    } catch (e) {
+        console.error(e);
     }
 };
